@@ -26,8 +26,8 @@ set(LEGAL_COPY_RIGHT "Copyright (c) 2025 pipluginframework")
 set(PRODUCT_NAME "${TARGET_NAME}")
 set(ORIGIN_FILE_NAME "${TARGET_NAME}.exe")#info for windows only
 
-# source files（imgui 核心来自 Conan imgui::imgui；Win32 + DX11 backend 使用本地 vendored 副本）
-set(IMGUI_BACKEND_DIR ${CMAKE_CURRENT_SOURCE_DIR}/imgui/backends)
+# source files（imgui 核心来自 Conan imgui::imgui；Win32 + DX11 backend 使用 adapters/imgui/backends 副本）
+set(IMGUI_BACKEND_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../adapters/imgui/backends)
 set(SRC_FILE_LIST
     pi_imgui_test_host.cpp
     ${IMGUI_BACKEND_DIR}/imgui_impl_win32.cpp
@@ -55,7 +55,7 @@ target_sources(${TARGET_NAME}
         ${TARGET_SRC_FILE_LIST}
 )
 
-# self include（vendored backends 头目录）
+# self include（adapters/imgui/backends 头目录）
 target_include_directories(${TARGET_NAME} PRIVATE ${IMGUI_BACKEND_DIR})
 
 # first party
