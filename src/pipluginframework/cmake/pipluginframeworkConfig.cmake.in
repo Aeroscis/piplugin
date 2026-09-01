@@ -1,0 +1,12 @@
+@PACKAGE_INIT@
+
+# 包含导出的 targets 文件
+include("${CMAKE_CURRENT_LIST_DIR}/@FULL_NAME@Targets.cmake")
+
+# -------------- 依赖处理 --------------
+include(CMakeFindDependencyMacro)
+
+# 框架本体无第三方依赖（Windows 平台仅系统库 user32，无需 find_dependency）
+
+# 设置组件找到标志
+set(@NAMESPACE_NAME@_@COMPONENT_NAME@_FOUND TRUE)
