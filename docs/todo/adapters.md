@@ -27,6 +27,11 @@ X11 嵌入。README（`adapters/qt/README.md`）已预留此方向。
 宿主本身是 Qt 时，插件控件直接进入宿主 Qt 事件循环的正确集成方式
 （不经过本套件），或提供专门的 "Qt-host 直连" 桥接。
 
+实测补充：`pi_test_host_qt.exe` 加载 Qt 插件时，套件的 `attach()` 在
+`piqt_app_create()` 处就失败（进程内已存在宿主的 `QApplication`，套件拒绝再建一个），
+插件控件根本不会被创建——即"Qt 宿主 + 本套件"当前是静默不可用，而不是"能用但不完美"。
+`PI_QT_VIEW_TRACE=1` 时表现为日志只到 `attach: enter` 一行。
+
 ## 5. imgui 套件非 Windows backend [P1]
 
 见 `platform.md` 第 1/2 条：imgui 套件目前只有 D3D11（Windows），

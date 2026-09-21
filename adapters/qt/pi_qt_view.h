@@ -5,12 +5,22 @@
  * host (imgui, wxWidgets, raw Win32, ...), without the host knowing Qt.
  *
  * The kit owns the whole "Qt compatibility layer":
- *   - a process-wide Qt runtime: one background thread running the one
- *     and only QApplication::exec() (refcounted across views)
- *   - IPiPluginView implementation with foreign-window embedding
- *     (Win32 SetParent), host-driven idle pumping (dispatcher wake-up),
- *     and thread-marshaled resize / visibility calls
- *   - user data lifetime management across the Qt thread boundary
+ *   - the module's single QApplication, created on the HOST'S GUI THREAD
+ *     (Qt requires the GUI thread to be the QApplication thread, and Win32
+ *     requires parent and child windows to be serviced by one thread)
+ *   - IPiPluginView implementation with foreign-window embedding (Win32: the
+ *     host container is announced to Qt before the widget's native window is
+ *     created, so Qt itself creates it as a WS_CHILD of the host - no
+ *     SetParent() of a finished top-level window, no frame margins, no screen
+ *     coordinate arithmetic; see the embedding note in pi_qt_view.cpp),
+ *     host-driven event pumping via IPiPluginView::pi_on_idle() (which calls
+ *     processEvents() on a bounded slice), and fully synchronous
+ *     attach / detach / resize / visibility
+ *
+ * Every call runs on the host GUI thread, so there is no marshaling, no
+ * second thread and nothing that can outlive the module: when
+ * pi_view_release() returns, the widget AND the QApplication are gone, and
+ * the host may FreeLibrary() the plugin.
  *
  * Plugin authors only write a widget factory:
  *
@@ -27,6 +37,12 @@
  *   desc.retain        = &MyPlugin::AddRefThunk;   // optional
  *   desc.release       = &MyPlugin::ReleaseThunk;  // optional
  *   pi_qt_view_create(&desc, out);
+ *
+ *   // inside IPiPluginBase::pi_terminate (recommended):
+ *   pi_qt_view_shutdown();
+ *
+ * Host requirements: call IPiPluginView::pi_on_idle() once per frame, and
+ * detach + release the view before unloading the plugin module.
  *
  * Limitation: the kit is meant for hosts that do NOT themselves run Qt
  * (they use another toolkit). A Qt-based host should instead put the
@@ -47,12 +63,16 @@ extern "C" {
  * View descriptor
  * -------------------------------------------------------------------------- */
 
-/* Create the plugin's root widget. Called ON THE QT RUNTIME THREAD, after
+/* Create the plugin's root widget. Called on the HOST'S GUI THREAD while
  * QApplication exists and before embedding. Return a parentless QWidget
- * (the kit embeds and sizes it). Return NULL to fail the attach. */
+ * (the kit embeds and sizes it) that has NOT been shown and does not own a
+ * native window yet: the kit has to tell Qt which foreign window is the
+ * parent *before* the native window is created (that is what makes Qt create
+ * it as a real child window instead of a top-level one). Return NULL to fail
+ * the attach. */
 typedef QWidget* (*PiQtCreateWidgetProc)(void* user_data);
 
-/* Optional: called on the Qt runtime thread to destroy the widget
+/* Optional: called on the host GUI thread to destroy the widget
  * (e.g. to disconnect signals first). If NULL the kit deletes it. */
 typedef void (*PiQtDestroyWidgetProc)(void* user_data, QWidget* widget);
 
@@ -75,13 +95,22 @@ typedef struct PiQtViewDesc {
  * release handle a still-attached view). */
 PiResult pi_qt_view_create(const PiQtViewDesc* desc, IPiPluginView** out_view);
 
+/* Tear down every live view of this module and destroy the QApplication,
+ * synchronously, on the calling (host GUI) thread. Idempotent, and safe even
+ * with views still attached.
+ *
+ * The host must make sure this has happened - by detaching and releasing the
+ * views, or by calling this from the plugin's pi_terminate() - before it
+ * unloads the module: widget destruction and QApplication teardown run code
+ * compiled into this module. */
+void pi_qt_view_shutdown(void);
+
 /* The plugin's root widget, or NULL if it has not been created yet.
- * Only touch the widget from the Qt runtime thread — use
- * pi_qt_view_post() to run code there. */
+ * Created on the host GUI thread; only touch it from there. */
 QWidget* pi_qt_view_widget(IPiPluginView* view);
 
-/* Run fn(user) on the Qt runtime thread (queued, fire-and-forget).
- * Safe to call from any thread; no-op if the view has no widget yet. */
+/* Run fn(user) on the host GUI thread. The kit is single-threaded, so this
+ * simply runs it inline. */
 void pi_qt_view_post(IPiPluginView* view, void (*fn)(void* user), void* user);
 
 #ifdef __cplusplus

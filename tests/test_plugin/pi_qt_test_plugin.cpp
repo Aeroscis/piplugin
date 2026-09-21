@@ -7,11 +7,59 @@
 #include <QLabel>
 #include <QVBoxLayout>
 #include <QTimer>
+#include <QPainter>
+#include <QSizePolicy>
 #include <stdio.h>
 
 static const PiGuid QT_PLUGIN_CLASS_GUID =
     PI_GUID(0x7F83A100, 0x5C4D, 0x4E2A,
             0x91, 0xD3, 0x8A, 0xFC, 0x2E, 0xB1, 0x44, 0x00);
+
+/* Animated colour block with its tick counter painted inside - the Qt
+ * counterpart of the imgui plugin's "ImGui Heartbeat" window.
+ *
+ * It is deliberately a plain child widget rather than a Qt::Window: when the
+ * plugin runs inside a non-Qt host, the adapter embeds the root widget as a
+ * child of the host's container window, and Windows clips child windows to
+ * their parent. A Qt::Window-flagged popup would be clipped to (or covered
+ * by) the embedded widget and never show up. A child widget is composited by
+ * Qt itself, so it is always visible inside the plugin's panel. */
+class PiHeartbeatBlock : public QWidget {
+public:
+    explicit PiHeartbeatBlock(QWidget* parent)
+        : QWidget(parent), m_tick(0), m_r(0), m_g(0), m_b(0)
+    {
+        setMinimumSize(220, 120);
+        setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    }
+
+    void setTick(int tick, int r, int g, int b)
+    {
+        m_tick = tick; m_r = r; m_g = g; m_b = b;
+        update();
+    }
+
+protected:
+    void paintEvent(QPaintEvent*) override
+    {
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing, true);
+        p.setPen(Qt::NoPen);
+        p.setBrush(QColor(m_r, m_g, m_b));
+        p.drawRoundedRect(rect().adjusted(0, 0, -1, -1), 6, 6);
+
+        QFont f = font();
+        f.setPointSize(f.pointSize() + 2);
+        f.setBold(true);
+        p.setFont(f);
+        p.setPen(Qt::white);
+        p.drawText(rect(), Qt::AlignCenter,
+                   QString::fromUtf8("Qt Event Loop - tick %1").arg(m_tick));
+    }
+
+private:
+    int m_tick, m_r, m_g, m_b;
+};
 
 /* ==========================================================================
  * Factory
@@ -86,7 +134,7 @@ const IPiPluginBaseVtbl QtPlugin::s_base_vtbl = {
     &QtPlugin::Init, &QtPlugin::Term, &QtPlugin::GetView
 };
 
-QtPlugin::QtPlugin() : m_host(NULL), m_hostUI(NULL)
+QtPlugin::QtPlugin() : m_host(NULL), m_hostUI(NULL), m_view(NULL)
 {
     pi_refcounted_init_with_destroy(&m_base,
                                     (const IPiUnknownVtbl*)&s_base_vtbl,
@@ -118,8 +166,16 @@ PiResult QtPlugin::Initialize(IPiHostServices* host)
 
 PiResult QtPlugin::Terminate()
 {
-    /* Nothing to do: the adapter kit tears the UI down when the view is
-     * detached / released. */
+    /* The adapter kit owns the Qt side, and it needs an explicit "we are
+     * about to go away" signal: destroying the widget and the QApplication
+     * runs code inside THIS module, so it must all be finished before the
+     * host can call FreeLibrary() on us. A host that follows the documented
+     * order (detach + release the view first) is already safe; calling this
+     * makes the teardown complete regardless of how the host unwinds - which
+     * is what stops hosts that just drop the module from crashing inside Qt
+     * during unload. */
+    pi_qt_view_shutdown();
+    m_view = NULL;
     return PI_OK;
 }
 
@@ -160,35 +216,31 @@ QWidget* QtPlugin::CreateUi(void* user_data)
     layout->addWidget(btn);
     layout->addStretch();
 
-    /* Standalone animation popup (proof that the Qt loop runs). A child
-     * with the Qt::Window flag: top-level, but owned by w so it is
-     * destroyed together with the embedded widget. */
-    QWidget* popup = new QWidget(w, Qt::Window | Qt::WindowStaysOnTopHint);
-    popup->setWindowTitle(QString::fromUtf8("Qt Heartbeat"));
-    popup->setFixedSize(340, 100);
-    popup->move(200, 200);
-    QVBoxLayout* popLay = new QVBoxLayout(popup);
-    QLabel* popLabel = new QLabel(QString::fromUtf8("Qt Event Loop: tick 0"), popup);
-    popLabel->setAlignment(Qt::AlignCenter);
-    popLay->addWidget(popLabel);
-    int* popTick = new int(0);
-    QTimer* popTimer = new QTimer(popup);
-    QObject::connect(popTimer, &QTimer::timeout, [popLabel, popTick]() {
-        (*popTick)++;
-        int p = (*popTick) % 100, r = 0, g = 0, b = 0;
-        if (p < 33)      { r = 255 - p*7;  g = p*7;        b = 0; }
+    /* Animated heartbeat block (proof that the Qt loop keeps running): a
+     * colour block whose fill cycles and whose tick counter is drawn inside
+     * it - same look as the imgui plugin's heartbeat window. */
+    PiHeartbeatBlock* heartbeat = new PiHeartbeatBlock(w);
+    layout->addWidget(heartbeat);
+
+    int* heartbeatTick = new int(0);
+    QTimer* heartbeatTimer = new QTimer(heartbeat);
+    QObject::connect(heartbeatTimer, &QTimer::timeout, [heartbeat, heartbeatTick]() {
+        (*heartbeatTick)++;
+        int p = (*heartbeatTick) % 100, r = 0, g = 0, b = 0;
+        if (p < 33)      { r = 255 - p*7;  g = p*7;          b = 0; }
         else if (p < 66) { r = 0;          g = 255-(p-33)*7; b = (p-33)*7; }
-        else             { r = (p-66)*7;   g = 0;          b = 255-(p-66)*7; }
-        char s[256];
-        snprintf(s, sizeof(s),
-            "QLabel{background:rgb(%d,%d,%d);color:white;font-size:14px;"
-            "font-weight:bold;padding:8px;border-radius:6px;}", r, g, b);
-        popLabel->setStyleSheet(QString::fromUtf8(s));
-        char t[64]; snprintf(t, sizeof(t), "Qt Event Loop - tick %d", *popTick);
-        popLabel->setText(QString::fromUtf8(t));
+        else             { r = (p-66)*7;   g = 0;            b = 255-(p-66)*7; }
+        heartbeat->setTick(*heartbeatTick, r, g, b);
     });
-    popTimer->start(40);
-    popup->show();
+    heartbeatTimer->start(40);
+
+    /* Reports a tick to the host periodically (msg 0x2000) so an automated
+     * run can tell "the host really drives the Qt event loop" from "the UI
+     * was painted once and then froze". */
+    QObject::connect(heartbeatTimer, &QTimer::timeout, [me, heartbeatTick]() {
+        if (me->m_host && (*heartbeatTick % 25) == 0)
+            pi_host_post_message(me->m_host, 0x2000, (uintptr_t)*heartbeatTick, 0);
+    });
 
     return w;
 }
@@ -231,5 +283,7 @@ PiResult PI_CALL QtPlugin::GetView(void* self_ptr, IPiPluginView** out) {
     desc.retain        = &QtPlugin::Retain;
     desc.release       = &QtPlugin::Release;
     desc.user_data     = me;
-    return pi_qt_view_create(&desc, out);
+    PiResult hr = pi_qt_view_create(&desc, out);
+    if (PI_SUCCEEDED(hr)) me->m_view = *out;   /* weak: host owns the ref */
+    return hr;
 }

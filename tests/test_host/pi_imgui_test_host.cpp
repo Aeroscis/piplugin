@@ -18,7 +18,10 @@
 #include <windows.h>
 #include <d3d11.h>
 #include <tchar.h>
+#include <objbase.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <string>
 #include <cstdarg>
 
@@ -43,6 +46,41 @@ static char               g_lastMessage[128] = "(none)";
 
 static HWND g_embedContainer = NULL;  /* child window to hold plugin */
 
+/* Swap-chain presentation model actually in use. The flip model is what
+ * makes the embedded plugin window survive our Present() calls: with the
+ * legacy bitblt models DXGI blits the back buffer straight over the whole
+ * client area, i.e. right across the plugin's child HWND. */
+static const char* g_presentModel = "unknown";
+static bool        g_flipModel    = false;
+
+/* Frames rendered since startup (self-test pacing / diagnostics). */
+static unsigned    g_frameCount   = 0;
+
+/* --------------------------------------------------------------------------
+ * Self-test driver (--cycles N [--plugin a.dll,b.dll] [--idle-frames N])
+ *
+ * Runs real load -> attach -> idle-frame -> detach -> release -> unload
+ * cycles through exactly the same code path the buttons use, but paced by
+ * the real render loop. That makes plugin lifetime bugs (Qt widget teardown
+ * racing the module unload) reproducible without a human clicking, and it
+ * keeps the process alive long enough to catch crashes that only show up
+ * once the Qt event loop is running.
+ * -------------------------------------------------------------------------- */
+static int      g_selfTestCycles     = 0;   /* 0 = disabled */
+static int      g_selfTestCycleIndex = 0;
+static unsigned g_selfTestIdleFrames = 20;
+static const char* g_pluginOverride  = NULL;
+static bool     g_selfTestFailed     = false;
+/* Self-test option: skip pi_view_detach() and let the plugin's own
+ * pi_terminate() do the teardown - exercises the "host just drops the
+ * module" path that used to crash. */
+static bool     g_skipDetach         = false;
+/* --screenshot <file>: after a few rendered frames with the plugin loaded,
+ * capture the composited window to a .bmp and exit. Lets an automated run
+ * prove that the embedded plugin is actually visible over the D3D frame. */
+static const char* g_screenshotPath  = NULL;
+static unsigned g_screenshotAfter    = 45;   /* frames to settle first */
+
 /* Message log shared between plugin threads and the UI thread */
 #include <mutex>
 static std::mutex g_logMutex;
@@ -61,6 +99,10 @@ static void UnloadPlugin();
 static void CreateEmbedContainer(HWND parent);
 static std::string ExeDirPath(const char* dllName);
 static void LogStatus(const char* fmt, ...);
+static void SelfTestStep();
+static DWORD WINAPI DetachWatchdog(LPVOID param);
+static bool CaptureWindowBmp(HWND hwnd, const char* path);
+static bool CaptureHwndClientBmp(HWND hwnd, const char* path);
 
 /* Set the UI status line and mirror it to the debug log. */
 static void SetStatus(const char* fmt, ...)
@@ -114,12 +156,33 @@ static void HostMessageProc(void* user_data, uint32_t msg,
  * -------------------------------------------------------------------------- */
 int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int nCmdShow)
 {
-    /* Create window */
+    /* DPI awareness MUST be established before the first window exists.
+     * Plugins bring their own GUI toolkit (Qt in this repo) and that toolkit
+     * may change the process DPI awareness when it starts up. Changing it
+     * after our window exists makes Windows re-fit and re-scale every window
+     * we own - the host visibly jumps to a different size at plugin load
+     * time. Setting it up front keeps the geometry stable. */
+    ImGui_ImplWin32_EnableDpiAwareness();
+
+    /* Qt on Windows drives the clipboard / drag-and-drop through OLE and
+     * expects the process' GUI thread to have OLE initialised. When it is
+     * not, QWindowsContext calls OleInitialize()/OleUninitialize() itself -
+     * in the test setup that happens on the Qt runtime thread at plugin
+     * unload time, which tears process-wide COM state down under our feet.
+     * Initialising it here (main thread, before any Qt code runs) keeps the
+     * lifetime owned by the host. */
+    ::OleInitialize(NULL);
+
+    /* Create window.
+     * WS_CLIPCHILDREN is essential: without it the window's own painting
+     * region includes the embedded plugin HWND, so every frame we present
+     * erases the plugin's pixels. */
     WNDCLASSEXW wc = { sizeof(wc), CS_CLASSDC, WndProc, 0L, 0L, hInstance,
                        NULL, NULL, NULL, NULL, L"PiTestHost", NULL };
     ::RegisterClassExW(&wc);
     HWND hwnd = ::CreateWindowW(wc.lpszClassName, L"pipluginframework — Test Host (imgui)",
-                                WS_OVERLAPPEDWINDOW, 100, 100, 1280, 720,
+                                WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
+                                100, 100, 1280, 720,
                                 NULL, NULL, wc.hInstance, NULL);
     if (!hwnd) return 1;
 
@@ -149,12 +212,41 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPSTR, _In
         g_hostServices = NULL;
     }
 
-    /* Auto-load for automated testing: pass the plugin DLL path on the
-     * command line to skip clicking the button. */
-    if (__argc > 1 && __argv[1]) {
+    /* Command line.
+     *   <plugin.dll>                auto-load once (legacy behaviour)
+     *   --plugin <dll>[,<dll>...]   plugin(s) used by the self-test
+     *   --cycles <n>                run n load/unload cycles, then exit
+     *   --idle-frames <n>           frames to let the view live per cycle */
+    for (int i = 1; i < __argc; ++i) {
+        const char* a = __argv[i];
+        if (a && strcmp(a, "--cycles") == 0 && i + 1 < __argc) {
+            g_selfTestCycles = atoi(__argv[++i]);
+        } else if (a && strcmp(a, "--plugin") == 0 && i + 1 < __argc) {
+            g_pluginOverride = __argv[++i];
+        } else if (a && strcmp(a, "--idle-frames") == 0 && i + 1 < __argc) {
+            int n = atoi(__argv[++i]);
+            g_selfTestIdleFrames = (n > 0) ? (unsigned)n : 1u;
+        } else if (a && strcmp(a, "--skip-detach") == 0) {
+            g_skipDetach = true;
+        } else if (a && strcmp(a, "--screenshot") == 0 && i + 1 < __argc) {
+            g_screenshotPath = __argv[++i];
+        } else if (a && strcmp(a, "--screenshot-frames") == 0 && i + 1 < __argc) {
+            int n = atoi(__argv[++i]);
+            g_screenshotAfter = (n > 0) ? (unsigned)n : 1u;
+        } else if (a && a[0] == '-') {
+            LogStatus("warning: unknown option '%s'", a);
+        }
+    }
+    if (g_selfTestCycles <= 0 && __argc > 1 && __argv[1] && __argv[1][0] != '-') {
         LogStatus("auto-load: %s", __argv[1]);
         LoadPlugin(__argv[1]);
     }
+
+    LogStatus("startup: present-model=%s ffi=%s", g_presentModel,
+              g_flipModel ? "yes" : "no");
+    LogStatus("startup: self-test-cycles=%d idle-frames=%u plugin=%s",
+              g_selfTestCycles, g_selfTestIdleFrames,
+              g_pluginOverride ? g_pluginOverride : "(default)");
 
     /* Main loop */
     bool done = false;
@@ -170,6 +262,31 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPSTR, _In
         /* Pump plugin events each frame */
         if (g_pluginView) {
             pi_view_on_idle(g_pluginView);
+        }
+
+        if (g_selfTestCycles > 0)
+            SelfTestStep();
+
+        if (g_screenshotPath && g_pluginView && ++g_frameCount >= g_screenshotAfter) {
+            LogStatus("screenshot: capturing after %u frames", g_frameCount);
+            if (CaptureWindowBmp(hwnd, g_screenshotPath))
+                LogStatus("screenshot: wrote %s", g_screenshotPath);
+            else
+                LogStatus("screenshot: FAILED for %s", g_screenshotPath);
+
+            /* Also grab the plugin's own HWND: proves what Qt itself painted,
+             * independent of DWM composition. */
+            std::string pluginShot = std::string(g_screenshotPath) + ".plugin.bmp";
+            HWND pluginHwnd = (HWND)(uintptr_t)pi_view_get_native_window(g_pluginView);
+            unsigned tries = 0;
+            while (pluginHwnd && ++tries < 30) {
+                if (CaptureHwndClientBmp(pluginHwnd, pluginShot.c_str())) {
+                    LogStatus("screenshot: wrote %s (plugin hwnd)", pluginShot.c_str());
+                    break;
+                }
+                Sleep(50);
+            }
+            done = true;
         }
 
         ImGui_ImplDX11_NewFrame();
@@ -266,7 +383,12 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPSTR, _In
     CleanupDeviceD3D();
     ::DestroyWindow(hwnd);
     ::UnregisterClassW(wc.lpszClassName, wc.hInstance);
+    ::OleUninitialize();
 
+    LogStatus("exit: cycles=%d failed=%d", g_selfTestCycleIndex,
+              g_selfTestFailed ? 1 : 0);
+    if (g_selfTestCycles > 0)
+        return (g_selfTestFailed || g_selfTestCycleIndex < g_selfTestCycles) ? 2 : 0;
     return 0;
 }
 
@@ -296,6 +418,21 @@ static void LoadPlugin(const char* dllPath)
     if (!module) {
         SetStatus("Load failed: %s", pi_module_get_load_error());
         return;
+    }
+
+    /* Diagnostics: report exactly which image the loader mapped, so a stale
+     * copy shadowing our build output cannot hide. */
+    {
+        HMODULE hmod = GetModuleHandleA(dllPath);
+        if (!hmod) {
+            const char* base = strrchr(dllPath, '\\');
+            hmod = GetModuleHandleA(base ? base + 1 : dllPath);
+        }
+        char full[MAX_PATH] = { 0 };
+        if (hmod && GetModuleFileNameA(hmod, full, MAX_PATH))
+            LogStatus("load: mapped %s", full);
+        else
+            LogStatus("load: mapped (unknown) for %s", dllPath);
     }
 
     IPiPluginFactory* factory = NULL;
@@ -366,7 +503,15 @@ static void LoadPlugin(const char* dllPath)
     if (g_pluginView && g_embedContainer) {
         if (PI_SUCCEEDED(pi_view_attach(g_pluginView, (PiNativeWindow)g_embedContainer))) {
             pi_view_set_visible(g_pluginView, 1);
+            LogStatus("attach: plugin hwnd=%llx host container=%llx",
+                      (unsigned long long)(uintptr_t)pi_view_get_native_window(g_pluginView),
+                      (unsigned long long)(uintptr_t)g_embedContainer);
         }
+    }
+
+    if (g_selfTestCycles > 0 && !g_pluginView) {
+        LogStatus("selftest: FAIL - plugin published no view");
+        g_selfTestFailed = true;
     }
 
     pi_iunknown_release((IPiUnknown*)factory);
@@ -383,19 +528,29 @@ static void LoadPlugin(const char* dllPath)
 
 static void UnloadPlugin()
 {
-    LogStatus("unload: begin");
+    LogStatus("unload: begin (thread=%lu)", (unsigned long)GetCurrentThreadId());
     if (g_pluginService) {
         pi_service_stop(g_pluginService);
         pi_iunknown_release((IPiUnknown*)g_pluginService);
         g_pluginService = NULL;
     }
     if (g_pluginView) {
-        LogStatus("unload: detaching view");
-        pi_view_detach(g_pluginView);
+        DWORD t0 = GetTickCount();
+        if (g_skipDetach) {
+            LogStatus("unload: SKIPPING detach (plugin must tear itself down)");
+        } else {
+            LogStatus("unload: detaching view");
+            /* Watchdog: if a teardown step wedges, break into an attached
+             * debugger instead of hanging silently - a stack at the exact
+             * blocking call is worth more than any amount of log spelunking. */
+            CreateThread(NULL, 0, DetachWatchdog, (LPVOID)(uintptr_t)t0, 0, NULL);
+            pi_view_detach(g_pluginView);
+            LogStatus("unload: detach returned after %lu ms", (unsigned long)(GetTickCount() - t0));
+        }
         LogStatus("unload: releasing view");
         pi_iunknown_release((IPiUnknown*)g_pluginView);
         g_pluginView = NULL;
-        LogStatus("unload: view released");
+        LogStatus("unload: view released (total %lu ms)", (unsigned long)(GetTickCount() - t0));
     }
     /* Release the plugin BEFORE unloading the module: the module's code
      * must stay mapped while plugin objects are alive. */
@@ -422,12 +577,204 @@ static void CreateEmbedContainer(HWND parent)
     RECT rect;
     GetClientRect(parent, &rect);
 
+    /* WS_CLIPCHILDREN so our own painting (the D3D frame) never claims the
+     * area the plugin's HWND lives in. */
     g_embedContainer = CreateWindowExW(
         0, L"STATIC", NULL,
         WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
         410, 0, rect.right - 410, rect.bottom,
         parent, NULL, GetModuleHandle(NULL), NULL
     );
+}
+
+/* Breaks into an attached debugger if a plugin teardown step exceeds the
+ * budget, so the wedged stacks can be inspected in place. */
+static DWORD WINAPI DetachWatchdog(LPVOID param)
+{
+    DWORD t0 = (DWORD)(uintptr_t)param;
+    for (int i = 0; i < 200; ++i) {          /* <= 20 s */
+        Sleep(100);
+        if (GetTickCount() - t0 > 3000) break;
+    }
+    if (GetTickCount() - t0 <= 3000) return 0;   /* finished in time */
+    if (!IsDebuggerPresent()) {
+        LogStatus("watchdog: teardown stuck (>3 s) with no debugger attached");
+        return 0;
+    }
+    LogStatus("watchdog: teardown stuck >3 s - breaking into debugger");
+    DebugBreak();
+    return 0;
+}
+
+/* --------------------------------------------------------------------------
+ * Window capture: grab the whole window (DWM-composited content plus the
+ * embedded plugin's child window) into a .bmp.
+ * -------------------------------------------------------------------------- */
+static bool CaptureHwndClientBmp(HWND hwnd, const char* path)
+{
+    if (!hwnd || !IsWindow(hwnd)) return false;
+    RECT rc;
+    if (!GetClientRect(hwnd, &rc)) return false;
+    int w = rc.right, h = rc.bottom;
+    if (w <= 0 || h <= 0) return false;
+
+    HDC hdcWindow = GetDC(hwnd);
+    if (!hdcWindow) return false;
+    HDC hdcMem = CreateCompatibleDC(hdcWindow);
+    HBITMAP hbm = CreateCompatibleBitmap(hdcWindow, w, h);
+    HGDIOBJ old = SelectObject(hdcMem, hbm);
+
+    /* Ask the child window to paint itself into the memory DC. */
+    SendMessageW(hwnd, WM_PRINTCLIENT, (WPARAM)hdcMem,
+                 PRF_CLIENT | PRF_ERASEBKGND | PRF_CHILDREN | PRF_OWNED);
+    BitBlt(hdcMem, 0, 0, w, h, hdcWindow, 0, 0, SRCCOPY);
+
+    BITMAPINFOHEADER bi = {};
+    bi.biSize = sizeof(bi);
+    bi.biWidth = w;
+    bi.biHeight = -h;
+    bi.biPlanes = 1;
+    bi.biBitCount = 32;
+    bi.biCompression = BI_RGB;
+    DWORD imageSize = (DWORD)w * 4u * (DWORD)h;
+    unsigned char* pixels = (unsigned char*)malloc(imageSize);
+    bool saved = false;
+    if (pixels && GetDIBits(hdcMem, hbm, 0, (UINT)h, pixels, (BITMAPINFO*)&bi, DIB_RGB_COLORS)) {
+        BITMAPFILEHEADER fh = {};
+        fh.bfType = 0x4D42;
+        fh.bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
+        fh.bfSize = fh.bfOffBits + imageSize;
+        FILE* fp = NULL;
+        if (fopen_s(&fp, path, "wb") == 0 && fp) {
+            fwrite(&fh, sizeof(fh), 1, fp);
+            fwrite(&bi, sizeof(bi), 1, fp);
+            fwrite(pixels, 1, imageSize, fp);
+            fclose(fp);
+            saved = true;
+        }
+    }
+    free(pixels);
+    SelectObject(hdcMem, old);
+    DeleteObject(hbm);
+    DeleteDC(hdcMem);
+    ReleaseDC(hwnd, hdcWindow);
+    return saved;
+}
+
+static bool CaptureWindowBmp(HWND hwnd, const char* path)
+{
+    RECT rc;
+    if (!GetWindowRect(hwnd, &rc)) return false;
+    int w = rc.right - rc.left;
+    int h = rc.bottom - rc.top;
+    if (w <= 0 || h <= 0) return false;
+
+    HDC hdcScreen = GetDC(NULL);
+    HDC hdcMem = CreateCompatibleDC(hdcScreen);
+    HBITMAP hbm = CreateCompatibleBitmap(hdcScreen, w, h);
+    HGDIOBJ old = SelectObject(hdcMem, hbm);
+
+    /* PW_RENDERFULLCONTENT asks DWM for the composited window, which is what
+     * we want with a flip-model swap chain. */
+    BOOL ok = PrintWindow(hwnd, hdcMem, 0x00000002 /* PW_RENDERFULLCONTENT */);
+    if (!ok) {
+        /* Fall back to a screen blit. */
+        SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+        UpdateWindow(hwnd);
+        BitBlt(hdcMem, 0, 0, w, h, hdcScreen, rc.left, rc.top, SRCCOPY);
+    }
+
+    BITMAPINFOHEADER bi = {};
+    bi.biSize = sizeof(bi);
+    bi.biWidth = w;
+    bi.biHeight = -h;                 /* top-down */
+    bi.biPlanes = 1;
+    bi.biBitCount = 32;
+    bi.biCompression = BI_RGB;
+    DWORD stride = (DWORD)w * 4;
+    DWORD imageSize = stride * (DWORD)h;
+    unsigned char* pixels = (unsigned char*)malloc(imageSize);
+    bool saved = false;
+    if (pixels && GetDIBits(hdcMem, hbm, 0, (UINT)h, pixels, (BITMAPINFO*)&bi, DIB_RGB_COLORS)) {
+        BITMAPFILEHEADER fh = {};
+        fh.bfType = 0x4D42;
+        fh.bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
+        fh.bfSize = fh.bfOffBits + imageSize;
+        FILE* fp = NULL;
+        if (fopen_s(&fp, path, "wb") == 0 && fp) {
+            fwrite(&fh, sizeof(fh), 1, fp);
+            fwrite(&bi, sizeof(bi), 1, fp);
+            fwrite(pixels, 1, imageSize, fp);
+            fclose(fp);
+            saved = true;
+        }
+    }
+    free(pixels);
+    SelectObject(hdcMem, old);
+    DeleteObject(hbm);
+    DeleteDC(hdcMem);
+    ReleaseDC(NULL, hdcScreen);
+    (void)ok;
+    return saved;
+}
+
+/* --------------------------------------------------------------------------
+ * Self-test driver body - called once per rendered frame.
+ * -------------------------------------------------------------------------- */static void SelfTestStep()
+{
+    static int      s_state = 0;        /* 0 idle, 1 idle-after-load, 2 idle-after-unload */
+    static unsigned s_framesLeft = 0;
+
+    if (s_framesLeft > 0) {
+        --s_framesLeft;
+        if (s_framesLeft == 0 && s_state == 1) {
+            LogStatus("selftest: cycle %d/%d unload", g_selfTestCycleIndex, g_selfTestCycles);
+            UnloadPlugin();
+            s_state = 2;
+            s_framesLeft = 3;
+        }
+        return;
+    }
+
+    switch (s_state) {
+    case 0: {
+        if (g_selfTestCycleIndex >= g_selfTestCycles) {
+            LogStatus("selftest: PASS (%d cycles)", g_selfTestCycles);
+            ::PostQuitMessage(0);
+            return;
+        }
+        ++g_selfTestCycleIndex;
+        const char* dll = g_pluginOverride ? g_pluginOverride : "pi_test_plugin_qt.dll";
+        char first[MAX_PATH];
+        const char* comma = strchr(dll, ',');
+        size_t n = comma ? (size_t)(comma - dll) : strlen(dll);
+        if (n >= sizeof(first)) n = sizeof(first) - 1;
+        memcpy(first, dll, n);
+        first[n] = 0;
+
+        LogStatus("selftest: cycle %d/%d load %s", g_selfTestCycleIndex, g_selfTestCycles, first);
+        LoadPlugin(ExeDirPath(first).c_str());
+        if (!g_pluginView) {
+            LogStatus("selftest: FAIL - no view after load");
+            g_selfTestFailed = true;
+            g_selfTestCycles = g_selfTestCycleIndex;   /* stop after this cycle */
+        }
+        s_state = 1;
+        s_framesLeft = g_selfTestIdleFrames;
+        break;
+    }
+    case 1:
+        /* Frames ran out but the unload was skipped - defensive. */
+        s_framesLeft = 1;
+        break;
+    case 2:
+        s_state = 0;
+        break;
+    default:
+        s_state = 0;
+        break;
+    }
 }
 
 /* --------------------------------------------------------------------------
@@ -467,6 +814,13 @@ static LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
  * -------------------------------------------------------------------------- */
 static bool CreateDeviceD3D(HWND hWnd)
 {
+    /* Try the flip model first. DWM composites a flip-model swap chain as
+     * the window's content, so any child HWND owned by another module (our
+     * embedded Qt plugin) is composed on top of it and stays visible. The
+     * legacy bitblt models (DISCARD/SEQUENTIAL) hand the frame to the GDI
+     * bltter instead, which paints over the child region - that is exactly
+     * the "plugin is invisible unless the host blocks its own render loop"
+     * symptom. */
     DXGI_SWAP_CHAIN_DESC sd = {};
     sd.BufferCount = 2;
     sd.BufferDesc.Width = 0;
@@ -474,13 +828,15 @@ static bool CreateDeviceD3D(HWND hWnd)
     sd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
     sd.BufferDesc.RefreshRate.Numerator = 60;
     sd.BufferDesc.RefreshRate.Denominator = 1;
-    sd.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
+    /* NOTE: DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH is illegal with the flip
+     * model, so no flags here. */
+    sd.Flags = 0;
     sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
     sd.OutputWindow = hWnd;
     sd.SampleDesc.Count = 1;
     sd.SampleDesc.Quality = 0;
     sd.Windowed = TRUE;
-    sd.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+    sd.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
 
     const D3D_FEATURE_LEVEL featureLevels[] = {
         D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_0
@@ -491,6 +847,26 @@ static bool CreateDeviceD3D(HWND hWnd)
         featureLevels, 2, D3D11_SDK_VERSION,
         &sd, &g_pSwapChain, &g_pd3dDevice,
         &featureLevel, &g_pd3dDeviceContext);
+
+    if (SUCCEEDED(hr)) {
+        g_flipModel    = true;
+        g_presentModel = "FLIP_DISCARD";
+    } else {
+        /* Fallback for pre-Windows-8 / old drivers: keep the demo running,
+         * but the embedded child window will only be visible where the
+         * blitter does not overwrite it. */
+        sd.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+        sd.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
+        hr = D3D11CreateDeviceAndSwapChain(
+            NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, 0,
+            featureLevels, 2, D3D11_SDK_VERSION,
+            &sd, &g_pSwapChain, &g_pd3dDevice,
+            &featureLevel, &g_pd3dDeviceContext);
+        if (SUCCEEDED(hr)) {
+            g_flipModel    = false;
+            g_presentModel = "DISCARD(bitblt)";
+        }
+    }
     if (FAILED(hr)) return false;
 
     CreateRenderTarget();

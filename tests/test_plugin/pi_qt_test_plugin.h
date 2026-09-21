@@ -50,6 +50,7 @@ private:
 
     IPiHostServices*  m_host;         /* add-ref'd */
     IPiHostUI*        m_hostUI;       /* add-ref'd, NULL on headless host */
+    IPiPluginView*    m_view;         /* weak: owned by the host, see GetView */
 };
 
 class QtPluginFactory {
