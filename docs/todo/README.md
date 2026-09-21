@@ -20,4 +20,4 @@
 | UI 适配器 | Qt 套件多插件共享（SHARED）、gtk/webview 新套件、Qt 套件在 Qt 宿主中的用法 |
 | 核心框架 | C++ 包装层、事件/信号机制、插件热重载、官方 Rust/C# FFI 示例 |
 | 构建打包 | 套件纳入 conan 包、CI、CMake presets 完善、版本号现代化 |
-| 测试质量 | 单元测试框架、自动化宿主测试、内存/线程 sanitizer、示例矩阵 |
+| 测试质量 | 单元测试框架、自动化宿主测试、内存/线程 sanitizer、示例矩阵、**imgui 宿主拖动缩放时 IMGUI 面板瞬时被缩放（未解决，见 `tests.md` 第 7 条）** |
