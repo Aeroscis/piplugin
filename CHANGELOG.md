@@ -26,7 +26,12 @@ A release is one commit on `main` that bumps the version in `CMakeLists.txt` and
 
 ## [Unreleased]
 
-**The first public release, planned as 0.2.0 — nothing is tagged yet.**
+Nothing yet. Add entries here as work lands; they move under the next version
+when it is cut.
+
+## [0.2.0] - 2026-09-22
+
+**The first public release.**
 
 ### Framework core
 
