@@ -63,7 +63,7 @@ target_link_libraries(${TARGET_NAME} PRIVATE pipluginframework)
 # third party
 target_link_libraries(${TARGET_NAME} PRIVATE Qt5::Widgets)
 
-# 部署 Qt 运行时 DLL 到可执行文件目录（构建树；安装时也会部署到 <root>/bin/<CONFIG>）
+# 部署 Qt 运行时 DLL 到可执行文件目录（构建树；开发目录由下方的 POST_BUILD 一并部署）
 get_target_property(QT_CORE_DLL Qt5::Core LOCATION)
 get_filename_component(QT_BIN_DIR "${QT_CORE_DLL}" DIRECTORY)
 add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
@@ -80,20 +80,18 @@ add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
 )
 
 # ------- 部署到开发目录 bin/<CONFIG>（POST_BUILD：构建即就绪，不依赖 install 阶段） -------------
+# Qt 运行时 DLL 与平台插件也在这里一并部署，使该目录自洽、可直接双击运行。
 add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}/platforms"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "$<TARGET_FILE:${TARGET_NAME}>"
+        "${QT_BIN_DIR}/Qt5Core.dll"
+        "${QT_BIN_DIR}/Qt5Gui.dll"
+        "${QT_BIN_DIR}/Qt5Widgets.dll"
         "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
-    COMMENT "Deploy ${TARGET_NAME} -> ${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
-)
-# Qt 运行时 DLL 与平台插件一并安装，保证安装后可直接运行
-install(FILES
-    "${QT_BIN_DIR}/Qt5Core.dll"
-    "${QT_BIN_DIR}/Qt5Gui.dll"
-    "${QT_BIN_DIR}/Qt5Widgets.dll"
-    DESTINATION ${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}
-)
-install(FILES "${QT_BIN_DIR}/../plugins/platforms/qwindows.dll"
-    DESTINATION ${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}/platforms
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${QT_BIN_DIR}/../plugins/platforms/qwindows.dll"
+        "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}/platforms"
+    COMMENT "Deploy ${TARGET_NAME} + Qt runtime -> ${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
 )
