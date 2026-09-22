@@ -97,10 +97,11 @@ load（模块 + 双向能力门禁 + 实例化 + 初始化）
 | Linux / macOS | FUT-01 / FUT-02 |
 | 崩溃隔离（插件崩了宿主也崩） | FUT-05（跨进程插件） |
 
-## 7. 现有回归脚本的分工
+## 7. 现有验证入口的分工
 
-| 脚本 | 管什么 |
+| 入口 | 管什么 |
 |---|---|
+| `ctest -C Debug` | 核心单元测试 + headless 冒烟 + 版本门禁负向用例；非 GUI，最快（见 quickstart 4.1） |
 | `scripts/run_selftest.ps1` | **本 harness**：生命周期 + 尺寸往返，多插件，退出码裁决 |
 | `scripts/verify_resize_fix.ps1` | 缩放修复的**像素级**回归：截图量测面板/插件边缘是否恒定 |
 | `scripts/drag_measure.ps1` | 交互拖拽路径的耗时/失败计数诊断 |

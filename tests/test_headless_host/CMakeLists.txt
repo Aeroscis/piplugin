@@ -72,3 +72,17 @@ if(TARGET pi_test_plugin_qt)
         )
     set_tests_properties(headless_host_smoke PROPERTIES TIMEOUT 120)
 endif()
+
+# BLK-03 负向用例：声明不兼容 api_version 的插件必须在 create_instance 之前被拒绝。
+# 这里**故意**使用 PASS_REGULAR_EXPRESSION —— 设了它 ctest 就不再检查退出码，
+# 而本用例的宿主本来就以非 0 退出（"拒绝"正是期望结果），所以要断言的是
+# "拒绝理由出现在宿主输出里"。上半句由 unit 用例负责验证纯函数边界。
+if(TARGET pi_test_plugin_badversion)
+    add_test(NAME version_gate_rejects_incompatible_plugin
+        COMMAND "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}/${TARGET_NAME}.exe" "pi_test_plugin_badversion.dll"
+        WORKING_DIRECTORY "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
+        )
+    set_tests_properties(version_gate_rejects_incompatible_plugin PROPERTIES
+        PASS_REGULAR_EXPRESSION "incompatible with host"
+        TIMEOUT 120)
+endif()

@@ -96,10 +96,12 @@ ctest --test-dir build -C Debug --output-on-failure
 
 | 用例 | 内容 |
 |---|---|
-| `unit` | `pi_guid_equal`、descriptor 帮助函数、`PiRefCountedBase` 引用计数与 destroy 回调、`pi_module_load` 失败路径、默认宿主服务的 headless / GUI 两形态 |
+| `unit` | `pi_guid_equal`、descriptor 帮助函数、`PiRefCountedBase` 引用计数与 destroy 回调、`pi_module_load` 失败路径、`pi_api_version_compatible` 边界、默认宿主服务的 headless / GUI 两形态 |
 | `headless_host_smoke` | headless 宿主加载真实插件跑完整个生命周期 |
+| `version_gate_rejects_incompatible_plugin` | 声明不兼容 `api_version` 的插件必须在实例化之前被拒（负向用例） |
 
-两个用例都**只按退出码判定**（0 = 通过），失败细节靠 `--output-on-failure` 打印。
+前两个用例**只按退出码判定**（0 = 通过）；第三个刻意反过来 —— "被拒绝"就是期望结果，
+所以断言的是宿主输出里出现拒绝理由。失败细节靠 `--output-on-failure` 打印。
 
 ### 4.2 插件生命周期自测（`--cycles`）
 

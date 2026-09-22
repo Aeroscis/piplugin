@@ -77,6 +77,7 @@ typedef int32_t PiResult;
 #define PI_E_UNEXPECTED        ((PiResult)-6)
 #define PI_E_NOTFOUND          ((PiResult)-7)
 #define PI_E_MISSINGCAPABILITY ((PiResult)-8)  /* required host capability absent */
+#define PI_E_VERSIONMISMATCH   ((PiResult)-9)  /* plugin/host api_version incompatible */
 
 #define PI_SUCCEEDED(r)        ((PiResult)(r) >= 0)
 #define PI_FAILED(r)           ((PiResult)(r) < 0)
@@ -151,7 +152,31 @@ PI_EXPORT const PiPluginCapability* pi_descriptor_find_capability(
 PI_EXPORT int pi_descriptor_provides(const PiPluginDescriptor* desc, const PiGuid* iid);
 PI_EXPORT int pi_descriptor_requires(const PiPluginDescriptor* desc, const PiGuid* iid);
 
-#define PI_API_VERSION 0x00010000  /* major.minor.patch -> 1.1.0 */
+/* --------------------------------------------------------------------------
+ * API 版本与协商
+ *
+ * 编码：高 16 位 = major（ABI 不兼容级变更），低 16 位 = minor（新增接口）。
+ *
+ * 宿主接受一个插件的条件（roadmap BLK-03）：
+ *     major 相同  且  插件版本 <= 宿主版本
+ * major 不同 = vtbl 布局可能已变，一律拒绝；插件 minor 高于宿主 = 插件可能用到
+ * 宿主还没有的接口，同样拒绝。判定用 pi_api_version_compatible()。
+ *
+ * "谁迁就谁"：**插件迁就宿主**。宿主是自己进程的主人，不会为了某个插件升级；
+ * 插件应尽量按较低的 API 版本编译，被拒时提示用户升级宿主。
+ *
+ * 注意：这里管的是**框架 API** 版本，不覆盖 app 自己定义的接口 —— 后者的演进
+ * 方式见 docs/design/interfaces.md 5.7。
+ * -------------------------------------------------------------------------- */
+#define PI_API_VERSION_MAJOR(v) ((uint32_t)(((uint32_t)(v) >> 16) & 0xFFFFu))
+#define PI_API_VERSION_MINOR(v) ((uint32_t)((uint32_t)(v) & 0xFFFFu))
+#define PI_API_VERSION_MAKE(major, minor) \
+    ((uint32_t)((((uint32_t)(major) & 0xFFFFu) << 16) | ((uint32_t)(minor) & 0xFFFFu)))
+
+#define PI_API_VERSION PI_API_VERSION_MAKE(1, 0)   /* 框架 API：major 1 / minor 0 */
+
+/* 宿主版本与插件版本是否兼容。返回非 0 = 可以加载。 */
+PI_EXPORT int pi_api_version_compatible(uint32_t host_version, uint32_t plugin_version);
 
 /* --------------------------------------------------------------------------
  * Host-side message posted by plugins via IPiHostServices::pi_post_message.

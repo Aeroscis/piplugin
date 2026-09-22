@@ -83,7 +83,8 @@ int main(int argc, char** argv)
     uint32_t slot = PI_HOST_SESSION_INVALID_SLOT;
     PiResult hr = pi_host_session_inspect(session, dllPath, &slot);
     if (PI_FAILED(hr)) {
-        if (hr == PI_E_MISSINGCAPABILITY) {
+        /* 能力门禁与版本门禁都属于"这台宿主按规矩拒绝了它"，不是宿主故障 */
+        if (hr == PI_E_MISSINGCAPABILITY || hr == PI_E_VERSIONMISMATCH) {
             printf("REJECTED: %s\n", pi_host_session_last_error(session));
         } else {
             printf("FATAL: pi_host_session_inspect failed (hr=%d): %s\n",

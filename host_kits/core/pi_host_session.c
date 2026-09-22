@@ -287,11 +287,20 @@ PiResult pi_host_session_inspect(PiPluginHostSession* session,
     pi_factory_get_descriptor(slot->factory, &desc);
     slot->descriptor = desc;
 
-    /* --- 版本门禁插入点 ---------------------------------------------------
-     * roadmap BLK-03 要求在此处比对 descriptor->api_version 与宿主支持的版本，
-     * 不兼容即拒绝。该工作项（含核心导出函数 pi_api_version_compatible）尚未
-     * 落地，故此处暂不检查。BLK-03 完成后在这里加一次调用即可，其余不动。
-     * -------------------------------------------------------------------- */
+    /* 版本门禁（roadmap BLK-03）：插件声明的 api_version 必须与宿主兼容。
+     * 与能力门禁一样在**实例化之前**判定，所以不兼容的插件连实例都不会被创建。 */
+    if (desc && !pi_api_version_compatible(PI_API_VERSION, desc->api_version)) {
+        SessionSetError(session,
+                        "plugin api_version 0x%08X (major %u, minor %u) is incompatible with host 0x%08X (major %u, minor %u); the plugin must not be newer than the host",
+                        (unsigned)desc->api_version,
+                        (unsigned)PI_API_VERSION_MAJOR(desc->api_version),
+                        (unsigned)PI_API_VERSION_MINOR(desc->api_version),
+                        (unsigned)PI_API_VERSION,
+                        (unsigned)PI_API_VERSION_MAJOR(PI_API_VERSION),
+                        (unsigned)PI_API_VERSION_MINOR(PI_API_VERSION));
+        SessionTearDownSlot(session, slot, (uint32_t)index, "rollback");
+        return PI_E_VERSIONMISMATCH;
+    }
 
     /* 双向门禁：都要在实例化之前 */
     hr = SessionGatePluginRequirements(session, desc);

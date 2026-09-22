@@ -66,6 +66,7 @@ class PiPluginFrameworkConan(ConanFile):
         "PI_BUILD_HEADLESS_HOST": [True, False],  # headless 测试宿主（仅依赖核心）
         "PI_BUILD_TEST_PLUGIN": [True, False],     # qt 测试插件（依赖 Qt5 + qt adapter kit）
         "PI_BUILD_TEST_PLUGIN_IMGUI": [True, False],  # imgui 测试插件（依赖 imgui + imgui adapter kit）
+        "PI_BUILD_TEST_PLUGIN_BADVERSION": [True, False],  # 声明不兼容 api_version 的测试插件（BLK-03 负向用例，仅依赖核心）
     }
     default_options = {
         "shared": True,
@@ -84,6 +85,7 @@ class PiPluginFrameworkConan(ConanFile):
         "PI_BUILD_HEADLESS_HOST": True,
         "PI_BUILD_TEST_PLUGIN": True,
         "PI_BUILD_TEST_PLUGIN_IMGUI": True,
+        "PI_BUILD_TEST_PLUGIN_BADVERSION": True,
     }
 
     exports_sources = "CMakeLists.txt", "cmake/*", "include/*", "src/*", "adapters/*", "host_kits/*", "tests/*"

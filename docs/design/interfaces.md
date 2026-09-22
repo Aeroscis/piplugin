@@ -31,6 +31,7 @@ typedef struct PiGuid {
 | `PI_E_UNEXPECTED` | -6 | 意外错误 |
 | `PI_E_NOTFOUND` | -7 | 未找到 |
 | `PI_E_MISSINGCAPABILITY` | -8 | 宿主缺少必需能力 |
+| `PI_E_VERSIONMISMATCH` | -9 | 插件与宿主的 `api_version` 不兼容 |
 
 辅助宏：`PI_SUCCEEDED(r)`（≥0）、`PI_FAILED(r)`（<0）。
 
@@ -60,7 +61,45 @@ typedef struct PiPluginDescriptor {
 - `pi_descriptor_provides(desc, iid)` → 是否提供该能力
 - `pi_descriptor_requires(desc, iid)` → 是否必需该能力
 
-### 1.5 插件入口点
+### 1.5 api_version 协商策略
+
+`api_version` 是**插件编译时所用框架 API 的版本**，编码为 `major << 16 | minor`
+（用 `PI_API_VERSION_MAJOR` / `PI_API_VERSION_MINOR` / `PI_API_VERSION_MAKE` 读写）。
+
+| 情况 | 判定 |
+|---|---|
+| major 不同 | **不兼容** —— vtbl 布局可能已变，宿主拒绝加载 |
+| major 相同、插件 minor ≤ 宿主 minor | 兼容，放行 |
+| major 相同、插件 minor > 宿主 minor | **拒绝** —— 插件可能用到宿主还没有的接口 |
+
+判定入口：`pi_api_version_compatible(host_version, plugin_version)`（核心库导出，
+返回非 0 表示可以加载）。
+
+**谁迁就谁：插件迁就宿主。** 宿主是自己进程的主人，不会为了某个插件升级框架；
+插件应尽量按较低的 API 版本编译，被拒时提示用户升级宿主。
+
+宿主侧的门禁在宿主 kit L0 里实现（`pi_host_session_load()` / `inspect()` 内部），
+位置在 `pi_factory_create_instance()` **之前**，因此不兼容的插件连实例都不会被创建。
+被拒时返回 `PI_E_VERSIONMISMATCH`，可读原因在 `pi_host_session_last_error()`，
+形如：
+
+```
+plugin api_version 0x00020000 (major 2, minor 0) is incompatible with host
+0x00010000 (major 1, minor 0); the plugin must not be newer than the host
+```
+
+不用宿主 kit 的宿主，自己做一次同样的检查即可（同样必须在实例化之前）：
+
+```c
+const PiPluginDescriptor* desc = NULL;
+pi_factory_get_descriptor(factory, &desc);
+if (desc && !pi_api_version_compatible(PI_API_VERSION, desc->api_version))
+    return;   /* 拒绝：版本不兼容 */
+```
+
+> 这里的 `api_version` 只管**框架 API**；app 自己定义的接口怎么演进版本，见 5.7。
+
+### 1.6 插件入口点
 
 ```c
 typedef PiResult (*PiPluginEntryProc)(IPiPluginFactory** out_factory);
@@ -425,13 +464,13 @@ if (!pi_descriptor_provides(desc, &MY_APP_PROTOCOL_IID))
     return;   /* 拒绝：本生态要求插件实现该接口 */
 ```
 
-### 5.5 目前不能做的两件事
+### 5.5 目前不能做的一件事
 
-- **反向通道（宿主把自己的自定义服务提供给插件）**：`PiDefaultHost` 封闭，只认
-  框架内建的三个 IID，插件无法 QI 到 app 自定义的宿主服务。这是 roadmap 的 APP-01
-  （可组合宿主服务 `pi_host_services_create_ex`），尚未落地。
-- **自定义接口的版本协商**：`descriptor->api_version` 的运行时检查属 roadmap BLK-03，
-  尚未落地；在它完成前，接口演进请用"新增 IID + 新增接口"的方式，不要改已有 vtbl。
+**反向通道（宿主把自己的自定义服务提供给插件）**：`PiDefaultHost` 封闭，只认框架
+内建的三个 IID，插件无法 QI 到 app 自定义的宿主服务。这是 roadmap 的 APP-01
+（可组合宿主服务 `pi_host_services_create_ex`），尚未落地。
+
+框架 API 的版本协商已经落地（见 1.5）；app 自定义接口的版本演进方式见 5.7。
 
 ### 5.6 三条禁令
 
@@ -439,6 +478,21 @@ if (!pi_descriptor_provides(desc, &MY_APP_PROTOCOL_IID))
 2. **vtbl 里不放 C++ 类型、不抛异常**——必须纯 C ABI，调用约定一律 `PI_CALL`，
    否则 Rust/C#/Python 的 FFI 承诺立刻失效；
 3. **QI 必须返回 AddRef 过的指针**——宿主（以及框架的 session）一定会 release。
+
+### 5.7 你的协议怎么演进版本
+
+框架的 `api_version` 只管**框架 API 本身**，不覆盖 app 自定义的接口。两条规则：
+
+1. **只增不改**：要给协议加方法，就新增一个 IID + 新接口。老插件不实现新接口，
+   宿主 QI 失败即降级 —— 已发布的 vtbl 永远不动（COM 规则）。
+2. **表达"我的协议是第几版"**，二选一：
+   - 给协议再定义一个 IID 变体（如 `MY_APP_PROTOCOL_V2_IID`），宿主按自己支持的
+     版本依次 QI；
+   - 或用 descriptor 的自由 metadata 通道声明协议版本号（roadmap APP-04 的
+     `properties`，尚未落地；在那之前用 IID 变体）。
+
+宿主侧推荐做法：把"本生态要求哪几个协议 IID"全部交给 `pi_host_session_require()`
+（见 5.4），不满足的插件在实例化之前就被拒绝。
 
 ## 6. 线程模型总结
 
