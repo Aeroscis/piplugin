@@ -15,6 +15,7 @@ option(PI_BUILD_TEST_PLUGIN_SERVICE "Build the service (headless, IPiService) te
 option(PI_BUILD_TEST_HOST "Build the imgui-based test host" ON)                    # 依赖: imgui
 option(PI_BUILD_TEST_HOST_QT "Build the Qt-based test host" ON)                    # 依赖: Qt5 imgui adapter
 option(PI_BUILD_HEADLESS_HOST "Build the headless (console) test host" ON)         # 依赖: framework core
+option(PI_BUILD_TEST_HOST_MULTI "Build the multi-plugin test host (APP-08 acceptance)" ON)  # 依赖: framework core + host kit L0
 
 # unit tests（核心回归；ctest 一条命令跑完）
 if(PI_BUILD_UNIT_TESTS)
@@ -63,4 +64,9 @@ endif()
 # headless (console) test host
 if(PI_BUILD_HEADLESS_HOST)
     add_subdirectory(test_headless_host)
+endif()
+
+# multi-plugin test host（roadmap APP-08 的验收：一进程两个 Qt 插件）
+if(PI_BUILD_TEST_HOST_MULTI)
+    add_subdirectory(test_host_multi)
 endif()

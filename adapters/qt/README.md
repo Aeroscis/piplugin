@@ -1,15 +1,16 @@
 # piplugin_qt — Qt UI 适配器套件
 
 这是 piplugin 的第一个 **UI 适配器套件（adapter kit）**：它把"Qt 兼容层"
-从插件代码中抽离出来，封装成一个可复用的静态库。任何 Qt 写的插件链接它之后，
-就获得了在**任意宿主**（imgui、wxWidgets、裸 Win32……）窗口内运行 Qt 界面的能力，
-而宿主完全不需要知道 Qt 的存在。
+从插件代码中抽离出来，封装成一个可复用的 **SHARED 库**（一套 0.2.0 时是静态库，
+见文末"边界与限制"）。任何 Qt 写的插件链接它之后，就获得了在**任意宿主**
+（imgui、wxWidgets、裸 Win32……）窗口内运行 Qt 界面的能力，而宿主完全不需要
+知道 Qt 的存在。
 
 ## 套件内部做了什么
 
 | 职责 | 实现 |
 |---|---|
-| Qt 事件循环 | 进程（模块）级唯一的 `QApplication`，**创建在宿主的 GUI 线程上**；宿主每帧调 `pi_on_idle()`，套件在其中调 `processEvents()` 给 Qt 分一小片时间 |
+| Qt 事件循环 | 进程（进程内所有 Qt 插件共有的一份套件）唯一的 `QApplication`，**创建在宿主的 GUI 线程上**；宿主每帧调 `pi_on_idle()`，套件在其中调 `processEvents()` 给 Qt 分一小片时间 |
 | 嵌入宿主窗口 | `pi_attach()` 时先用 Qt 的 `_q_embedded_native_parent_handle` 属性把宿主容器 HWND 告知 Qt，**让 Qt 自己**把控件窗口创建成容器的 `WS_CHILD`（不做"顶层窗口 SetParent"、不叠加标题栏/边框、不按屏幕坐标算位置）；Linux/macOS 的 XEmbed/NSView 为 TODO |
 | 尺寸/可见性 | `pi_on_resize()` / `pi_set_visible()` 直接同步执行——本来就在同一个线程，无需 marshal |
 | 生命周期 | 控件销毁、`QApplication` 析构、`user_data` 的 retain/release 全部在宿主线程**同步**完成；`pi_detach()` 返回时控件已经没了，`pi_release()`（引用归零）返回时 `QApplication` 也已经析构完——此后宿主 `FreeLibrary` 绝对安全 |
@@ -82,7 +83,8 @@ PiResult PI_CALL MyPlugin::GetView(void* self, IPiPluginView** out) {
 
 // 3. 插件的 pi_terminate() 里收尾（可选但强烈建议）
 PiResult PI_CALL MyPlugin::Term(void* self) {
-    pi_qt_view_shutdown();   // 幂等：把控件 + QApplication 全部拆干净
+    MyPlugin* me = (MyPlugin*)self;
+    pi_qt_view_shutdown_owner(me);   // 幂等：拆掉**本插件**的控件（见下）
     return PI_OK;
 }
 ```
@@ -93,11 +95,21 @@ CMake：
 target_link_libraries(my_plugin PRIVATE piplugin piplugin_qt)
 ```
 
+套件是 SHARED 库，所以**插件部署时要带上 `piplugin_qt<后缀>.dll`**（放在插件 DLL
+旁边或 PATH 上）。本仓库的构建会把套件 DLL 与 Qt 运行时 DLL 一起部署到
+`bin/<CONFIG>/`。链接方式不变：`target_link_libraries` 一样写。
+
+**关于 `pi_qt_view_shutdown_owner(owner)`**（`owner` = 创建视图时
+`PiQtViewDesc::user_data`，通常就是插件实例）：QUIT 时只拆**这个 owner 的**控件。
+套件是进程共享的，`pi_qt_view_shutdown()`（不带 owner）会拆掉进程里**所有** Qt
+插件的界面 —— 只有在确定整个进程的 Qt 用量都归你时才用它。`QApplication` 属于进程，
+由**最后一个**销毁的视图负责析构，与谁先退出无关。
+
 **宿主侧只要遵守两条**：
 
 1. 每帧调用一次 `pi_view_on_idle()`（就是事件循环的"心跳"）。
 2. 卸载插件前先 `pi_view_detach()` + `pi_release()`；插件的 `pi_terminate()`
-   里调了 `pi_qt_view_shutdown()` 的话，即使忘了这两步也不会崩。
+   里调了 `pi_qt_view_shutdown_owner()` 的话，即使忘了这两步也不会崩。
 
 ## 宿主窗口嵌入的实现（Windows，重要）
 
@@ -139,9 +151,14 @@ target_link_libraries(my_plugin PRIVATE piplugin piplugin_qt)
   宿主的主线程/消息循环上（非 Qt 宿主的 GUI 线程就是进程主线程，符合 Qt 要求）。
   如果宿主自己就是 Qt 程序，不要用这个套件——应该让插件控件直接进宿主自己的
   Qt 事件循环。
-- **静态库 + 单插件进程**：当前以 STATIC 库形式链接进每个插件 DLL；如果一个进程
-  加载多个各自链接了本套件的 Qt 插件 DLL，会出现多个 `QApplication` 冲突。多 Qt
-  插件场景请把套件编译为 SHARED 并让所有插件共用（TODO）。
+- **SHARED（APP-08）**：套件是 SHARED 库，进程里只有一份，因此**同一进程可以同时
+  加载多个 Qt 插件 DLL**，它们共用一个 `QApplication`（Qt 只允许一个）。
+  0.2.0 时套件是 STATIC：每个 Qt 插件 DLL 各带一份套件状态，第二个插件 attach 时
+  会去建第二个 `QApplication`，Qt 直接断言
+  `"there should be only one application object"`。回归用例：
+  `tests/test_host_multi`（ctest `multi_plugin_qt_in_one_process`）——两个不同的 Qt
+  插件模块同时加载、各自嵌进自己的容器、各自继续跑 Qt 定时器，然后一起卸载。
+  **部署要求**：插件运行环境必须能找到套件 DLL（`bin/<CONFIG>/` 已自动部署）。
 - **宿主不要阻塞自己的消息循环太久**：Qt 的定时器/输入靠宿主的 `pi_on_idle()`
   驱动，宿主卡住的时候插件界面也会卡住（这是正确行为，不是 bug）。
 - 后续可以按同样的模式增加 `piplugin_gtk`、`piplugin_webview`

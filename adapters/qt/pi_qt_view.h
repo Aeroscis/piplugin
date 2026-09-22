@@ -39,7 +39,7 @@
  *   pi_qt_view_create(&desc, out);
  *
  *   // inside IPiPluginBase::pi_terminate (recommended):
- *   pi_qt_view_shutdown();
+ *   pi_qt_view_shutdown_owner(this);
  *
  * Host requirements: call IPiPluginView::pi_on_idle() once per frame, and
  * detach + release the view before unloading the plugin module.
@@ -54,6 +54,33 @@
 #include "piplugin/pi_plugin.h"
 
 #include <QWidget>
+
+/* --------------------------------------------------------------------------
+ * Symbol visibility
+ *
+ * The kit is a SHARED library (roadmap APP-08): the process-level state it owns
+ * (the single QApplication, the live-view registry) must exist ONCE for the
+ * whole process, so every Qt plugin links the same DLL instead of embedding its
+ * own copy. On Windows that means the four functions below have to be exported
+ * explicitly - this repository deliberately does not use
+ * CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS (see interface-freeze-review.md F1, where
+ * that switch leaked CRT internals out of the core DLL).
+ *
+ * PIPLUGIN_QT_BUILDING is defined for the kit's own translation units only;
+ * consumers see dllimport. Taking the address of a dllimport function is why
+ * plugin code must not put framework functions straight into a vtable (the
+ * C4232 note in docs/design/interfaces.md 5.3) - this header is not a vtable,
+ * so the usual call sites are unaffected.
+ * -------------------------------------------------------------------------- */
+#if defined(_WIN32) || defined(_WIN64)
+#  ifdef PIPLUGIN_QT_BUILDING
+#    define PI_QT_API __declspec(dllexport)
+#  else
+#    define PI_QT_API __declspec(dllimport)
+#  endif
+#else
+#  define PI_QT_API __attribute__((visibility("default")))
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -93,25 +120,38 @@ typedef struct PiQtViewDesc {
 /* Create a Qt-backed IPiPluginView. The returned view starts with
  * refcount 1; release it with ->pi_release() (after pi_detach() or let
  * release handle a still-attached view). */
-PiResult pi_qt_view_create(const PiQtViewDesc* desc, IPiPluginView** out_view);
+PI_QT_API PiResult pi_qt_view_create(const PiQtViewDesc* desc, IPiPluginView** out_view);
 
-/* Tear down every live view of this module and destroy the QApplication,
- * synchronously, on the calling (host GUI) thread. Idempotent, and safe even
- * with views still attached.
+/* Tear down the live views of THIS PLUGIN, synchronously, on the calling (host
+ * GUI) thread; the QApplication is destroyed when the last view in the process
+ * goes away. Idempotent, and safe even with views still attached.
+ *
+ * `owner` is the value the plugin passed as PiQtViewDesc::user_data when it
+ * created those views - almost always the plugin instance (`this`). Scoping the
+ * teardown is what makes the SHARED kit safe for several Qt plugins at once:
+ * "every view in the process" would reach into the OTHER plugins that are still
+ * loaded and delete their widgets.
  *
  * The host must make sure this has happened - by detaching and releasing the
  * views, or by calling this from the plugin's pi_terminate() - before it
- * unloads the module: widget destruction and QApplication teardown run code
- * compiled into this module. */
-void pi_qt_view_shutdown(void);
+ * unloads the plugin's module: widget destruction runs code compiled into the
+ * PLUGIN, which is about to be unmapped. */
+PI_QT_API void pi_qt_view_shutdown_owner(void* owner);
+
+/* The process-wide hammer: tear down every live view (whichever plugin it
+ * belongs to) and destroy the QApplication. Only correct when the caller owns
+ * every Qt plugin in the process; it is the diagnostic / last-resort path, and
+ * what the per-module kits of 0.2.0 meant by "shutdown". Prefer
+ * pi_qt_view_shutdown_owner(). */
+PI_QT_API void pi_qt_view_shutdown(void);
 
 /* The plugin's root widget, or NULL if it has not been created yet.
  * Created on the host GUI thread; only touch it from there. */
-QWidget* pi_qt_view_widget(IPiPluginView* view);
+PI_QT_API QWidget* pi_qt_view_widget(IPiPluginView* view);
 
 /* Run fn(user) on the host GUI thread. The kit is single-threaded, so this
  * simply runs it inline. */
-void pi_qt_view_post(IPiPluginView* view, void (*fn)(void* user), void* user);
+PI_QT_API void pi_qt_view_post(IPiPluginView* view, void (*fn)(void* user), void* user);
 
 #ifdef __cplusplus
 }

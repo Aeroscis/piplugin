@@ -12,9 +12,27 @@
 #include <QSizePolicy>
 #include <stdio.h>
 
+/* 同一份源码编出两个**不同的** Qt 插件 DLL（roadmap APP-08 的多插件同进程验收）。
+ *
+ * 必须是两个不同的模块：同一个 DLL 加载两次共享同一份静态数据，套件"每个模块
+ * 一份进程级状态"的问题根本测不出来。变体之间只差：显示名、class GUID，以及
+ * 心跳消息码（宿主据此分别确认两个插件都真的在跑）。
+ *
+ * 变体 A = pi_test_plugin_qt.dll（默认），变体 B = 由 CMake 传
+ * PI_TEST_QT_VARIANT_B 编出的 pi_test_plugin_qt2.dll。 */
+#if defined(PI_TEST_QT_VARIANT_B)
+static const PiGuid QT_PLUGIN_CLASS_GUID =
+    PI_GUID(0x7F83A101, 0x5C4D, 0x4E2A,
+            0x91, 0xD3, 0x8A, 0xFC, 0x2E, 0xB1, 0x44, 0x00);
+#  define PI_QT_PLUGIN_NAME       "Qt Test Plugin B"
+#  define PI_QT_PLUGIN_HEARTBEAT  ((uint32_t)0x2001u)
+#else
 static const PiGuid QT_PLUGIN_CLASS_GUID =
     PI_GUID(0x7F83A100, 0x5C4D, 0x4E2A,
             0x91, 0xD3, 0x8A, 0xFC, 0x2E, 0xB1, 0x44, 0x00);
+#  define PI_QT_PLUGIN_NAME       "Qt Test Plugin"
+#  define PI_QT_PLUGIN_HEARTBEAT  ((uint32_t)0x2000u)
+#endif
 
 /* Animated colour block with its tick counter painted inside - the Qt
  * counterpart of the imgui plugin's "ImGui Heartbeat" window.
@@ -79,7 +97,7 @@ QtPluginFactory::QtPluginFactory()
                                     (const IPiUnknownVtbl*)&s_factory_vtbl,
                                     &pi_cpp_destroy<QtPluginFactory>);
 
-    m_descriptor.name = "Qt Test Plugin";
+    m_descriptor.name = PI_QT_PLUGIN_NAME;
     m_descriptor.vendor = "piplugin";
     m_descriptor.version = "1.2.0";
     m_descriptor.category = "UI/Test";
@@ -199,8 +217,12 @@ PiResult QtPlugin::Terminate()
      * order (detach + release the view first) is already safe; calling this
      * makes the teardown complete regardless of how the host unwinds - which
      * is what stops hosts that just drop the module from crashing inside Qt
-     * during unload. */
-    pi_qt_view_shutdown();
+     * during unload.
+     *
+     * _owner(this)：套件是 SHARED 的，不带 owner 的 pi_qt_view_shutdown() 是
+     * "拆掉进程里所有 Qt 视图"的大锤 —— 在多 Qt 插件进程里会把别的插件的界面
+     * 一起拆掉。只拆自己的（tests/test_host_multi 正是断言这一点）。 */
+    pi_qt_view_shutdown_owner(this);
     m_view = NULL;
     return PI_OK;
 }
@@ -260,12 +282,16 @@ QWidget* QtPlugin::CreateUi(void* user_data)
     });
     heartbeatTimer->start(40);
 
-    /* Reports a tick to the host periodically (msg 0x2000) so an automated
-     * run can tell "the host really drives the Qt event loop" from "the UI
-     * was painted once and then froze". */
+    /* Reports a tick to the host periodically (变体 A 用 0x2000、变体 B 用 0x2001）
+     * so an automated run can tell "the host really drives the Qt event loop" from
+     * "the UI was painted once and then froze" —— 多插件同进程的验收据此分别确认
+     * 两个插件都在跑（见 tests/test_host_multi）。
+     * 第一帧就报一次（tick 1），否则 40ms 的定时器要等到 25 tick（约 1 秒）才有
+     * 第一条消息，短跑的自检会看不到任何证据。 */
     QObject::connect(heartbeatTimer, &QTimer::timeout, [me, heartbeatTick]() {
-        if (me->m_host && (*heartbeatTick % 25) == 0)
-            pi_host_post_message(me->m_host.get(), 0x2000, (uintptr_t)*heartbeatTick, 0);
+        if (me->m_host && ((*heartbeatTick % 25) == 1))
+            pi_host_post_message(me->m_host.get(), PI_QT_PLUGIN_HEARTBEAT,
+                                 (uintptr_t)*heartbeatTick, 0);
     });
 
     return w;

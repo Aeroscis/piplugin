@@ -123,15 +123,17 @@ target_link_libraries(my_plugin PRIVATE piplugin)
 target_link_libraries(my_plugin PRIVATE piplugin_imgui)  # 或 piplugin_qt
 ```
 
-套件是 STATIC 库，会把 imgui / Qt5::Widgets 一起带进来。
+套件里 `piplugin_imgui` 是 STATIC（会把 imgui 一起带进来），
+`piplugin_qt` 是 **SHARED**（进程里同一份套件状态，见注意事项表）。
 找不到依赖时套件自检禁用（configure 有 STATUS/WARNING 提示）。
+Qt 插件部署时要带上套件 DLL（本仓库构建会自动部署到 `bin/<CONFIG>/`）。
 
 ## 5. 注意事项与限制
 
 | 事项 | 说明 |
 |---|---|
 | Qt 套件面向**非 Qt 宿主** | 宿主本身是 Qt 时不要用本套件 |
-| 多 Qt 插件同进程 | 各自链接 STATIC Qt 套件会冲突（多个 QApplication）→ TODO：套件改 SHARED 共享 |
+| 多 Qt 插件同进程 | ✅ 已支持：套件是 SHARED，所有 Qt 插件共用进程里唯一一个 `QApplication`；回归用例 `tests/test_host_multi`（ctest `multi_plugin_qt_in_one_process`）。拆控件用 `pi_qt_view_shutdown_owner(owner)`，不要用进程级的 `pi_qt_view_shutdown()` |
 | Qt 套件 Linux/macOS 嵌入 | `SetParent` 仅 Windows；X11 XEmbed / NSView 嵌入未实现（TODO） |
 | imgui 套件 | 仅 Windows（D3D11 backend），其他平台待移植 |
 | 回调线程 | imgui 回调在宿主 GUI 线程；Qt 控件代码只能在 Qt 线程触碰 |

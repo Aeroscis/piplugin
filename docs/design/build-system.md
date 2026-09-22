@@ -134,30 +134,35 @@ add_library(piplugin_imgui STATIC)
 target_link_libraries(... PUBLIC piplugin imgui::imgui)
 ```
 
-| 套件 | 依赖 | 状态 |
-|---|---|---|
-| `piplugin_qt` | Qt5 Widgets | 找不到 Qt5 则禁用 |
-| `piplugin_imgui` | imgui (conan) | 找不到 imgui 则禁用 |
+| 套件 | 依赖 | 形态 | 状态 |
+|---|---|---|---|
+| `piplugin_qt` | Qt5 Widgets | **SHARED**（APP-08：进程内共享一个 `QApplication`） | 找不到 Qt5 则禁用 |
+| `piplugin_imgui` | imgui (conan) | STATIC | 找不到 imgui 则禁用 |
 
 总开关 `PI_BUILD_ADAPTERS`（Conan 侧同名选项透传）：关死时所有 kit 一律不编。
-每个 kit 另有独立安装规则：静态库 → `lib/<CONFIG>/`，公共头 →
-`include/piplugin/adapters/<kit>/`，导出目标 → 独立
+每个 kit 另有独立安装规则：库 → `lib/<CONFIG>/`（SHARED 的 Windows 运行时 DLL 走
+`bin/<CONFIG>/`），公共头 → `include/piplugin/adapters/<kit>/`，导出目标 → 独立
 `piplugin<Kit>AdapterTargets.cmake`（由伞配置按存在性挂接）。
+SHARED 的 Qt 套件 DLL 与核心库一样在 POST_BUILD 阶段自动部署到 `bin/<CONFIG>/`，
+插件运行时必须能找到它。
 
 ### 3.5 测试（tests/）
 
-五个可选目标，各自做依赖自检，不满足即 `return()` 禁用（不影响整体构建）：
+可选目标，各自做依赖自检，不满足即 `return()` 禁用（不影响整体构建）：
 
 | 目标 | 依赖 | 类型 |
 |---|---|---|
 | `pi_test_host_imgui` | imgui + backends | exe（Win32） |
 | `pi_test_host_qt` | Qt5 + imgui 套件 | exe（Win32） |
 | `pi_test_host_headless` | 仅核心 | exe（console，纯 C） |
-| `pi_test_plugin_qt` | Qt5 + Qt 套件 | dll（仅 Windows） |
+| `pi_test_host_multi` | 仅核心 + 宿主 kit L0 | exe（console，APP-08 多插件同进程验收） |
+| `pi_test_plugin_qt` / `pi_test_plugin_qt2` | Qt5 + Qt 套件（SHARED） | dll（仅 Windows，同一份源码两个变体） |
+| `pi_test_plugin_service` | 仅核心 | dll（纯 C 服务插件，APP-07） |
 | `pi_test_plugin_imgui` | imgui + imgui 套件 | dll |
 
 Qt 运行时部署：宿主/插件构建后自动复制 `Qt5Core/Gui/Widgets.dll` + `platforms/qwindows.dll`
 到目标目录；install 时也一并安装到 `<root>/bin/<CONFIG>`。
+SHARED 的 `piplugin_qt` 套件 DLL 同样由自身 POST_BUILD 部署到 `bin/<CONFIG>/`。
 
 ## 4. `CMakeUserPresets.json` 说明
 

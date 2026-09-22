@@ -26,8 +26,38 @@ A release is one commit on `main` that bumps the version in `CMakeLists.txt` and
 
 ## [Unreleased]
 
+### Changed
+
+- **The Qt adapter kit is SHARED (APP-08).** `piplugin_qt` owns process-level
+  state - the single `QApplication` and the live-view registry - so as a static
+  library every Qt plugin DLL carried its own copy: a process that loaded two of
+  them tried to construct a second `QApplication`, which Qt answers with
+  `ASSERT failure in QCoreApplication: "there should be only one application
+  object"` (reproduced while building this change; see
+  `tests/test_host_multi`). As a DLL there is one copy per process and the second
+  plugin reuses the `QApplication` the first one created. Two consequences for
+  consumers: plugin deployments must ship `piplugin_qt<debug-suffix>.dll` next to
+  the plugin (`PI_QT_API` now exports the kit's four functions explicitly, and the
+  build deploys the DLL), and a plugin that tears its UI down from
+  `pi_terminate()` should call the new `pi_qt_view_shutdown_owner(owner)` - it
+  only touches ITS views, where the process-wide `pi_qt_view_shutdown()` (kept,
+  now documented as a last-resort hammer) would reach into other Qt plugins that
+  are still loaded and delete their widgets. The `QApplication` is destroyed by
+  the last view that goes away, whoever that is.
+
 ### Added
 
+- **The multi-plugin acceptance host (APP-08).** `tests/test_host_multi` is a
+  deliberately plain Win32 host (no D3D, no resize loop, so the delicate
+  rendering machinery in `tests/test_host` is not perturbed by it) that loads TWO
+  different Qt plugin modules into two slots of one session, embeds each in its
+  own container, drives both from its own loop, and unloads both. It asserts that
+  each plugin's native window is a real, visible child of ITS container, and that
+  both plugins' Qt timers keep posting (the two variants report on different
+  message codes). `ctest` case `multi_plugin_qt_in_one_process`. To have two
+  distinct modules from one source, `tests/test_plugin` now builds
+  `pi_test_plugin_qt2.dll` from the same sources as `pi_test_plugin_qt.dll`,
+  differing only in class GUID, display name and heartbeat code.
 - **A service plugin and its headless acceptance run (APP-07).**
   `tests/test_plugin_service/` is a pure-C plugin that declares
   `PI_IID_SERVICE PROVIDES`, has no UI at all (`pi_get_view` answers

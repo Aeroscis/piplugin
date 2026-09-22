@@ -174,13 +174,22 @@ typedef struct PiRefCountedBase {
 
 ### 7.1 piplugin_qt（Qt 套件）
 
-- **进程级 `PiQtRuntime`**：一个后台线程跑唯一 `QApplication::exec()`，按引用计数启停。
-- **嵌入**：`pi_attach()` 时在 Qt 线程内 `SetParent` 把控件 HWND 挂进宿主容器（X11/macOS 为 TODO）。
-- **宿主驱动 idle**：`pi_on_idle()` 只做 dispatcher `wakeUp()`，**绝不**跨线程 `processEvents()`。
-- **线程 marshal**：`pi_on_resize()` / `pi_set_visible()` 通过 queued invocation 切到 Qt 线程。
-- **生命周期**：`pi_detach()` 异步；`pi_release()`（引用归零）**同步阻塞**直到 Qt 线程清理完毕
-  并 join 运行时线程，保证宿主随后 `FreeLibrary` 安全。
-- **限制**：面向**非 Qt 宿主**；单进程多 Qt 插件会冲突（套件需改为 SHARED，见 TODO）。
+- **进程唯一的 `QApplication`**：套件是 SHARED 库，进程里只有一份；`QApplication`
+  **创建在宿主的 GUI 线程上**（Qt 要求它就是 GUI 线程；Win32 也要求父子窗口同线程），
+  由宿主每帧调用的 `pi_on_idle()` 驱动（内部是有上限的一段 `processEvents()`）。
+- **嵌入**：`pi_attach()` 在控件原生窗口创建**之前**把宿主容器 HWND 写进
+  `_q_embedded_native_parent_handle`，让 **Qt 自己**把控件窗口建成容器的 `WS_CHILD`
+  （无边框余量、按父客户区坐标；`SetParent` 只是兜底路径）。X11/macOS 为 TODO。
+- **全同步、单线程**：attach / detach / resize / set_visible 都在宿主 GUI 线程上同步完成；
+  `pi_release()` 返回时控件**与** `QApplication` 都已经析构（最后一次视图销毁时），
+  宿主随后 `FreeLibrary` 安全。**不存在**后台 Qt 线程 —— 早期"私有线程跑
+  `QApplication::exec()` + queued invocation"的写法会造成卸载崩溃与 detach 死锁，
+  不要改回去（详见 `adapters/qt/README.md`）。
+- **多 Qt 插件同进程**：共用那一个 `QApplication`；拆控件用带 owner 的
+  `pi_qt_view_shutdown_owner()`，进程级的 `pi_qt_view_shutdown()` 只用于"整个进程的
+  Qt 用量都归我"的场景。回归用例 `tests/test_host_multi`（APP-08）。
+- **限制**：面向**非 Qt 宿主**（宿主自己就是 Qt 程序时不要把插件 Qt 再套一层）；
+  Linux/macOS 的嵌入未实现。
 
 ### 7.2 piplugin_imgui（imgui 套件）
 
@@ -207,7 +216,7 @@ typedef struct PiRefCountedBase {
 | 根 `CMakeLists.txt` | 引入 pi 模块、`pi_init_glob_proj`、汇总子目录 |
 | `cmake/pi/` | 项目自定义模块：语言标准、路径常量、编译选项、消息、文件分类 |
 | `src/piplugin/` | 核心 SHARED 库 + export/config 安装 |
-| `adapters/` | 两个 STATIC 套件（依赖不满足时自检禁用） |
+| `adapters/` | 两个 UI 套件（`imgui` STATIC / `qt` SHARED；依赖不满足时自检禁用） |
 | `tests/` | 三个宿主 + 两个插件，依赖不满足时优雅 DISABLED |
 
 ### 8.3 产物布局

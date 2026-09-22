@@ -570,7 +570,7 @@ static void piqt_view_destroy(void* self_ptr)
  * Public API
  * ======================================================================== */
 
-extern "C" PiResult pi_qt_view_create(const PiQtViewDesc* desc, IPiPluginView** out_view)
+extern "C" PI_QT_API PiResult pi_qt_view_create(const PiQtViewDesc* desc, IPiPluginView** out_view)
 {
     if (!desc || !desc->create_widget || !out_view)
         return PI_E_INVALIDARG;
@@ -586,13 +586,41 @@ extern "C" PiResult pi_qt_view_create(const PiQtViewDesc* desc, IPiPluginView** 
     return PI_OK;
 }
 
-extern "C" void pi_qt_view_shutdown(void)
+extern "C" PI_QT_API void pi_qt_view_shutdown_owner(void* owner)
+{
+    piqt_trace("shutdown_owner: begin owner=%p", owner);
+    /* Force every view OF THIS OWNER through a full detach while that plugin is
+     * still mapped. The host normally detaches first; this covers hosts that
+     * simply drop the module. View ownership stays with the host, so the view
+     * objects themselves are released through their normal refcount.
+     *
+     * Scoped on purpose: the kit is SHARED now, so an unscoped sweep would
+     * destroy the widgets of other Qt plugins that are still loaded. The
+     * QApplication is NOT touched here - it belongs to the process and is
+     * destroyed by the last view that dies (see piqt_view_destroy). */
+    for (int round = 0; round < 1000; ++round) {
+        bool any = false;
+        {
+            QMutexLocker lock(&g_views_mutex);
+            if (g_live_views) {
+                for (int i = 0; i < g_live_views->size(); ++i) {
+                    PiQtView* v = g_live_views->at(i);
+                    if (!v || v->m_desc.user_data != owner) continue;
+                    if (v->m_attached || v->m_widget) { v->detach(); any = true; }
+                }
+            }
+        }
+        if (!any) break;
+    }
+    piqt_trace("shutdown_owner: done owner=%p", owner);
+}
+
+extern "C" PI_QT_API void pi_qt_view_shutdown(void)
 {
     piqt_trace("shutdown: begin");
-    /* Force every view of this module through a full detach while the plugin
-     * is still mapped. The host normally detaches first; this covers hosts
-     * that simply drop the module. View ownership stays with the host, so the
-     * view objects themselves are released through their normal refcount. */
+    /* The process-wide hammer: the same sweep without the owner filter, plus the
+     * QApplication. Only correct when the caller owns every Qt plugin in the
+     * process (a diagnostic / last-resort path). */
     for (int round = 0; round < 1000; ++round) {
         bool any = false;
         {
@@ -613,7 +641,7 @@ extern "C" void pi_qt_view_shutdown(void)
     piqt_trace("shutdown: done");
 }
 
-extern "C" QWidget* pi_qt_view_widget(IPiPluginView* view)
+extern "C" PI_QT_API QWidget* pi_qt_view_widget(IPiPluginView* view)
 {
     if (!view) return NULL;
     /* The vtbl pointer sits at offset 0 of PiQtView; the interface pointer we
@@ -623,7 +651,7 @@ extern "C" QWidget* pi_qt_view_widget(IPiPluginView* view)
     return v->m_widget;
 }
 
-extern "C" void pi_qt_view_post(IPiPluginView* view, void (*fn)(void* user), void* user)
+extern "C" PI_QT_API void pi_qt_view_post(IPiPluginView* view, void (*fn)(void* user), void* user)
 {
     if (!view || !fn) return;
     /* Single-threaded model: run it inline. */

@@ -1,16 +1,16 @@
 # UI 适配器待办（Adapters）
 
-## 1. Qt 套件改为 SHARED 并共享运行时 [P1]
+## 1. Qt 套件改为 SHARED 并共享运行时 [P1] —— 已完成（roadmap APP-08）
 
-**现状**（`adapters/qt/README.md` 明确标注）：
-- 套件是 STATIC 库，链接进**每个** Qt 插件 DLL；
-- 若一个进程加载多个各自链接套件的 Qt 插件 → 多个 `QApplication` 冲突。
-
-**建议**：
-1. 将 `piplugin_qt` 改为 SHARED 库，让所有 Qt 插件共享同一个
-   `PiQtRuntime`（进程级唯一 `QApplication`）；
-2. 需要解决：套件内部进程级状态（`g_rt_mutex` 等）从"每 DLL 一份"变成"进程共享一份"，
-   静态库模式下这些全局量在各 DLL 中独立，SHARED 后统一。
+> **状态**：已落地。`piplugin_qt` 现在是 SHARED 库（导出宏 `PI_QT_API`，
+> 部署到 `bin/<CONFIG>/`），进程级状态（唯一 `QApplication`、活视图登记表）
+> 全进程一份，因此同一进程可以同时加载多个 Qt 插件 DLL。
+> 配套改动：`pi_qt_view_shutdown_owner(owner)` 只拆本插件的视图（不带 owner 的
+> `pi_qt_view_shutdown()` 保留为进程级大锤）；`QApplication` 由最后一个销毁的视图
+> 析构。回归用例 `tests/test_host_multi`（ctest `multi_plugin_qt_in_one_process`）：
+> 两个不同的 Qt 插件模块同时加载、各自嵌进自己的容器、各自继续跑 Qt 定时器、
+> 一起干净卸载；改回 STATIC 时第二个 attach 会撞上 Qt 的
+> `"there should be only one application object"` 断言。
 
 ## 2. 新增 gtk 套件（piplugin_gtk）[P2]
 
