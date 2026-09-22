@@ -16,34 +16,22 @@ piplugin 是一个 **跨平台、纯 C ABI 的插件框架**，采用 **COM 风�
 ## 2. 顶层架构
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                       宿主 (Host)                       │
-│  ┌───────────┐   ┌──────────────┐   ┌────────────────┐  │
-│  │ GUI Host  │   │ Headless Host│   │ 任意宿主       │  │
-│  │ (imgui/   │   │ (任务服务器/ │   │                │  │
-│  │  Qt/裸Win)│   │  CLI)        │   │                │  │
-│  └─────┬─────┘   └──────┬───────┘   └───────┬────────┘  │
-│        │   pi_module_load / pi_host_create_plugin       │
-│        └───────────────┬────────────────────┘           │
-└────────────────────────┼────────────────────────────────┘
-                         │ 动态加载 (LoadLibrary/dlopen)
-┌────────────────────────┼────────────────────────────────┐
-│                   插件 DLL (.dll/.so/.dylib)             │
-│  ┌─────────────────────┴──────────────────────┐         │
-│  │ pi_plugin_entry() → IPiPluginFactory        │         │
-│  │   ├─ PiPluginDescriptor（名称/版本/能力声明）│         │
-│  │   └─ CreateInstance → IPiPluginBase         │         │
-│  │        ├─ IPiPluginView（GUI 插件）          │         │
-│  │        └─ IPiService（headless/服务插件）    │         │
-│  └─────────────────────────────────────────────┘         │
-│  可选链接 UI Adapter Kit：                               │
-│  ┌──────────────────────────────┐ ┌──────────────────┐   │
-│  │ piplugin_qt         │ │ piplugin│   │
-│  │ （Qt 兼容层：私有线程跑       │ │ _imgui           │   │
-│  │  QApplication + 控件嵌入）    │ │ （立即模式 UI，  │   │
-│  └──────────────────────────────┘ │  宿主 GUI 线程）  │   │
-│                                   └──────────────────┘   │
-└──────────────────────────────────────────────────────────┘
+宿主 (Host)
+  ├─ GUI Host        （imgui / Qt / 裸 Win32）
+  ├─ Headless Host   （任务服务器 / CLI；不暴露 IPiHostUI，插件自动降级）
+  └─ 任意宿主
+        │  pi_module_load / pi_host_create_plugin
+        │  （宿主侧 kit：piplugin_host = 加载 + 双向门禁 + 七步卸载序列）
+        ▼  动态加载（LoadLibrary / dlopen）
+插件 DLL（.dll / .so / .dylib）
+  └─ pi_plugin_entry() → IPiPluginFactory
+       ├─ PiPluginDescriptor（名称 / 版本 / 能力声明）
+       └─ CreateInstance → IPiPluginBase
+            ├─ IPiPluginView（GUI 插件：attach / on_idle / on_resize）
+            └─ IPiService（headless / 服务插件）
+
+插件侧可选链接 UI 适配器套件：piplugin_qt、piplugin_imgui
+宿主侧 kit（宿主链接，不属于插件 ABI）：piplugin_host、piplugin_host_qt、piplugin_host_dx11
 ```
 
 ### 2.1 目录结构
