@@ -1,0 +1,108 @@
+# CI（roadmap BLK-05 的最小可行集）
+#
+# 质量门：
+#   1. 构建核心库 + headless 宿主 + 单元测试 + imgui 宿主（MSVC + conan）
+#   2. ctest（BLK-06 的入口）：核心单测 + headless 冒烟 + 版本门禁负向用例
+#   3. conformance harness（ECO-02）：真实插件跑完整生命周期 + 尺寸往返
+#   4. clang-format 漂移以"信息"方式报告（收紧方式见该步骤内的说明）
+#
+# Qt 相关目标初版**跳过**：Qt5 在本工程是本地安装依赖（C:/Qt/5.15.2），
+# runner 上没有；走 aqtinstall 的成本另评估（roadmap 明确"先不阻塞"）。
+# 去硬编码 Qt 路径属 ECO-05。
+#
+# 注：README 就位后（BLK-02）在此处挂 badge。
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-msvc:
+    name: Windows / MSVC / conan
+    runs-on: windows-latest
+    # 首次 conan install 要本地编译 imgui（Debug 无预编译包），留足时间
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install conan and clang-format
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "conan>=2.0,<3" "clang-format==19.1.5"
+
+      - name: Conan profile
+        run: |
+          conan profile detect --force
+          conan profile show
+
+      - name: Conan install
+        # Debug：与仓库文档（quickstart 2.2/2.3）及本地验证的 conan-debug 预置一致。
+        # Qt 三件套显式关掉：runner 上没有本地 Qt5 安装。
+        run: >-
+          conan install . --build=missing -s build_type=Debug
+          -o PI_BUILD_ADAPTER_QT=False
+          -o PI_BUILD_TEST_HOST_QT=False
+          -o PI_BUILD_TEST_PLUGIN=False
+
+      - name: Configure
+        run: cmake --preset conan-default
+
+      - name: Build
+        run: cmake --build --preset conan-debug --parallel
+
+      - name: ctest
+        # Qt 插件被关掉后 headless_host_smoke 不会注册（CMake 侧按 TARGET 守卫），
+        # 所以这里跑的是 unit + version_gate_rejects_incompatible_plugin。
+        run: ctest --test-dir build -C Debug --output-on-failure
+
+      - name: Conformance harness
+        # imgui 插件的完整生命周期（load -> attach -> idle -> 尺寸往返 -> unload）。
+        # `--cycles` 不需要 GPU：宿主在拿不到硬件设备时自行回退 WARP 软渲染。
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run_selftest.ps1 `
+            -Plugin pi_test_plugin_imgui.dll -Cycles 2
+
+      - name: clang-format drift (informational)
+        # 现状：全仓 C/C++ 文件都不符合已提交的 .clang-format（含 include 排序与
+        # 缩进/wrap 漂移）。一次性重排会产生淹没评审的巨型 diff，故本轮先"暴露不阻塞"。
+        #
+        # 收紧方式：删掉下面的 continue-on-error，并把脚本结尾改为 exit 1。
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $files = git ls-files '*.c' '*.cpp' '*.h' '*.hpp' |
+                   Where-Object { $_ -notmatch '^adapters/imgui/backends/' }
+          $bad = @()
+          foreach ($f in $files) {
+            clang-format --dry-run --Werror $f *> $null
+            if ($LASTEXITCODE -ne 0) { $bad += $f }
+          }
+          Write-Host ("checked {0} file(s); {1} would be reformatted" -f $files.Count, $bad.Count)
+          if ($bad.Count -gt 0) {
+            $bad | ForEach-Object { Write-Host ("  {0}" -f $_) }
+            Write-Host "::warning::clang-format drift in $($bad.Count)/$($files.Count) file(s); run 'clang-format -i' on them and then make this step blocking"
+          }
+          exit 0
+
+      - name: Upload host logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-logs
+          path: |
+            bin/Debug/*.log
+            build/selftest.txt
+          if-no-files-found: ignore

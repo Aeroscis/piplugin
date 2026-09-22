@@ -7,16 +7,28 @@
 #
 # The host keeps pi_test_host.log open with an exclusive fopen(...,"a") while
 # it lives, so the log is read through FileShare.ReadWrite.
+#
+# -BinDir / -OutFile 默认按"仓库根目录"推导（脚本在 <root>\scripts\ 下），
+# 因此换机器或换构建配置时只需传 -BinDir，不必改脚本。
 
 param(
     [int]$Cycles = 3,
     [string]$Plugin = "pi_test_plugin_qt.dll,pi_test_plugin_imgui.dll",
     [int]$IdleFrames = 12,
-    [string]$BinDir = "D:\Flora\ProgramProjects\pipluginframework\bin\Debug",
-    [string]$OutFile = "D:\Flora\ProgramProjects\pipluginframework\build\selftest.txt"
+    [string]$BinDir = "",
+    [string]$OutFile = ""
 )
 
+$repoRoot = Split-Path -Parent $PSScriptRoot
+if (-not $BinDir)  { $BinDir  = Join-Path $repoRoot "bin\Debug" }
+if (-not $OutFile) { $OutFile = Join-Path $repoRoot "build\selftest.txt" }
+
 $exe = Join-Path $BinDir "pi_test_host_imgui.exe"
+if (-not (Test-Path $exe)) {
+    Write-Host ("RESULT: FAIL - host not found: {0}" -f $exe) -ForegroundColor Red
+    Write-Host "  hint: pass -BinDir <repo>\bin\<CONFIG> matching the build configuration"
+    exit 1
+}
 $log = Join-Path $BinDir "pi_test_host.log"
 Remove-Item $log -Force -ErrorAction SilentlyContinue
 
