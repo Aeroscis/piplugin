@@ -12,27 +12,6 @@ include(GNUInstallDirs)
 set(TARGET_NAME piplugin_host_qt)
 pi_tar_msg(STATUS ${TARGET_NAME} "building host kit L1 (qt embed area)...")
 
-# version infos
-set(PRODUCT_VERSION_MAJOR 1)
-set(PRODUCT_VERSION_MINOR 0)
-set(PRODUCT_VERSION_PATCH 0)
-set(PRODUCT_VERSION_TWEAK 0)
-set(PRODUCT_VERSION_COMMA "${PRODUCT_VERSION_MAJOR},${PRODUCT_VERSION_MINOR},${PRODUCT_VERSION_PATCH},${PRODUCT_VERSION_TWEAK}")
-set(PRODUCT_VERSION_STRING "${PRODUCT_VERSION_MAJOR}.${PRODUCT_VERSION_MINOR}.${PRODUCT_VERSION_PATCH}.${PRODUCT_VERSION_TWEAK}")
-
-set(FILE_VERSION_MAJOR 1)
-set(FILE_VERSION_MINOR 0)
-set(FILE_VERSION_PATCH 0)
-set(FILE_VERSION_TWEAK 0)
-set(FILE_VERSION_COMMA "${FILE_VERSION_MAJOR},${FILE_VERSION_MINOR},${FILE_VERSION_PATCH},${FILE_VERSION_TWEAK}")
-set(FILE_VERSION_STRING "${FILE_VERSION_MAJOR}.${FILE_VERSION_MINOR}.${FILE_VERSION_PATCH}.${FILE_VERSION_TWEAK}")
-
-set(COMPANY_NAME "piplugin")
-set(FILE_DESCRIPTION "host-side kit L1 (qt embed area) for pi plugin framework")
-set(LEGAL_COPY_RIGHT "Copyright (c) 2025 piplugin")
-set(PRODUCT_NAME "${TARGET_NAME}")
-set(ORIGIN_FILE_NAME "${TARGET_NAME}.dll")#info for windows only
-
 # source files
 set(SRC_FILE_LIST
     pi_host_embed_area.cpp
@@ -64,7 +43,6 @@ target_sources(${TARGET_NAME}
     PRIVATE
         ${TARGET_SRC_FILE_LIST}
     )
-target_compile_definitions(${TARGET_NAME} PRIVATE "LIBRARY_VERSION=\"${FILE_VERSION_STRING}\"")
 
 # self header（构建树平铺 include，安装树平铺到 host_kits/qt，两侧写法一致）
 target_include_directories(${TARGET_NAME} PUBLIC

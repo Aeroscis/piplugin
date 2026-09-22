@@ -7,9 +7,9 @@ include(${CMAKE_CURRENT_LIST_DIR}/cmake/pi/pi.cmake)
 
 # ------------------------------- Project --------------------------------
 project(piplugin
-        VERSION 1.0.0
+        VERSION 0.2.0
         DESCRIPTION "Cross-platform plugin framework with COM-style C ABI"
-        HOMEPAGE_URL "https://github.com/example/piplugin"
+        HOMEPAGE_URL "https://gitee.com/Aeroscis/piplugin"
         LANGUAGES C CXX
     )
 pi_proj_msg(STATUS "project [${PROJECT_NAME}] declared")# project msg

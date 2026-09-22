@@ -30,10 +30,10 @@ _TEST_HOST_KIT_NEEDS = {
 
 class PiPluginConan(ConanFile):
     name = "piplugin"
-    version = "1.0.0"
+    version = "0.2.0"
     license = "MIT"
-    author = "piplugin"
-    url = "https://github.com/example/piplugin"
+    author = "Aeroscis"
+    url = "https://gitee.com/Aeroscis/piplugin"
     description = "Cross-platform plugin framework with COM-style C ABI"
     topics = ("plugin", "framework", "c", "ffi")
     settings = "os", "compiler", "build_type", "arch"

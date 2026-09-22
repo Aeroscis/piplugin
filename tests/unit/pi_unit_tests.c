@@ -253,8 +253,10 @@ static void TestApiVersion(void)
     Section("pi_api_version_compatible");
 
     /* 编码：高 16 位 major，低 16 位 minor */
-    CHECK_EQ_INT(PIPLUGIN_API_VERSION_MAJOR(PIPLUGIN_API_VERSION), 1);
-    CHECK_EQ_INT(PIPLUGIN_API_VERSION_MINOR(PIPLUGIN_API_VERSION), 0);
+    /* 当前 API 版本的 tripwire：改版本号时这里会失败，提醒同步
+     * CHANGELOG.md 与 docs/design/interfaces.md 1.5 的 policy 说明。 */
+    CHECK_EQ_INT(PIPLUGIN_API_VERSION_MAJOR(PIPLUGIN_API_VERSION), 0);
+    CHECK_EQ_INT(PIPLUGIN_API_VERSION_MINOR(PIPLUGIN_API_VERSION), 2);
     CHECK_EQ_INT(PIPLUGIN_API_VERSION_MAKE(1, 0), 0x00010000);
     CHECK_EQ_INT(PIPLUGIN_API_VERSION_MAKE(2, 5), 0x00020005);
     CHECK_EQ_INT(PIPLUGIN_API_VERSION_MAJOR(PIPLUGIN_API_VERSION_MAKE(0xFFFF, 0xFFFF)), 0xFFFF);
@@ -277,13 +279,20 @@ static void TestApiVersion(void)
     CHECK(pi_api_version_compatible(PIPLUGIN_API_VERSION_MAKE(1, 3), PIPLUGIN_API_VERSION_MAKE(1, 3)) != 0);
     CHECK(pi_api_version_compatible(PIPLUGIN_API_VERSION_MAKE(1, 0), PIPLUGIN_API_VERSION_MAKE(1, 0)) != 0);
 
-    /* major 0（未版本化）只与 major 0 相容 */
+    /* major 0（未版本化）只与 major 0 相容 —— 用确定的 major 1 来验，不要用
+     * PIPLUGIN_API_VERSION 本身（它的 major 随发布版本走，改版时会变）。 */
     CHECK(pi_api_version_compatible(0u, 0u) != 0);
-    CHECK(pi_api_version_compatible(0u, PIPLUGIN_API_VERSION) == 0);
-    CHECK(pi_api_version_compatible(PIPLUGIN_API_VERSION, 0u) == 0);
+    CHECK(pi_api_version_compatible(0u, PIPLUGIN_API_VERSION_MAKE(1, 0)) == 0);
+    CHECK(pi_api_version_compatible(PIPLUGIN_API_VERSION_MAKE(1, 0), 0u) == 0);
+
+    /* pre-1.0 语义（当前发布 0.2.0）：同一 major 0 内，低 minor 兼容、高 minor 拒绝，
+     * 所以插件应随宿主一起升级 —— 这正是 1.0 之前不承诺 ABI 的表现。 */
+    CHECK(pi_api_version_compatible(PIPLUGIN_API_VERSION_MAKE(0, 2), PIPLUGIN_API_VERSION_MAKE(0, 1)) != 0);
+    CHECK(pi_api_version_compatible(PIPLUGIN_API_VERSION_MAKE(0, 2), PIPLUGIN_API_VERSION_MAKE(0, 3)) == 0);
 
     /* 测试所用的负向插件常量：必须被判为不兼容（与 BLK-03 的 ctest 用例呼应） */
     CHECK(pi_api_version_compatible(PIPLUGIN_API_VERSION, PIPLUGIN_API_VERSION_MAKE(2, 0)) == 0);
+    CHECK(pi_api_version_compatible(PIPLUGIN_API_VERSION_MAKE(0, 2), PIPLUGIN_API_VERSION_MAKE(2, 0)) == 0);
 }
 
 /* --------------------------------------------------------------------------

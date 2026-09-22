@@ -1,0 +1,21 @@
+# Normalise line endings in the repository to LF, regardless of the platform a
+# contributor happens to use. The library targets Windows and Linux, so without
+# this a file edited on Linux would show up as a whole-file change on Windows,
+# and vice versa.
+* text=auto eol=lf
+
+# Binary formats must not be touched by the normaliser.
+*.png binary
+*.ico binary
+*.icns binary
+*.jpg binary
+*.bmp binary
+*.dll binary
+*.lib binary
+*.pdb binary
+*.exp binary
+*.exe binary
+
+# Windows command files keep the endings their platform needs.
+*.cmd text eol=crlf
+*.bat text eol=crlf

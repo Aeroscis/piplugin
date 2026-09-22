@@ -173,7 +173,10 @@ PI_EXPORT int pi_descriptor_requires(const PiPluginDescriptor* desc, const PiGui
 #define PIPLUGIN_API_VERSION_MAKE(major, minor) \
     ((uint32_t)((((uint32_t)(major) & 0xFFFFu) << 16) | ((uint32_t)(minor) & 0xFFFFu)))
 
-#define PIPLUGIN_API_VERSION PIPLUGIN_API_VERSION_MAKE(1, 0)   /* 框架 API：major 1 / minor 0 */
+/* 本库自己的 API 版本，取值与发布版本的 major.minor 一致（当前发布 0.2.0）。
+ * 1.0 是"ABI 冻结承诺"的时刻：在那之前每个 x 版本都可以改 ABI，
+ * 所以插件应随宿主一起升级；升级时同步 CHANGELOG.md 与 interfaces.md 1.5。 */
+#define PIPLUGIN_API_VERSION PIPLUGIN_API_VERSION_MAKE(0, 2)
 
 /* 宿主版本与插件版本是否兼容。返回非 0 = 可以加载。 */
 PI_EXPORT int pi_api_version_compatible(uint32_t host_version, uint32_t plugin_version);

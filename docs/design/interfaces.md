@@ -48,7 +48,7 @@ typedef struct PiPluginDescriptor {
     const char* vendor;      /* 厂商 */
     const char* version;     /* 语义化版本 "1.0.0" */
     const char* category;    /* 分类 */
-    uint32_t    api_version; /* PIPLUGIN_API_VERSION (0x00010000) */
+    uint32_t    api_version; /* PIPLUGIN_API_VERSION；宿主据此做兼容门禁（见 1.5） */
 
     const PiPluginCapability* capabilities;
     uint32_t                  capability_count;
@@ -65,6 +65,11 @@ typedef struct PiPluginDescriptor {
 
 `api_version` 是**插件编译时所用框架 API 的版本**，编码为 `major << 16 | minor`
 （用 `PIPLUGIN_API_VERSION_MAJOR` / `PIPLUGIN_API_VERSION_MINOR` / `PIPLUGIN_API_VERSION_MAKE` 读写）。
+
+**取值规则：`PIPLUGIN_API_VERSION` 的 `major.minor` 与发布版本一致**（当前发布
+0.2.0 → API 0.2）。1.0 是"ABI 冻结承诺"的时刻：在那之前每个 `x` 版本都可以改
+ABI，所以 pre-1.0 的插件应随宿主一起升级；1.0 之后 major 只在真正破坏 ABI 时才动，
+minor 递增表示"只新增接口"。
 
 | 情况 | 判定 |
 |---|---|
