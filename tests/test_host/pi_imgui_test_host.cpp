@@ -68,27 +68,48 @@ static unsigned    g_frameCount   = 0;
 /* --------------------------------------------------------------------------
  * Interactive sizing, run by the host itself
  *
- * The reason is ordering. Windows' own modal size loop resizes the window and
+ * Why Windows' own modal size loop cannot be used: it resizes the window and
  * only then sends WM_SIZE, so the first thing DWM can show for the new size is
- * the previous frame, scaled - and Present() on a flip-model chain can block
- * for a whole refresh (measured 6.2-6.4 ms), which is exactly how long that
- * scaled frame stays on screen. Every attempt to shorten the interval inside
- * that loop still leaves the window resized before any matching frame exists.
+ * the previous frame - and with a stretch swap chain DWM *rescales* that
+ * frame, which squashes the panel by one composited frame per drag step.
  *
- * So the host runs the loop and orders the steps the only way that has no such
- * moment:
+ * Running the loop ourselves lets us order the steps as
+ *   render for the NEW size -> Present -> SetWindowPos(window, new rect)
+ * but that alone does NOT close the race: DWM composites independently of us,
+ * and whichever frame it picks can disagree with the current window size -
+ *   - it composites after our Present but before our SetWindowPos:
+ *     NEW-sized frame in an OLD-sized window  -> scaled,
+ *   - it composites after SetWindowPos but before it picks up the queued
+ *     frame: OLD-sized frame in a NEW-sized window -> scaled.
+ * No ordering can make one frame size match the window before AND after the
+ * geometry change. The only real fix is to DECOUPLE the two sizes:
  *
- *     ResizeBuffers + render for the NEW size   (the window still has the old
- *                                                size, and the frame on screen
- *                                                still matches that old size)
- *  -> Present()                                 (blocking here is harmless, for
- *                                                the same reason)
- *  -> SetWindowPos(window, new rectangle)       (queued frame == window)
- *  -> container/plugin resize                   (Qt repaints synchronously)
+ *   1. The swap chain is created with DXGI_SCALING_NONE. Documented for
+ *      CreateSwapChainForHwnd + FLIP_SEQUENTIAL/FLIP_DISCARD since Win8:
+ *      when the back buffer and the window disagree in size, the buffer is
+ *      shown 1:1, top-left aligned, and the rest of the target is filled
+ *      with the swap-chain background colour. A stale frame is therefore
+ *      CLIPPED, never rescaled - the panel cannot change shape at any point
+ *      of the race.
+ *   2. The back buffer is grown on demand and NEVER shrunk, so during a drag
+ *      the buffer always covers the window and no per-step ResizeBuffers is
+ *      needed at all; only the layout follows the client size (io.DisplaySize
+ *      is overridden), the extra buffer area is cleared to the clear colour,
+ *      so whatever a stale frame exposes at the margins is uniform grey.
+ *      Growing happens at most once per drag (the first step that exceeds
+ *      the current buffer), and even in that moment SCALING_NONE keeps the
+ *      shape stable.
+ *   3. SetBackgroundColor() equals the clear colour, so the "window exceeds
+ *      the buffer" corner case paints the same grey instead of stretching.
+ *
+ * What is left of the race is one composited frame whose freshly exposed
+ * margin shows the (uniform) clear colour instead of the new layout - far
+ * below the threshold of perception, and exactly what the right-hand plugin
+ * area covers anyway.
  *
  * Title-bar moves are left to Windows - they never change the size, so Aero
- * Snap by dragging the title bar keeps working; snapping a *sizing* drag is the
- * one thing this gives up.
+ * Snap by dragging the title bar keeps working; snapping a *sizing* drag is
+ * the one thing this gives up.
  * -------------------------------------------------------------------------- */
 static bool     g_sizeLoopActive = false;  /* inside RunSizeLoop() */
 static bool     g_sizeMoveActive = false;  /* a drag is in progress (logging/state) */
@@ -96,6 +117,13 @@ static bool     g_renderingFrame = false;  /* re-entrancy guard for RenderFrame 
 static unsigned g_resizeFrames   = 0;      /* steps rendered during one drag */
 static unsigned g_resizeFailures = 0;      /* ResizeBuffers returned a failure */
 static unsigned g_clientW = 0, g_clientH = 0;      /* client size last applied */
+/* Back-buffer size currently allocated. Grown on demand, never shrunk - see
+ * the comment block above. */
+static unsigned g_swapW = 0, g_swapH = 0;
+/* Whether the swap chain really is running with DXGI_SCALING_NONE. If the
+ * driver rejects it (not expected before Win8+flip), the fallbacks keep the
+ * exact-resize behaviour this file used before the fix. */
+static bool     g_scalingNone = false;
 /* Non-client size (window minus client): needed to turn a dragged window
  * rectangle into a client size, and vice versa. */
 static int      g_frameDW = 0, g_frameDH = 0;
@@ -321,9 +349,9 @@ static bool RenderFrame(bool resizeFrame, bool present, unsigned overrideW, unsi
 
     /* The flip model is composited by DWM, so presenting without waiting for
      * vsync cannot tear. resizeFrame uses interval 0: the size loop wants the
-     * frame queued as early as possible (a frame that is still in flight keeps
-     * the *previous* frame - which matches the window as it is at that moment -
-     * on screen, and that is fine by construction). */
+     * frame queued as early as possible; while it is in flight the screen keeps
+     * the previous frame, which SCALING_NONE clips 1:1 - shape-safe by
+     * construction. */
     if (present)
         g_pSwapChain->Present(resizeFrame ? 0 : 1, 0);
 
@@ -332,10 +360,51 @@ static bool RenderFrame(bool resizeFrame, bool present, unsigned overrideW, unsi
 }
 
 /* --------------------------------------------------------------------------
- * Resize the back buffer to w x h and render one host frame into it, laid out
- * for that size, WITHOUT presenting it. Used by the size loop: at this point
- * the window still has its previous size and the frame on screen still matches
- * it, so nothing on screen changes yet.
+ * Grow the back buffer so it covers at least w x h. NEVER shrinks it - the
+ * whole fix relies on the buffer never being smaller than the window while a
+ * stale (smaller-window) frame could still be on screen. With
+ * DXGI_SCALING_NONE an oversized buffer is clipped, so growth is the only
+ * resize a drag can need, and it happens at most once per drag.
+ * Returns false if the resize failed so badly that no render target exists.
+ * -------------------------------------------------------------------------- */
+static bool EnsureSwapChainSizeAtLeast(unsigned w, unsigned h)
+{
+    if (!g_pSwapChain) return false;
+    if (w <= g_swapW && h <= g_swapH)
+        return g_mainRenderTargetView != NULL;
+
+    unsigned nw = (w > g_swapW) ? w : g_swapW;
+    unsigned nh = (h > g_swapH) ? h : g_swapH;
+
+    CleanupRenderTarget();
+    HRESULT hr = g_pSwapChain->ResizeBuffers(0, nw, nh, DXGI_FORMAT_UNKNOWN, g_swapChainFlags);
+    if (FAILED(hr)) {
+        if (g_resizeFailures == 0)
+            LogStatus("resize: ResizeBuffers(%ux%u) FAILED hr=0x%08X", nw, nh, (unsigned)hr);
+        ++g_resizeFailures;
+        hr = g_pSwapChain->ResizeBuffers(0, nw, nh, DXGI_FORMAT_UNKNOWN, g_swapChainFlags);
+        if (FAILED(hr)) {
+            LogStatus("resize: retry FAILED hr=0x%08X", (unsigned)hr);
+            CreateRenderTarget();
+            return g_mainRenderTargetView != NULL;
+        }
+    }
+    CreateRenderTarget();
+    g_swapW = nw;
+    g_swapH = nh;
+    LogStatus("resize: swap chain grows to %ux%u (client was %ux%u)", nw, nh, w, h);
+    return true;
+}
+
+/* --------------------------------------------------------------------------
+ * Lay out and render one host frame for client size w x h WITHOUT presenting
+ * it. Used by the size loop: at this point the window still has its previous
+ * size, the frame on screen still matches it, and nothing on screen changes
+ * yet.
+ *
+ * With DXGI_SCALING_NONE this needs no ResizeBuffers for any step that fits
+ * the current buffer (the layout just follows w x h - see the comment block
+ * above RunSizeLoop()); only genuine growth re-allocates.
  * -------------------------------------------------------------------------- */
 static void PrepareFrameFor(unsigned w, unsigned h)
 {
@@ -345,20 +414,26 @@ static void PrepareFrameFor(unsigned w, unsigned h)
     double t0 = NowMs();
     ++g_resizeFrames;
 
-    CleanupRenderTarget();
-    HRESULT hr = g_pSwapChain->ResizeBuffers(0, w, h, DXGI_FORMAT_UNKNOWN, g_swapChainFlags);
-    if (FAILED(hr)) {
-        if (g_resizeFailures == 0)
-            LogStatus("resize: ResizeBuffers(%ux%u) FAILED hr=0x%08X", w, h, (unsigned)hr);
-        ++g_resizeFailures;
-        hr = g_pSwapChain->ResizeBuffers(0, w, h, DXGI_FORMAT_UNKNOWN, g_swapChainFlags);
+    if (g_scalingNone) {
+        EnsureSwapChainSizeAtLeast(w, h);
+    } else {
+        /* Pre-fix behaviour (STRETCH / bitblt): the buffer must track the
+         * window exactly, otherwise it is scaled to fit. */
+        CleanupRenderTarget();
+        HRESULT hr = g_pSwapChain->ResizeBuffers(0, w, h, DXGI_FORMAT_UNKNOWN, g_swapChainFlags);
         if (FAILED(hr)) {
-            LogStatus("resize: retry FAILED hr=0x%08X", (unsigned)hr);
-            CreateRenderTarget();
-            return;
+            if (g_resizeFailures == 0)
+                LogStatus("resize: ResizeBuffers(%ux%u) FAILED hr=0x%08X", w, h, (unsigned)hr);
+            ++g_resizeFailures;
+            hr = g_pSwapChain->ResizeBuffers(0, w, h, DXGI_FORMAT_UNKNOWN, g_swapChainFlags);
+            if (FAILED(hr)) {
+                LogStatus("resize: retry FAILED hr=0x%08X", (unsigned)hr);
+                CreateRenderTarget();
+                return;
+            }
         }
+        CreateRenderTarget();
     }
-    CreateRenderTarget();
     if (!g_mainRenderTargetView)
         return;
 
@@ -455,11 +530,13 @@ static void RunSizeLoop(HWND hWnd, UINT hitTest)
         if (cw == g_clientW && ch == g_clientH)
             continue;   /* nothing moved far enough to change the size */
 
-        /* 1. frame ready for the size the window is about to get */
+        /* 1. frame ready for the size the window is about to get (the buffer
+         *    keeps its size - SCALING_NONE clips what exceeds the window, so
+         *    only genuine growth costs a ResizeBuffers, at most once a drag) */
         PrepareFrameFor(cw, ch);
         /* 2. queue it while the window still has the old size: a blocking
-         *    Present waits here, and while it waits the screen still shows a
-         *    frame that matches the window */
+         *    Present waits here, and every frame the screen shows in the
+         *    meantime - old or new - is clipped 1:1, never scaled */
         double p0 = NowMs();
         g_pSwapChain->Present(0, 0);
         double pms = NowMs() - p0;
@@ -1068,10 +1145,19 @@ static LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
         if (g_sizeLoopActive)
             return 0;   /* the size loop already rendered and presented for it */
         if (g_pd3dDevice && wParam != SIZE_MINIMIZED) {
-            CleanupRenderTarget();
-            g_pSwapChain->ResizeBuffers(0, g_clientW, g_clientH,
-                                        DXGI_FORMAT_UNKNOWN, g_swapChainFlags);
-            CreateRenderTarget();
+            if (g_scalingNone) {
+                /* Buffer only ever grows (see the comment block above
+                 * RunSizeLoop()); the next main-loop frame lays out for the
+                 * new client size and DWM clips the buffer 1:1 until then. */
+                EnsureSwapChainSizeAtLeast(g_clientW, g_clientH);
+            } else {
+                /* Pre-fix behaviour for stretch/bitblt chains: the buffer
+                 * must track the window exactly. */
+                CleanupRenderTarget();
+                g_pSwapChain->ResizeBuffers(0, g_clientW, g_clientH,
+                                            DXGI_FORMAT_UNKNOWN, g_swapChainFlags);
+                CreateRenderTarget();
+            }
         }
         /* Container/plugin after the D3D resize: Qt repaints its child window
          * synchronously and that costs milliseconds (the plugin is composited
@@ -1113,7 +1199,14 @@ static bool CreateDeviceD3D(HWND hWnd)
      * follows cannot block. A blocking Present is expensive in a way that shows:
      * while it blocks, the window already has the new size and DWM still only
      * has the previous (previous-sized, hence scaled) frame - the panel visibly
-     * stretches or shrinks for that whole time. */
+     * stretches or shrinks for that whole time.
+     *
+     * DXGI_SCALING_NONE is the actual fix for the panel-squash bug: whenever
+     * buffer and window disagree in size, DWM shows the buffer 1:1 top-left
+     * aligned and fills the remainder with the background colour instead of
+     * rescaling the buffer. Together with the never-shrink buffer policy
+     * (see EnsureSwapChainSizeAtLeast) this removes the last window of time
+     * in which DWM could composite a mis-sized frame. */
     const D3D_FEATURE_LEVEL featureLevels[] = {
         D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_0
     };
@@ -1146,26 +1239,54 @@ static bool CreateDeviceD3D(HWND hWnd)
          * waitable object below a spare buffer costs nothing. */
         sd.BufferCount = 3;
         sd.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
-        sd.Scaling = DXGI_SCALING_STRETCH;
+        /* The core of the fix. Documented for CreateSwapChainForHwnd +
+         * FLIP_SEQUENTIAL/FLIP_DISCARD: the buffer is composed 1:1, top-left
+         * aligned, clipped to the target; the target area outside the buffer
+         * is filled with the background colour (set below). A stale frame
+         * can therefore only be CLIPPED, never rescaled. */
+        sd.Scaling = DXGI_SCALING_NONE;
         sd.Flags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
         g_swapChainFlags = sd.Flags;
         IDXGISwapChain1* swapChain1 = NULL;
         hr = factory->CreateSwapChainForHwnd(g_pd3dDevice, hWnd, &sd, NULL, NULL,
                                              &swapChain1);
+        if (FAILED(hr) && sd.Scaling == DXGI_SCALING_NONE) {
+            /* Defensive: should not happen on Win8+flip, but degrade to the
+             * pre-fix stretch behaviour rather than to no swap chain. */
+            LogStatus("d3d: SCALING_NONE rejected hr=0x%08X - falling back to STRETCH",
+                      (unsigned)hr);
+            sd.Scaling = DXGI_SCALING_STRETCH;
+            hr = factory->CreateSwapChainForHwnd(g_pd3dDevice, hWnd, &sd, NULL, NULL,
+                                                 &swapChain1);
+        }
         if (SUCCEEDED(hr) && swapChain1) {
             /* Keep the base interface: everything else uses IDXGISwapChain. */
             swapChain1->QueryInterface(IID_PPV_ARGS(&g_pSwapChain));
             factory->MakeWindowAssociation(hWnd, DXGI_MWA_NO_ALT_ENTER);
             g_flipModel    = true;
-            g_presentModel = "FLIP_DISCARD+latency";
+            g_scalingNone  = (sd.Scaling == DXGI_SCALING_NONE);
+            g_presentModel = g_scalingNone ? "FLIP_DISCARD+latency+scale:none"
+                                           : "FLIP_DISCARD+latency+scale:stretch";
+            /* Fill "window larger than buffer" (possible for one composited
+             * frame while growing) with the same grey as the clear colour. */
+            const DXGI_RGBA bg = { 0.15f, 0.15f, 0.15f, 1.0f };
+            swapChain1->SetBackgroundColor(&bg);
+            /* Width/Height were 0 ("follow the window") - record what that
+             * resolved to; this is the floor of the never-shrink policy. */
+            DXGI_SWAP_CHAIN_DESC1 got = {};
+            if (SUCCEEDED(swapChain1->GetDesc1(&got))) {
+                g_swapW = got.Width;
+                g_swapH = got.Height;
+            }
             IDXGISwapChain2* sc2 = NULL;
             if (SUCCEEDED(swapChain1->QueryInterface(IID_PPV_ARGS(&sc2)))) {
                 sc2->SetMaximumFrameLatency(1);
                 g_frameLatencyWaitable = sc2->GetFrameLatencyWaitableObject();
                 sc2->Release();
             }
-            LogStatus("d3d: swap chain %s, latency-waitable=%s",
-                      g_presentModel, g_frameLatencyWaitable ? "yes" : "NO");
+            LogStatus("d3d: swap chain %s buffer=%ux%u, latency-waitable=%s",
+                      g_presentModel, g_swapW, g_swapH,
+                      g_frameLatencyWaitable ? "yes" : "NO");
             swapChain1->Release();
         }
     }
@@ -1205,7 +1326,13 @@ static bool CreateDeviceD3D(HWND hWnd)
             return false;
         }
         g_flipModel    = false;
+        g_scalingNone  = false;
         g_presentModel = "DISCARD(bitblt)";
+        DXGI_SWAP_CHAIN_DESC gotDesc = {};
+        if (SUCCEEDED(g_pSwapChain->GetDesc(&gotDesc))) {
+            g_swapW = gotDesc.BufferDesc.Width;
+            g_swapH = gotDesc.BufferDesc.Height;
+        }
     }
 
     CreateRenderTarget();
