@@ -80,6 +80,33 @@ PI_EXPORT int pi_descriptor_requires(const PiPluginDescriptor* desc, const PiGui
 }
 
 /* --------------------------------------------------------------------------
+ * Descriptor properties (roadmap APP-04)
+ *
+ * The fields are APPENDED to PiPluginDescriptor in API 0.3, so a module built
+ * against 0.2 has a shorter struct: reading `properties` out of it would read
+ * past the end of the object it was compiled with. The version gate rejects a
+ * plugin that is NEWER than the host, but it accepts an OLDER one (same major),
+ * so this function has to decide for itself. The plugin's own api_version is
+ * the layout discriminator - it is at the same offset in every layout, and the
+ * 0.x rule is that the ABI may move with each x release. Follow the same pattern
+ * when appending another field.
+ * -------------------------------------------------------------------------- */
+PI_EXPORT const char* pi_descriptor_find_property(const PiPluginDescriptor* desc,
+                                                  const char* key)
+{
+    uint32_t i;
+    if (!desc || !key) return NULL;
+    if (PIPLUGIN_API_VERSION_MINOR(desc->api_version) < 3) return NULL;   /* pre-0.3 layout */
+    if (!desc->properties) return NULL;
+    for (i = 0; i < desc->property_count; ++i) {
+        const PiPluginProperty* prop = &desc->properties[i];
+        if (!prop->key) continue;
+        if (strcmp(prop->key, key) == 0) return prop->value;   /* 第一个命中者胜出 */
+    }
+    return NULL;
+}
+
+/* --------------------------------------------------------------------------
  * Refcounted base
  * -------------------------------------------------------------------------- */
 PI_EXPORT void pi_refcounted_init(PiRefCountedBase* base, const IPiUnknownVtbl* vtbl)

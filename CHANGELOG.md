@@ -28,6 +28,21 @@ A release is one commit on `main` that bumps the version in `CMakeLists.txt` and
 
 ### Changed
 
+- **`PiPluginDescriptor` gained free-form metadata (APP-04) - a binary layout
+  change.** Capabilities answer "what can this plugin do in the framework's
+  vocabulary"; descriptive facts (which UI toolkit, supported file formats, a
+  homepage) had nowhere to go and were being squeezed into GUIDs. The struct now
+  ends with `properties` / `property_count` (`PiPluginProperty { key, value }`,
+  UTF-8, `pi.` prefix reserved for the framework) and
+  `pi_descriptor_find_property(desc, key)` reads it. `PIPLUGIN_API_VERSION` goes
+  0.2 -> 0.3 because of the layout change (the unit suite's version tripwire
+  fails on that bump by design - it is the reminder to update this file and
+  interfaces.md 1.5). One subtlety worth knowing: the version gate REJECTS a
+  plugin newer than the host but ACCEPTS an older one (same major), and an older
+  module's descriptor is shorter - so `pi_descriptor_find_property()` decides the
+  layout from the plugin's own `api_version` (`minor < 3` means "no properties")
+  instead of reading past the end of the object. Note that the release version
+  stays 0.2.0 until 0.3.0 is cut; API and release version realign then.
 - **The Qt adapter kit is SHARED (APP-08).** `piplugin_qt` owns process-level
   state - the single `QApplication` and the live-view registry - so as a static
   library every Qt plugin DLL carried its own copy: a process that loaded two of
@@ -47,6 +62,16 @@ A release is one commit on `main` that bumps the version in `CMakeLists.txt` and
 
 ### Added
 
+- **Descriptor properties, exercised end to end (APP-04).** All three test
+  plugins declare properties (`com.example.kind`, the toolkit, a variant tag) and
+  the headless test host lists them and looks one up by key; new `ctest` cases
+  (`descriptor_properties_{imgui,qt,service}_plugin`) require the looked-up value
+  to appear in the host's output, so "a plugin declares a property and the host
+  reads it" is asserted rather than assumed. The GUI hosts show the properties in
+  their panels and write them to their logs. `tests/unit` covers the reader
+  itself: hit, miss, case sensitivity, whole-key comparison, empty values, UTF-8,
+  NULL arguments, empty table, a NULL key inside the table, duplicate keys
+  (first wins), and the pre-0.3 layout case.
 - **The multi-plugin acceptance host (APP-08).** `tests/test_host_multi` is a
   deliberately plain Win32 host (no D3D, no resize loop, so the delicate
   rendering machinery in `tests/test_host` is not perturbed by it) that loads TWO

@@ -129,6 +129,24 @@ typedef struct PiPluginCapability {
 } PiPluginCapability;
 
 /* --------------------------------------------------------------------------
+ * Free-form plugin metadata (descriptor key/value pairs)
+ *
+ * Capabilities answer "what can this plugin do in the framework's vocabulary".
+ * They are a poor fit for purely descriptive facts a host may want to show or
+ * filter on - supported file formats, a homepage, a licence, the toolkit the UI
+ * is built with - and abusing a GUID for those never works well.
+ *
+ * Keys and values are UTF-8, NUL-terminated. The `pi.` prefix is reserved for
+ * the framework: an app or plugin is free to use anything else (use your own
+ * reverse-DNS style prefix, e.g. `com.example.thing`). Keys are compared
+ * byte-for-byte (case-sensitive).
+ * -------------------------------------------------------------------------- */
+typedef struct PiPluginProperty {
+    const char* key;    /* UTF-8, NUL-terminated, non-NULL */
+    const char* value;  /* UTF-8, NUL-terminated, non-NULL */
+} PiPluginProperty;
+
+/* --------------------------------------------------------------------------
  * Plugin descriptor returned by the shared library entry point
  * -------------------------------------------------------------------------- */
 typedef struct PiPluginDescriptor {
@@ -141,6 +159,16 @@ typedef struct PiPluginDescriptor {
     /* Capability declaration list (may be NULL if capability_count == 0) */
     const PiPluginCapability* capabilities;
     uint32_t                  capability_count;
+
+    /* Free-form metadata (may be NULL if property_count == 0).
+     *
+     * APPENDED, not inserted: this is a binary layout change (0.x is allowed to
+     * change ABI; 1.0 is where the freezing promise starts - interfaces.md 1.5),
+     * so a module compiled against 0.2 and loaded by a 0.3 host would read
+     * garbage here. The api_version gate is what keeps that from happening:
+     * plugins and hosts must be rebuilt together across an x release. */
+    const PiPluginProperty*   properties;
+    uint32_t                  property_count;
 } PiPluginDescriptor;
 
 /* Check whether the descriptor declares capability `iid` with the wanted
@@ -151,6 +179,19 @@ PI_EXPORT const PiPluginCapability* pi_descriptor_find_capability(
 /* Convenience: does the plugin provide / require the given capability? */
 PI_EXPORT int pi_descriptor_provides(const PiPluginDescriptor* desc, const PiGuid* iid);
 PI_EXPORT int pi_descriptor_requires(const PiPluginDescriptor* desc, const PiGuid* iid);
+
+/* Value of the descriptor property `key`, or NULL when the plugin declares no
+ * such property. NULL-safe for every argument (desc, its properties array, the
+ * key). Duplicate keys: the first one wins.
+ *
+ * `properties` was APPENDED in API 0.3, so this also checks the plugin's own
+ * api_version: a module compiled against 0.2 has a shorter struct, and reading
+ * the appended fields out of it would read past the end of its descriptor. The
+ * version gate accepts older plugins (same major), so the layout has to be
+ * decided here rather than assumed. A pre-0.3 plugin therefore reports "no
+ * properties" - which is the truth - instead of handing out garbage. */
+PI_EXPORT const char* pi_descriptor_find_property(const PiPluginDescriptor* desc,
+                                                  const char* key);
 
 /* --------------------------------------------------------------------------
  * API 版本与协商
@@ -173,10 +214,15 @@ PI_EXPORT int pi_descriptor_requires(const PiPluginDescriptor* desc, const PiGui
 #define PIPLUGIN_API_VERSION_MAKE(major, minor) \
     ((uint32_t)((((uint32_t)(major) & 0xFFFFu) << 16) | ((uint32_t)(minor) & 0xFFFFu)))
 
-/* 本库自己的 API 版本，取值与发布版本的 major.minor 一致（当前发布 0.2.0）。
+/* 本库自己的 API 版本，取值与发布版本的 major.minor 一致。
+ *
+ * 当前状态：**API 0.3 / 发布 0.2.0** —— APP-04 追加了 descriptor 字段
+ * （二进制布局变化），按政策 minor 前进一位；发布版本号与 CHANGELOG 在切 0.3.0
+ * 时才跟上（发布是一条单独的 release 提交，见 CHANGELOG 顶部）。
+ *
  * 1.0 是"ABI 冻结承诺"的时刻：在那之前每个 x 版本都可以改 ABI，
  * 所以插件应随宿主一起升级；升级时同步 CHANGELOG.md 与 interfaces.md 1.5。 */
-#define PIPLUGIN_API_VERSION PIPLUGIN_API_VERSION_MAKE(0, 2)
+#define PIPLUGIN_API_VERSION PIPLUGIN_API_VERSION_MAKE(0, 3)
 
 /* 宿主版本与插件版本是否兼容。返回非 0 = 可以加载。 */
 PI_EXPORT int pi_api_version_compatible(uint32_t host_version, uint32_t plugin_version);

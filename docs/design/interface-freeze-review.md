@@ -158,6 +158,17 @@ pi_host_services_create_default, pi_host_default_set_ui_window, pi_host_create_p
 > 通道 B）—— 新增**函数**而非改动既有 vtbl，符合"只增不改"；导出面因此为
 > **24** 个。既有 23 个符号的签名与语义未变（`pi_host_services_create_default`
 > 现在只是转调 `create_ex`，行为逐条断言在 `tests/unit`）。
+>
+> **发布后再次追加**：`pi_descriptor_find_property`（roadmap APP-04），导出面 **25** 个。
+> 这一条**不是**纯新增：`PiPluginDescriptor` 末尾追加了 `properties` /
+> `property_count`，是真正的**二进制布局变化**。0.x 允许（1.0 才承诺冻结），
+> 代价与处理方式：
+> - `PIPLUGIN_API_VERSION` minor 2 → 3（`tests/unit` 的版本 tripwire 因此失败过一次，
+>   那是设计如此：它是提醒同步这里与 CHANGELOG 的机制）；
+> - 版本门禁接受"更老的插件"（同 major、minor 更低），而老插件的结构体更短，
+>   所以 `pi_descriptor_find_property()` 用插件声明的 `api_version` 判布局
+>   （`minor < 3` → 报"没有属性"），**不**去读那截不存在的内存；
+> - 第 3 节列出的 7 个 vtbl / 26 个槽位一个都没动，全局约定（第 2 节）也未变。
 
 ### 4.2 记录在案（不阻断发布，1.0 前需要结论）
 

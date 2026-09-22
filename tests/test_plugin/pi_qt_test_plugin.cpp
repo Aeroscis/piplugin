@@ -26,12 +26,14 @@ static const PiGuid QT_PLUGIN_CLASS_GUID =
             0x91, 0xD3, 0x8A, 0xFC, 0x2E, 0xB1, 0x44, 0x00);
 #  define PI_QT_PLUGIN_NAME       "Qt Test Plugin B"
 #  define PI_QT_PLUGIN_HEARTBEAT  ((uint32_t)0x2001u)
+#  define PI_QT_PLUGIN_VARIANT    "B"
 #else
 static const PiGuid QT_PLUGIN_CLASS_GUID =
     PI_GUID(0x7F83A100, 0x5C4D, 0x4E2A,
             0x91, 0xD3, 0x8A, 0xFC, 0x2E, 0xB1, 0x44, 0x00);
 #  define PI_QT_PLUGIN_NAME       "Qt Test Plugin"
 #  define PI_QT_PLUGIN_HEARTBEAT  ((uint32_t)0x2000u)
+#  define PI_QT_PLUGIN_VARIANT    "A"
 #endif
 
 /* Animated colour block with its tick counter painted inside - the Qt
@@ -113,6 +115,19 @@ QtPluginFactory::QtPluginFactory()
 
     m_descriptor.capabilities = m_capabilities;
     m_descriptor.capability_count = 2;
+
+    /* 自由元数据（roadmap APP-04）：描述性事实不该硬塞进 capabilities。
+     * `pi.` 前缀是框架保留区，所以这里用 com.example.* 这种自有前缀。
+     * 宿主侧用 pi_descriptor_find_property() 读它们（见 headless 测试宿主）。 */
+    m_properties[0].key   = "com.example.kind";
+    m_properties[0].value = "qt-plugin";
+    m_properties[1].key   = "com.example.ui.toolkit";
+    m_properties[1].value = "qt5";
+    m_properties[2].key   = "com.example.variant";
+    m_properties[2].value = PI_QT_PLUGIN_VARIANT;
+
+    m_descriptor.properties = m_properties;
+    m_descriptor.property_count = 3;
 }
 
 uint32_t PI_CALL QtPluginFactory::AddRef(void* self_ptr) { return pi_refcounted_add_ref(self_ptr); }

@@ -325,6 +325,7 @@ typedef struct ServiceFactory {
 
 static ServiceFactory  s_factory;
 static PiPluginCapability s_caps[1];
+static PiPluginProperty   s_props[2];
 static PiPluginDescriptor s_desc;
 static int s_initialized = 0;
 
@@ -423,6 +424,15 @@ PI_PLUGIN_ENTRY_DECL
         s_desc.api_version      = PIPLUGIN_API_VERSION;
         s_desc.capabilities     = s_caps;
         s_desc.capability_count = 1;
+
+        /* 自由元数据（roadmap APP-04）：纯 C 插件声明属性的写法就这几行。
+         * `pi.` 前缀是框架保留区，所以用自有前缀。 */
+        s_props[0].key   = "com.example.kind";
+        s_props[0].value = "service-plugin";
+        s_props[1].key   = "com.example.service.kind";
+        s_props[1].value = "task-server";
+        s_desc.properties     = s_props;
+        s_desc.property_count = 2;
         s_initialized = 1;
     }
 

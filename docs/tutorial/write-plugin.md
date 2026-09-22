@@ -203,6 +203,35 @@ target_link_libraries(${TARGET_NAME} PRIVATE piplugin)
 宿主侧（如 `pi_test_host.imgui`）会在 `pi_factory_create_instance` **之前**调用
 `pi_descriptor_requires(desc, &PI_IID_HOST_UI)` 做能力门检查，请务必如实声明。
 
+### 4.1 描述性元数据：properties（APP-04）
+
+能力（capabilities）回答"这个插件在框架词汇里能做什么"；描述性事实应该走
+descriptor 的键值对，而不是滥用一个 GUID：
+
+```c
+static PiPluginProperty s_props[2];
+...
+s_props[0].key = "com.example.ui.toolkit";   s_props[0].value = "qt5";
+s_props[1].key = "com.example.file_formats"; s_props[1].value = "png,jpg";
+s_desc.properties     = s_props;
+s_desc.property_count = 2;
+```
+
+宿主侧按键取值：
+
+```c
+const char* toolkit = pi_descriptor_find_property(desc, "com.example.ui.toolkit");
+if (toolkit) printf("this plugin's UI is built with %s\n", toolkit);
+```
+
+约定：
+
+- 键值都是 UTF-8、NUL 结尾；`pi.` 前缀是**框架保留区**，你自己用 `com.example.*`
+  这类自有前缀；
+- 键按字节比较（大小写敏感），重复键取第一个；没有该属性返回 NULL；
+- 0.2 编译的插件结构体里没有这两个字段，`pi_descriptor_find_property()` 会按插件声明的
+  `api_version` 判定布局，对老插件直接回答"没有属性"（不会读越界内存）。
+
 ## 5. 可选：C++ RAII 层（pi_cpp.h）
 
 C++ 插件可以少写一半引用计数样板：

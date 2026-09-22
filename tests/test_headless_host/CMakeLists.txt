@@ -77,6 +77,41 @@ if(TARGET pi_test_plugin_service)
     set_tests_properties(headless_host_service_lifecycle PROPERTIES TIMEOUT 120)
 endif()
 
+# ---- APP-04：descriptor 自由元数据（properties）被宿主读出来 ----
+# 宿主把插件声明的属性列出来，并按 key 取值打一行（值随插件不同而不同），
+# 这里断言"按键取到的那一行"存在且正确。与版本门禁用例同理：设了
+# PASS_REGULAR_EXPRESSION 之后 ctest 不再检查退出码，同一组合的退出码由
+# 上面的 smoke 用例负责。
+if(TARGET pi_test_plugin_imgui)
+    add_test(NAME descriptor_properties_imgui_plugin
+        COMMAND "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}/${TARGET_NAME}.exe" "pi_test_plugin_imgui.dll"
+        WORKING_DIRECTORY "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
+        )
+    set_tests_properties(descriptor_properties_imgui_plugin PROPERTIES
+        PASS_REGULAR_EXPRESSION "property com.example.kind = imgui-plugin"
+        TIMEOUT 120)
+endif()
+
+if(TARGET pi_test_plugin_service)
+    add_test(NAME descriptor_properties_service_plugin
+        COMMAND "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}/${TARGET_NAME}.exe" "pi_test_plugin_service.dll"
+        WORKING_DIRECTORY "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
+        )
+    set_tests_properties(descriptor_properties_service_plugin PROPERTIES
+        PASS_REGULAR_EXPRESSION "property com.example.kind = service-plugin"
+        TIMEOUT 120)
+endif()
+
+if(TARGET pi_test_plugin_qt)
+    add_test(NAME descriptor_properties_qt_plugin
+        COMMAND "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}/${TARGET_NAME}.exe" "pi_test_plugin_qt.dll"
+        WORKING_DIRECTORY "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
+        )
+    set_tests_properties(descriptor_properties_qt_plugin PROPERTIES
+        PASS_REGULAR_EXPRESSION "property com.example.kind = qt-plugin"
+        TIMEOUT 120)
+endif()
+
 # ---- APP-01（通道 B：app 自定义宿主服务）的端到端断言 ----
 # 宿主用 pi_host_services_create_ex() 的 extra_qi 钩子暴露自己的服务；插件对
 # 宿主对象 QI 到它并调用。宿主自己只做 QI 探测（不调方法），因此那行计数里的

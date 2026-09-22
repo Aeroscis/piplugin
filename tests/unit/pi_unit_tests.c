@@ -143,6 +143,91 @@ static void TestDescriptorHelpers(void)
 }
 
 /* --------------------------------------------------------------------------
+ * APP-04：descriptor 自由元数据（properties）
+ * -------------------------------------------------------------------------- */
+static void TestDescriptorProperties(void)
+{
+    PiPluginProperty   props[3];
+    PiPluginDescriptor desc;
+
+    Section("APP-04 descriptor properties");
+
+    memset(&desc, 0, sizeof(desc));
+    memset(props, 0, sizeof(props));
+    props[0].key = "com.example.kind";   props[0].value = "qt-plugin";
+    props[1].key = "com.example.blank";  props[1].value = "";          /* 空值合法 */
+    props[2].key = "UTF8.\xE9\x94\xAE";  props[2].value = "\xE5\x80\xBC"; /* UTF-8 键与值 */
+
+    desc.api_version = PIPLUGIN_API_VERSION;
+
+    /* 0.2 时代的 descriptor（memset 出来的：没有 properties）要安全返回 NULL ——
+     * 这也正是"追加密钥对是**追加**字段"的意义：老代码零初始化即为"没有元数据"。 */
+    CHECK(pi_descriptor_find_property(&desc, "com.example.kind") == NULL);
+
+    desc.properties = props;
+    desc.property_count = 3;
+
+    CHECK(strcmp(pi_descriptor_find_property(&desc, "com.example.kind"), "qt-plugin") == 0);
+    CHECK(strcmp(pi_descriptor_find_property(&desc, "com.example.blank"), "") == 0);
+    CHECK(strcmp(pi_descriptor_find_property(&desc, "UTF8.\xE9\x94\xAE"), "\xE5\x80\xBC") == 0);
+
+    /* 未声明的键 */
+    CHECK(pi_descriptor_find_property(&desc, "com.example.missing") == NULL);
+    /* 大小写敏感、且是整键比较（不是前缀匹配） */
+    CHECK(pi_descriptor_find_property(&desc, "COM.EXAMPLE.KIND") == NULL);
+    CHECK(pi_descriptor_find_property(&desc, "com.example") == NULL);
+    CHECK(pi_descriptor_find_property(&desc, "com.example.kinds") == NULL);
+
+    /* 布局判定（APP-04 的关键正确性点）：api_version < 0.3 的插件是按**更短的**
+     * struct 编译的，它的 properties 字段根本不存在 —— 即使这里放了个像样的值，
+     * 也必须报"没有这条属性"，而不是按新布局去读越界内存。
+     * （版本门禁接受更老的插件，所以这件事只能在这里判。） */
+    {
+        PiPluginDescriptor old_layout = desc;
+        old_layout.api_version = PIPLUGIN_API_VERSION_MAKE(0, 2);
+        CHECK(pi_descriptor_find_property(&old_layout, "com.example.kind") == NULL);
+        old_layout.api_version = 0;              /* 完全没声明版本 */
+        CHECK(pi_descriptor_find_property(&old_layout, "com.example.kind") == NULL);
+    }
+
+    /* 容错 */
+    CHECK(pi_descriptor_find_property(NULL, "com.example.kind") == NULL);
+    CHECK(pi_descriptor_find_property(&desc, NULL) == NULL);
+    desc.property_count = 0;
+    CHECK(pi_descriptor_find_property(&desc, "com.example.kind") == NULL);
+    desc.property_count = 3;
+
+    /* 条目 key 为 NULL：跳过该条目而不是崩溃 */
+    {
+        PiPluginProperty   rows[2];
+        PiPluginDescriptor d;
+        memset(&d, 0, sizeof(d));
+        memset(rows, 0, sizeof(rows));
+        rows[0].key = NULL;      rows[0].value = "ignored";
+        rows[1].key = "com.x.k"; rows[1].value = "v";
+        d.api_version = PIPLUGIN_API_VERSION;
+        d.properties = rows;
+        d.property_count = 2;
+        CHECK(pi_descriptor_find_property(&d, "com.x.k") != NULL);
+        CHECK(strcmp(pi_descriptor_find_property(&d, "com.x.k"), "v") == 0);
+    }
+
+    /* 重复 key：第一个胜出（头文件写明） */
+    {
+        PiPluginProperty   rows[2];
+        PiPluginDescriptor d;
+        memset(&d, 0, sizeof(d));
+        memset(rows, 0, sizeof(rows));
+        rows[0].key = "k"; rows[0].value = "first";
+        rows[1].key = "k"; rows[1].value = "second";
+        d.api_version = PIPLUGIN_API_VERSION;
+        d.properties = rows;
+        d.property_count = 2;
+        CHECK(strcmp(pi_descriptor_find_property(&d, "k"), "first") == 0);
+    }
+}
+
+/* --------------------------------------------------------------------------
  * PiRefCountedBase：引用计数 + destroy 回调
  * -------------------------------------------------------------------------- */
 static int g_destroy_calls = 0;
@@ -255,9 +340,10 @@ static void TestApiVersion(void)
 
     /* 编码：高 16 位 major，低 16 位 minor */
     /* 当前 API 版本的 tripwire：改版本号时这里会失败，提醒同步
-     * CHANGELOG.md 与 docs/design/interfaces.md 1.5 的 policy 说明。 */
+     * CHANGELOG.md 与 docs/design/interfaces.md 1.5 的 policy 说明。
+     * 0.3 = APP-04 给 descriptor 追加了 properties（二进制布局变化）。 */
     CHECK_EQ_INT(PIPLUGIN_API_VERSION_MAJOR(PIPLUGIN_API_VERSION), 0);
-    CHECK_EQ_INT(PIPLUGIN_API_VERSION_MINOR(PIPLUGIN_API_VERSION), 2);
+    CHECK_EQ_INT(PIPLUGIN_API_VERSION_MINOR(PIPLUGIN_API_VERSION), 3);
     CHECK_EQ_INT(PIPLUGIN_API_VERSION_MAKE(1, 0), 0x00010000);
     CHECK_EQ_INT(PIPLUGIN_API_VERSION_MAKE(2, 5), 0x00020005);
     CHECK_EQ_INT(PIPLUGIN_API_VERSION_MAJOR(PIPLUGIN_API_VERSION_MAKE(0xFFFF, 0xFFFF)), 0xFFFF);
@@ -286,9 +372,9 @@ static void TestApiVersion(void)
     CHECK(pi_api_version_compatible(0u, PIPLUGIN_API_VERSION_MAKE(1, 0)) == 0);
     CHECK(pi_api_version_compatible(PIPLUGIN_API_VERSION_MAKE(1, 0), 0u) == 0);
 
-    /* pre-1.0 语义（当前发布 0.2.0）：同一 major 0 内，低 minor 兼容、高 minor 拒绝，
-     * 所以插件应随宿主一起升级 —— 这正是 1.0 之前不承诺 ABI 的表现。 */
-    CHECK(pi_api_version_compatible(PIPLUGIN_API_VERSION_MAKE(0, 2), PIPLUGIN_API_VERSION_MAKE(0, 1)) != 0);
+    /* pre-1.0 语义（当前 API 0.3 / 发布 0.2.0）：同一 major 0 内，低 minor 兼容、
+     * 高 minor 拒绝，所以插件应随宿主一起升级 —— 这正是 1.0 之前不承诺 ABI 的表现。 */
+    CHECK(pi_api_version_compatible(PIPLUGIN_API_VERSION_MAKE(0, 3), PIPLUGIN_API_VERSION_MAKE(0, 2)) != 0);
     CHECK(pi_api_version_compatible(PIPLUGIN_API_VERSION_MAKE(0, 2), PIPLUGIN_API_VERSION_MAKE(0, 3)) == 0);
 
     /* 测试所用的负向插件常量：必须被判为不兼容（与 BLK-03 的 ctest 用例呼应） */
@@ -627,6 +713,7 @@ int main(int argc, char** argv)
     printf("== piplugin unit tests ==\n");
     TestGuidEqual();
     TestDescriptorHelpers();
+    TestDescriptorProperties();
     TestRefCounted();
     TestModuleLoadFailure();
     TestApiVersion();

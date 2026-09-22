@@ -25,7 +25,7 @@ piplugin 是一个 **跨平台、纯 C ABI 的插件框架**，采用 **COM 风�
         ▼  动态加载（LoadLibrary / dlopen）
 插件 DLL（.dll / .so / .dylib）
   └─ pi_plugin_entry() → IPiPluginFactory
-       ├─ PiPluginDescriptor（名称 / 版本 / 能力声明）
+       ├─ PiPluginDescriptor（名称 / 版本 / 能力声明 / 自由元数据 properties）
        └─ CreateInstance → IPiPluginBase
             ├─ IPiPluginView（GUI 插件：attach / on_idle / on_resize）
             └─ IPiService（headless / 服务插件）

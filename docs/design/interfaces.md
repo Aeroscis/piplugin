@@ -53,7 +53,13 @@ typedef struct PiPluginDescriptor {
 
     const PiPluginCapability* capabilities;
     uint32_t                  capability_count;
+
+    /* API 0.3 追加（APP-04）：自由元数据，可 NULL */
+    const PiPluginProperty*   properties;
+    uint32_t                  property_count;
 } PiPluginDescriptor;
+
+typedef struct PiPluginProperty { const char* key; const char* value; } PiPluginProperty;
 ```
 
 配套函数：
@@ -61,15 +67,28 @@ typedef struct PiPluginDescriptor {
 - `pi_descriptor_find_capability(desc, iid)` → 匹配的 `PiPluginCapability*` 或 NULL
 - `pi_descriptor_provides(desc, iid)` → 是否提供该能力
 - `pi_descriptor_requires(desc, iid)` → 是否必需该能力
+- `pi_descriptor_find_property(desc, key)` → 属性的值，或 NULL（`properties` 为 NULL /
+  `key` 为 NULL / 未声明该 key 都返回 NULL；重复 key 取第一个）
+
+**properties 是自由元数据**：描述性事实（UI 工具包、支持的文件格式、主页、许可证……）
+不该硬塞进 capabilities。键值都是 UTF-8、NUL 结尾；`pi.` 前缀保留给框架，app / 插件
+用自有前缀（如 `com.example.thing`）；键按字节比较（大小写敏感）。
+
+**追加字段 = 布局变化，读方要判版本**：`properties` 是 0.3 才追加的，0.2 编译出来的
+模块结构体更短。版本门禁会拒绝"比宿主新"的插件，但**接受更老的**（同 major），所以
+读追加字段前必须用插件自己声明的 `api_version` 判布局 —— `pi_descriptor_find_property()`
+内部就是这么做的（`minor < 3` 直接当"没有属性"）。以后再加字段，沿用同一手法。
 
 ### 1.5 api_version 协商策略
 
 `api_version` 是**插件编译时所用框架 API 的版本**，编码为 `major << 16 | minor`
 （用 `PIPLUGIN_API_VERSION_MAJOR` / `PIPLUGIN_API_VERSION_MINOR` / `PIPLUGIN_API_VERSION_MAKE` 读写）。
 
-**取值规则：`PIPLUGIN_API_VERSION` 的 `major.minor` 与发布版本一致**（当前发布
-0.2.0 → API 0.2）。1.0 是"ABI 冻结承诺"的时刻：在那之前每个 `x` 版本都可以改
-ABI，所以 pre-1.0 的插件应随宿主一起升级；1.0 之后 major 只在真正破坏 ABI 时才动，
+**取值规则：`PIPLUGIN_API_VERSION` 的 `major.minor` 跟随发布版本**。当前状态是
+**API 0.3 / 发布 0.2.0**：APP-04 给 descriptor 追加了 `properties`（二进制布局变化），
+按政策 minor 前进一位；发布版本号与 CHANGELOG 在切 0.3.0 时才跟上（发布是一次单独的
+release 提交）。1.0 是"ABI 冻结承诺"的时刻：在那之前每个 `x` 版本都可以改 ABI，
+所以 pre-1.0 的插件应随宿主一起升级；1.0 之后 major 只在真正破坏 ABI 时才动，
 minor 递增表示"只新增接口"。
 
 | 情况 | 判定 |
@@ -564,8 +583,9 @@ pi_host_services_create_ex(&MessageProc, NULL, window,
 2. **表达"我的协议是第几版"**，二选一：
    - 给协议再定义一个 IID 变体（如 `MY_APP_PROTOCOL_V2_IID`），宿主按自己支持的
      版本依次 QI；
-   - 或用 descriptor 的自由 metadata 通道声明协议版本号（roadmap APP-04 的
-     `properties`，尚未落地；在那之前用 IID 变体）。
+   - 或用 descriptor 的自由 metadata 通道声明协议版本号（**已落地**，APP-04 的
+     `properties` + `pi_descriptor_find_property()`，见 1.4）：插件写
+     `myapp.protocol.version = "2"`，宿主按自己支持的版本决定要不要实例化。
 
 宿主侧推荐做法：把"本生态要求哪几个协议 IID"全部交给 `pi_host_session_require()`
 （见 5.4），不满足的插件在实例化之前就被拒绝。

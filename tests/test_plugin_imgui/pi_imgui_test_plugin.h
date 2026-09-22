@@ -68,6 +68,7 @@ public:
 private:
     PiPluginDescriptor m_descriptor;
     PiPluginCapability m_capabilities[2];
+    PiPluginProperty   m_properties[2];   /* APP-04：自由元数据 */
 };
 
 #endif /* PI_IMGUI_TEST_PLUGIN_H */

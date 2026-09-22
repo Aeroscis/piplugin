@@ -74,6 +74,7 @@ public:
 private:
     PiPluginDescriptor m_descriptor;
     PiPluginCapability m_capabilities[2];
+    PiPluginProperty   m_properties[3];   /* APP-04：自由元数据 */
 };
 
 #endif /* PI_QT_TEST_PLUGIN_H */

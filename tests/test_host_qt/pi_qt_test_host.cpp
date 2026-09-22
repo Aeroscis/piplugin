@@ -167,6 +167,18 @@ static void LoadPlugin(const char* dllPath)
                   .arg(QString::fromUtf8(desc->name))
                   .arg(QString::fromUtf8(desc->version))
                   .arg(view_attached ? QString('Y') : QString('N')));
+
+        /* 自由元数据（roadmap APP-04）：按键取值，写进日志便于自动化断言。 */
+        for (uint32_t i = 0; i < desc->property_count; ++i) {
+            const PiPluginProperty* prop = &desc->properties[i];
+            LogStatus("property: %s = %s",
+                      prop->key ? prop->key : "(null)",
+                      prop->value ? prop->value : "(null)");
+        }
+        {
+            const char* kind = pi_descriptor_find_property(desc, "com.example.kind");
+            LogStatus("property com.example.kind = %s", kind ? kind : "(absent)");
+        }
     } else {
         SetStatus(QString::fromUtf8("Loaded (no descriptor)"));
     }

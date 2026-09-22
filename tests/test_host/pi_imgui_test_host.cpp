@@ -352,6 +352,23 @@ static bool RenderFrame(bool resizeFrame, bool present, unsigned overrideW, unsi
                         ImGui::BulletText("%s %s (iid=%08X)", kind, what, id);
                     }
                 }
+
+                /* Free-form metadata (roadmap APP-04): descriptive facts the
+                 * host can display or filter on, instead of abusing a GUID.
+                 *
+                 * Collapsed by default on purpose: the panel is 400px wide and
+                 * only ~274px tall in the smallest window
+                 * scripts/verify_resize_fix.ps1 exercises, and an expanded list
+                 * pushes it into a vertical scrollbar - whose grab sits exactly
+                 * on the panel column that regression measures. */
+                if (desc->property_count > 0 && ImGui::CollapsingHeader("Properties")) {
+                    for (uint32_t i = 0; i < desc->property_count; ++i) {
+                        const PiPluginProperty* prop = &desc->properties[i];
+                        ImGui::BulletText("%s = %s",
+                                          prop->key   ? prop->key   : "(null)",
+                                          prop->value ? prop->value : "(null)");
+                    }
+                }
             }
 
             ImGui::Separator();
@@ -825,6 +842,21 @@ static void LoadPlugin(const char* dllPath)
                       desc->name, desc->version,
                       CurrentView() ? "Y" : "N",
                       pi_host_session_get_service(g_session, g_slot) ? "Y" : "N");
+
+            /* Free-form metadata (APP-04), read by key: the log line is the
+             * evidence an automated run can assert on. */
+            if (desc->property_count > 0) {
+                for (uint32_t i = 0; i < desc->property_count; ++i) {
+                    const PiPluginProperty* prop = &desc->properties[i];
+                    LogStatus("property: %s = %s",
+                              prop->key ? prop->key : "(null)",
+                              prop->value ? prop->value : "(null)");
+                }
+            }
+            LogStatus("property com.example.kind = %s",
+                      pi_descriptor_find_property(desc, "com.example.kind")
+                          ? pi_descriptor_find_property(desc, "com.example.kind")
+                          : "(absent)");
         } else {
             SetStatus("Loaded (no descriptor)");
         }

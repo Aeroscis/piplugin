@@ -39,6 +39,16 @@ ImGuiPluginFactory::ImGuiPluginFactory()
 
     m_descriptor.capabilities = m_capabilities;
     m_descriptor.capability_count = 2;
+
+    /* 自由元数据（roadmap APP-04）：宿主用 pi_descriptor_find_property() 读。
+     * `pi.` 前缀留给框架，app / 插件用自有前缀。 */
+    m_properties[0].key   = "com.example.kind";
+    m_properties[0].value = "imgui-plugin";
+    m_properties[1].key   = "com.example.ui.toolkit";
+    m_properties[1].value = "imgui";
+
+    m_descriptor.properties = m_properties;
+    m_descriptor.property_count = 2;
 }
 
 uint32_t PI_CALL ImGuiPluginFactory::AddRef(void* self_ptr) { return pi_refcounted_add_ref(self_ptr); }

@@ -155,6 +155,27 @@ int main(int argc, char** argv)
      * 不出的能力，都会让 inspect() 直接失败。能走到这里就说明双向门禁都过了。 */
     printf("Capability gate passed (no hard GUI requirement).\n\n");
 
+    /* ---- 自由元数据（roadmap APP-04）------------------------------------
+     * 描述性事实（用什么 UI 工具包、支持什么格式……）不适合塞进 capabilities，
+     * 现在走 descriptor 的键值对：既可以直接列出来展示，也可以按键取值。 */
+    if (desc && desc->property_count > 0) {
+        printf("Declared properties:\n");
+        for (uint32_t i = 0; i < desc->property_count; ++i) {
+            const PiPluginProperty* prop = &desc->properties[i];
+            printf("  %s = %s\n",
+                   prop->key   ? prop->key   : "(null)",
+                   prop->value ? prop->value : "(null)");
+        }
+        printf("\n");
+    }
+    {
+        /* 按键取值：宿主真正会拿去分支的那类信息。单独打一行，ctest 用例
+         * descriptor_properties_* 就断言这一行（值随插件不同而不同）。
+         * 取不到不算宿主故障 —— 第三方插件可以没有这条属性，故打印 (absent)。 */
+        const char* kind = pi_descriptor_find_property(desc, "com.example.kind");
+        printf("[host] property com.example.kind = %s\n\n", kind ? kind : "(absent)");
+    }
+
     /* 第二步：门禁通过后才实例化 + 初始化 */
     hr = pi_host_session_instantiate(session, slot);
     if (PI_FAILED(hr)) {
