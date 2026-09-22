@@ -1,6 +1,9 @@
 # ./adapters/imgui/CMakeLists.txt
 cmake_minimum_required(VERSION 3.23)
 
+# include GNU best practice
+include(GNUInstallDirs)
+
 # target name
 set(TARGET_NAME pipluginframework_imgui)
 pi_tar_msg(STATUS ${TARGET_NAME} "building imgui adapter kit...")
@@ -57,8 +60,12 @@ target_sources(${TARGET_NAME}
 )
 target_compile_definitions(${TARGET_NAME} PRIVATE "LIBRARY_VERSION=\"${FILE_VERSION_STRING}\"")
 
-# self header
-target_include_directories(${TARGET_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+# self header（BUILD_INTERFACE/INSTALL_INTERFACE 拆分：构建树平铺 include，安装树平铺到
+# include/pipluginframework/adapters/imgui，两侧 #include "pi_imgui_view.h" 写法一致）
+target_include_directories(${TARGET_NAME} PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/pipluginframework/adapters/imgui>
+)
 target_include_directories(${TARGET_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/backends)
 
 # first party: framework core
@@ -70,3 +77,21 @@ if(WIN32)
     target_link_libraries(${TARGET_NAME} PRIVATE user32)
 endif()
 target_link_libraries(${TARGET_NAME} PRIVATE d3d11 dxgi d3dcompiler)
+
+# ------- 安装（Modern CMake：静态库 + 公共头 + 导出目标；测试件无 install 规则，不进包） -------
+# 导出集独立于核心（pipluginframeworkTargets）：本 kit 的 find_dependency(imgui)
+# 由安装伞配置（piConfig.cmake.in）在 include 本导出文件前先行处理
+install(TARGETS ${TARGET_NAME}
+    EXPORT pipluginframeworkImguiAdapterTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}/$<CONFIG>  # 静态库（linux .a / windows .lib）
+)
+
+install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/pi_imgui_view.h
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/pipluginframework/adapters/imgui
+)
+
+install(EXPORT pipluginframeworkImguiAdapterTargets
+    FILE pipluginframeworkImguiAdapterTargets.cmake
+    NAMESPACE ${NAMESPACE_NAME}:: # 消费方引用 ${NAMESPACE_NAME}::${TARGET_NAME}
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${NAMESPACE_NAME}
+)

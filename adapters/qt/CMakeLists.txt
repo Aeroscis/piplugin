@@ -1,6 +1,9 @@
 # ./adapters/qt/CMakeLists.txt
 cmake_minimum_required(VERSION 3.23)
 
+# include GNU best practice
+include(GNUInstallDirs)
+
 # target name
 set(TARGET_NAME pipluginframework_qt)
 pi_tar_msg(STATUS ${TARGET_NAME} "building qt adapter kit...")
@@ -55,11 +58,30 @@ target_sources(${TARGET_NAME}
 )
 target_compile_definitions(${TARGET_NAME} PRIVATE "LIBRARY_VERSION=\"${FILE_VERSION_STRING}\"")
 
-# self header
-target_include_directories(${TARGET_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+# self header（BUILD_INTERFACE/INSTALL_INTERFACE 拆分：两侧 #include "pi_qt_view.h" 写法一致）
+target_include_directories(${TARGET_NAME} PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/pipluginframework/adapters/qt>
+)
 
 # first party: framework core
 target_link_libraries(${TARGET_NAME} PUBLIC pipluginframework)
 
 # third party: qt
 target_link_libraries(${TARGET_NAME} PUBLIC Qt5::Widgets)
+
+# ------- 安装（Modern CMake：静态库 + 公共头 + 导出目标；Qt5 为本地安装，消费方需自行可达） -------
+install(TARGETS ${TARGET_NAME}
+    EXPORT pipluginframeworkQtAdapterTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}/$<CONFIG>  # 静态库（linux .a / windows .lib）
+)
+
+install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/pi_qt_view.h
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/pipluginframework/adapters/qt
+)
+
+install(EXPORT pipluginframeworkQtAdapterTargets
+    FILE pipluginframeworkQtAdapterTargets.cmake
+    NAMESPACE ${NAMESPACE_NAME}:: # 消费方引用 ${NAMESPACE_NAME}::${TARGET_NAME}
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${NAMESPACE_NAME}
+)

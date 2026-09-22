@@ -41,7 +41,7 @@ set(TARGET_SRC_FILE_LIST
 find_package(imgui CONFIG QUIET)
 if(NOT imgui_FOUND OR NOT EXISTS ${IMGUI_BACKEND_DIR}/imgui_impl_win32.cpp)
     message(WARNING "imgui (Conan) or vendored backends missing -> ${TARGET_NAME} DISABLED")
-    message(WARNING "  run: conan install . -o with_tests=True --build=missing")
+    message(WARNING "  run: conan install . -o PI_BUILD_TEST_HOST=True --build=missing")
     return()
 endif()
 

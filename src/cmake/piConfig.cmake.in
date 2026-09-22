@@ -3,4 +3,19 @@
 # 包含组件 config（pipluginframework）
 include("${CMAKE_CURRENT_LIST_DIR}/pipluginframeworkConfig.cmake")
 
+# -------------- 可选组件：adapter kits（安装树里存在才包含，各自先解决第三方依赖） --------------
+include(CMakeFindDependencyMacro)
+
+# imgui adapter kit（依赖 conan imgui；未安装该 kit 时自动跳过）
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/pipluginframeworkImguiAdapterTargets.cmake")
+    find_dependency(imgui)
+    include("${CMAKE_CURRENT_LIST_DIR}/pipluginframeworkImguiAdapterTargets.cmake")
+endif()
+
+# qt adapter kit（依赖本地安装的 Qt5，经 CMAKE_PREFIX_PATH 查找；未安装该 kit 时自动跳过）
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/pipluginframeworkQtAdapterTargets.cmake")
+    find_dependency(Qt5 COMPONENTS Widgets Core)
+    include("${CMAKE_CURRENT_LIST_DIR}/pipluginframeworkQtAdapterTargets.cmake")
+endif()
+
 check_required_components(pi)

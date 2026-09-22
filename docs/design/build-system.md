@@ -16,15 +16,18 @@ class PiPluginFrameworkConan(ConanFile):
     name = "pipluginframework"
     version = "1.0.0"
     settings = "os", "compiler", "build_type", "arch"
-    options = { "shared": [True, False], "fPIC": [True, False], "with_tests": [True, False] }
-    generators = "CMakeToolchain", "CMakeDeps"
-
-    def layout(self):
-        cmake_layout(self)          # conan 自动管理生成器路径与 CMakeUserPresets.json
-
-    def requirements(self):
-        if self.options.with_tests:
-            self.requires("imgui/1.92.8")
+    # 开关树：选项与 CMake 缓存选项同名（PI_BUILD_*），generate() 整批转发给 CMake
+    options = {
+        "shared": [True, False], "fPIC": [True, False],
+        "PI_BUILD_ADAPTERS": [True, False],        # adapter kits 总开关
+        "PI_BUILD_ADAPTER_QT": [True, False],      # qt adapter 分开关（Qt5 本地安装）
+        "PI_BUILD_ADAPTER_IMGUI": [True, False],   # imgui adapter 分开关（conan imgui）
+        "PI_BUILD_TESTS": [True, False],           # 测试件总开关
+        "PI_BUILD_TEST_HOST": [True, False], "PI_BUILD_TEST_HOST_QT": [True, False],
+        "PI_BUILD_HEADLESS_HOST": [True, False],
+        "PI_BUILD_TEST_PLUGIN": [True, False], "PI_BUILD_TEST_PLUGIN_IMGUI": [True, False],
+    }
+    generators = "CMakeDeps"   # CMakeToolchain 由 generate() 手动实例化（注入 conf/env 路径）
 ```
 
 要点：
@@ -32,7 +35,16 @@ class PiPluginFrameworkConan(ConanFile):
 - **`cmake_layout(self)`**：conan 会据此自动生成并维护 `CMakeUserPresets.json`。
   **不要**在 `conan install` 时叠加 `--output-folder`，否则会生成重复预设
   （`Duplicate preset: conan-default` 就是这个原因）。
-- `imgui` 只在 `with_tests=True` 时需要（测试插件与套件用）。
+- **开关树**：核心必编（无开关）；adapter kits 与 tests 各有总开关 + 分开关，
+  选项与 CMake 缓存选项同名，`generate()` 整批透传（Conan bool 自动转 ON/OFF）。
+  有效状态 = 总开关 AND 分开关（总开关关死即整组关闭，与 CMake 侧守卫同构）。
+- **依赖自动管理**：imgui adapter 或 imgui 测试宿主任一有效开启，`requirements()`
+  自动拉取 `imgui/1.92.8`；全关则依赖图中完全没有 imgui。
+- **矛盾显式报错**：有效开启的测试件依赖某 adapter kit 而该 kit 有效关闭时，
+  `validate()` 列出全部冲突项并报错（取代旧的"静默降级"）。
+- **conf 路径注入**：`generate()` 优先读 `user.cmake_ext:cmake_prefix_path` 等
+  自定义 conf（标准 profile 的 `[conf]` 段），无 conf 时降级读同名环境变量，
+  注入 CMake 工具链 cache 变量。
 - Qt 是本地安装（`C:/Qt/5.15.2/msvc2019_64`），在根 CMakeLists 的 `CMAKE_PREFIX_PATH` 中追加。
 
 ### 2.1 标准命令序列
@@ -122,6 +134,11 @@ target_link_libraries(... PUBLIC pipluginframework imgui::imgui)
 | `pipluginframework_qt` | Qt5 Widgets | 找不到 Qt5 则禁用 |
 | `pipluginframework_imgui` | imgui (conan) | 找不到 imgui 则禁用 |
 
+总开关 `PI_BUILD_ADAPTERS`（Conan 侧同名选项透传）：关死时所有 kit 一律不编。
+每个 kit 另有独立安装规则：静态库 → `lib/<CONFIG>/`，公共头 →
+`include/pipluginframework/adapters/<kit>/`，导出目标 → 独立
+`pipluginframework<Kit>AdapterTargets.cmake`（由伞配置按存在性挂接）。
+
 ### 3.5 测试（tests/）
 
 五个可选目标，各自做依赖自检，不满足即 `return()` 禁用（不影响整体构建）：
@@ -155,6 +172,18 @@ cmake --install build --config Debug --prefix <prefix>
 ```cmake
 find_package(pi CONFIG REQUIRED)
 target_link_libraries(app PRIVATE pi::pipluginframework)
+# 套件目标随安装树自动可用（该套件开关开启时才安装/导出）：
+target_link_libraries(app PRIVATE pi::pipluginframework_imgui)
 ```
 
-若需同时获得套件，可扩展 conan 配方将 adapters 一并打包（见 TODO）。
+Conan 打包（adapters 已随核心一并打包，测试件不进包）：
+
+```bash
+conan create . -pr MSVC2022-amd64-Cpp17-Debug -o PI_BUILD_TESTS=False
+```
+
+包内容：核心 `bin/<CONFIG>/` + `lib/<CONFIG>/` + `include/pipluginframework/`、
+adapter 静态库与公共头（`include/pipluginframework/adapters/<kit>/`）、
+cmake 配置（伞配置 `piConfig.cmake` 按存在性挂接各 `*AdapterTargets.cmake`，
+安装了哪个套件就自动暴露哪个目标）。消费方经 CMakeDeps 使用
+`pi::pipluginframework` / `pi::pipluginframework_imgui` 等目标。
