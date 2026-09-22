@@ -28,6 +28,22 @@ A release is one commit on `main` that bumps the version in `CMakeLists.txt` and
 
 ### Added
 
+- **A service plugin and its headless acceptance run (APP-07).**
+  `tests/test_plugin_service/` is a pure-C plugin that declares
+  `PI_IID_SERVICE PROVIDES`, has no UI at all (`pi_get_view` answers
+  `PI_E_NOINTERFACE`) and implements start/poll/get_status/stop - the interface
+  existed since the beginning but nothing in the repository ever implemented
+  it, so the headless story of the framework was documented and untested. It is
+  also the reference for giving one plugin object two interfaces in C: the
+  instance carries `IPiPluginBase` and QueryInterface hands out a small wrapper
+  with the service vtable, the same containment pattern the framework uses for
+  `IPiHostUI`. The headless test host loads it and asserts the whole lifecycle
+  step by step (required option missing -> `PI_E_MISSINGCAPABILITY`, polls that
+  must show up as messages the host receives, idempotent stop, poll-after-stop
+  failing, `get_status(NULL)` rejected, and the extra stop the unload sequence
+  performs), with a non-zero exit code on the first mismatch; `ctest` case
+  `headless_host_service_lifecycle`. The scenario matrix in
+  `docs/todo/tests.md` gained its "headless + service plugin" row.
 - **Optional C++ RAII layer (`piplugin/pi_cpp.h`).** Hand-written AddRef/Release
   pairs are the easiest thing to get wrong in a COM-style C API, so C++ hosts
   and plugins can now use `PiPtr<T>` (destructor releases, move-only, `qi_to<U>()`

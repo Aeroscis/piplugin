@@ -272,6 +272,17 @@ PiResult (PI_CALL *pi_service_get_status)(void* this_ptr, int32_t* out_status);
 
 帮助：`pi_service_start` / `pi_service_stop` / `pi_service_poll` / `pi_service_get_status`。
 
+协议细节（由 `tests/test_plugin_service` + `headless_host_service_lifecycle`
+逐条断言，照抄那个插件就是一份可用的落地示例）：
+
+- `pi_service_start`：必填选项缺失返回 `PI_E_MISSINGCAPABILITY`（不是 `PI_FAIL`）；
+  重复 start 一个已在运行的服务应幂等成功；
+- `pi_service_stop`：**任何时候都可调用**（没 start 过、已经停过都返回 `PI_OK`），
+  卸载序列会再调一次；
+- `pi_service_poll`：只在运行时返回 `PI_OK`；已停时返回 `PI_FAIL`，不要假装在工作；
+- `pi_service_get_status`：`out_status == NULL` 返回 `PI_E_INVALIDARG`；
+- 纯服务插件不必实现 `IPiPluginView`，`pi_get_view` 返回 `PI_E_NOINTERFACE`。
+
 ## 3. 宿主管理 API（pi_plugin_host.h）
 
 ```c

@@ -105,8 +105,16 @@ pi_host_services_create_default(&MessageProc, /*user_data=*/NULL, window, &host)
   插件的 `QueryInterface(PI_IID_HOST_UI)` 返回 `PI_E_NOINTERFACE` → 插件不建 UI。
 - 实例化前做能力门：`pi_descriptor_requires(desc, &PI_IID_HOST_UI)` 为真 → 拒绝加载。
 - 可以探测 `PI_IID_SERVICE`：headless 服务器宿主加载提供服务的插件并用
-  `pi_service_start` / `pi_service_poll` / `pi_service_stop` 驱动（框架已提供接口，
-  内置测试插件尚未实现 SERVICE，见 TODO）。
+  `pi_service_start` / `pi_service_poll` / `pi_service_stop` 驱动。参照实现是
+  `tests/test_plugin_service`（纯 C 服务插件）与 `tests/test_headless_host`
+  （把 start / poll / 状态 / stop 幂等 / 卸载序列再 stop 逐条断言，ctest 用例
+  `headless_host_service_lifecycle`）。要点：
+  - `start()` 的必填选项缺失时返回 `PI_E_MISSINGCAPABILITY`（这是接口文档的承诺，
+    不是 `PI_FAIL`）；
+  - `poll()` 由**宿主的主循环**驱动（对应 GUI 插件的 `pi_on_idle`）；服务未运行时
+    应当明确失败，而不是假装在工作；
+  - `stop()` 幂等：卸载序列会再调一次，插件必须能承受；
+  - 纯服务插件不必实现 `IPiPluginView`：`pi_get_view` 返回 `PI_E_NOINTERFACE` 即可。
 
 ## 5. 便捷 API：pi_host_create_plugin
 

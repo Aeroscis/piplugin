@@ -41,7 +41,7 @@
 | Qt 宿主 + imgui 插件 | ✅ 已演示 |
 | imgui 宿主 + Qt 插件 | ✅ 可跑（`pi_test_host_imgui.exe pi_test_plugin_qt.dll`），未纳入自动化 |
 | headless 宿主 + GUI 插件 | ✅ 已演示（插件无头运行、不建 UI） |
-| headless 宿主 + service 插件 | ❌ 无示例（见 `framework.md` 第 1 条） |
+| headless 宿主 + service 插件 | ✅ 已有示例并纳入自动化（APP-07：`pi_test_plugin_service.dll` + ctest `headless_host_service_lifecycle`，断言 start/poll/status/stop 全生命周期） |
 | 多插件同进程 | ❌ 未覆盖（Qt 套件共享受限，见 `adapters.md` 第 1 条） |
 | 嵌入窗口动态切换 | ❌ 未覆盖（`pi_host_default_set_ui_window` 运行时切换） |
 

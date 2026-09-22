@@ -23,6 +23,7 @@
 #include "piplugin/pi_plugin.h"
 #include "pi_host_session.h"
 #include "pi_test_host_service_impl.h"
+#include "pi_test_service_protocol.h"
 
 #include <stdio.h>
 
@@ -37,11 +38,20 @@
 static uint32_t              g_pluginMessages = 0;
 static PiTestHostServiceImpl g_extraService;
 
+/* APP-07：按消息码分类计数，用来断言服务真的在 poll() 里投递了 tick、
+ * 以及 stop() 一共被调了几次（含卸载序列那一次）。 */
+static uint32_t g_tickMessages      = 0;
+static uint32_t g_stopMessages      = 0;
+static uint32_t g_stopsBeforeUnload = 0;
+static int      g_hadService        = 0;
+
 static void HostMessageProc(void* user_data, uint32_t msg,
                             uintptr_t wparam, intptr_t lparam)
 {
     (void)user_data; (void)lparam;
     ++g_pluginMessages;
+    if (msg == PI_TEST_MSG_SERVICE_TICK) ++g_tickMessages;
+    else if (msg == PI_TEST_MSG_SERVICE_STOP) ++g_stopMessages;
     printf("[plugin message] msg=0x%04X wparam=%llu\n", msg, (unsigned long long)wparam);
 }
 
@@ -163,19 +173,112 @@ int main(int argc, char** argv)
            view ? "VIEW CREATED" : "no view (headless)",
            view ? (int)PI_OK : (int)PI_E_NOINTERFACE);
 
-    /* Service capability discovery: this Qt test plugin has none, which is
-     * exactly what a task server would check before loading it. */
+    /* Service capability discovery: a GUI plugin has none, which is exactly
+     * what a task server would check before loading it. */
     IPiService* service = pi_host_session_get_service(session, slot);   /* borrowed */
     printf("QueryInterface(PI_IID_SERVICE) -> %s (hr=%d)\n",
            service ? "service found" : "no service capability",
            service ? (int)PI_OK : (int)PI_E_NOINTERFACE);
+
+    /* ---- IPiService 全生命周期断言（roadmap APP-07）----------------------
+     *
+     * 这是"headless + service"那一格的自动化验收：宿主像真正的服务器主循环
+     * 那样驱动插件，并把每一步的返回值与可观测副作用（插件投递的消息）都断言
+     * 一遍。任何一条不符 -> 退出码 1，ctest 用例 headless_host_service_lifecycle
+     * 只按退出码判定。
+     *
+     * 不 release 服务指针：它是借用指针，所有权在 session，卸载序列里还会再
+     * stop 一次（stop 幂等），正好也被下面的计数覆盖。 */
     if (service) {
-        pi_service_start(service, NULL, 0);
-        int32_t status = -1;
+        static const PiServiceOption opts[2] = {
+            { PI_TEST_SERVICE_OPTION_SLOT,     "alpha" },
+            { PI_TEST_SERVICE_OPTION_INTERVAL, "1"     }
+        };
+        int32_t  status = -1;
+        PiResult shr;
+        uint32_t ticks0, stops0;
+        int      ok = 1;
+        unsigned step = 0;
+
+        g_hadService = 1;
+        printf("\nIPiService lifecycle (poll-driven, no event loop):\n");
+
+        /* 1) 从未 start 就 stop：契约说幂等，必须成功 */
+        shr = pi_service_stop(service);
+        ++step;
+        printf("  %u. stop before start          -> %d (expect %d)\n",
+               step, (int)shr, (int)PI_OK);
+        ok = ok && (shr == PI_OK);
+
+        /* 2) 缺少必填选项就 start：文档承诺 PI_E_MISSINGCAPABILITY */
+        shr = pi_service_start(service, NULL, 0);
+        ++step;
+        printf("  %u. start without 'slot'       -> %d (expect %d)\n",
+               step, (int)shr, (int)PI_E_MISSINGCAPABILITY);
+        ok = ok && (shr == PI_E_MISSINGCAPABILITY);
+
+        /* 3) 正常 start，状态必须变成 RUNNING */
+        shr = pi_service_start(service, opts, 2);
+        ++step;
+        status = -1;
         pi_service_get_status(service, &status);
-        printf("  service status: %d\n", status);
-        pi_service_stop(service);
-        /* 不 release：借用指针，所有权在 session。卸载序列会再 stop 一次，stop 幂等。 */
+        printf("  %u. start(slot=alpha)          -> %d, status=%d (expect %d/%d)\n",
+               step, (int)shr, (int)status, (int)PI_OK, (int)PI_SERVICE_RUNNING);
+        ok = ok && (shr == PI_OK) && (status == PI_SERVICE_RUNNING);
+
+        /* 4) poll：服务器主循环驱动它干活。插件每 poll 报一次 tick，
+         *    宿主收到的消息数就是"真的在跑"的证据（不是只看返回值）。 */
+        ticks0 = g_tickMessages;
+        for (int i = 0; i < 5; ++i) {
+            shr = pi_service_poll(service);
+            if (shr != PI_OK) ok = 0;
+        }
+        ++step;
+        status = -1;
+        pi_service_get_status(service, &status);
+        printf("  %u. poll x5                     -> ticks=%u (expect 5), status=%d\n",
+               step, (unsigned)(g_tickMessages - ticks0), (int)status);
+        ok = ok && (g_tickMessages - ticks0 == 5) && (status == PI_SERVICE_RUNNING);
+
+        /* 5) stop 幂等：连调两次都要成功，且状态变成 STOPPED */
+        stops0 = g_stopMessages;
+        shr = pi_service_stop(service);
+        ok = ok && (shr == PI_OK);
+        shr = pi_service_stop(service);
+        ++step;
+        status = -1;
+        pi_service_get_status(service, &status);
+        printf("  %u. stop x2 (idempotent)        -> stops=%u (expect 2), status=%d (expect %d)\n",
+               step, (unsigned)(g_stopMessages - stops0), (int)status, (int)PI_SERVICE_STOPPED);
+        ok = ok && (shr == PI_OK) && (g_stopMessages - stops0 == 2) &&
+             (status == PI_SERVICE_STOPPED);
+
+        /* 6) 停了以后再 poll：插件必须明确报错，而不是假装还在工作 */
+        shr = pi_service_poll(service);
+        ++step;
+        printf("  %u. poll after stop             -> %d (expect %d)\n",
+               step, (int)shr, (int)PI_FAIL);
+        ok = ok && (shr == PI_FAIL);
+
+        /* 7) get_status 的 NULL 出参必须被拒绝而不是崩溃 */
+        shr = pi_service_get_status(service, NULL);
+        ++step;
+        printf("  %u. get_status(NULL)            -> %d (expect %d)\n",
+               step, (int)shr, (int)PI_E_INVALIDARG);
+        ok = ok && (shr == PI_E_INVALIDARG);
+
+        if (!ok) {
+            printf("[host] service lifecycle: FAILED\n");
+            pi_host_session_unload(session, slot);
+            pi_host_session_destroy(session);
+            pi_iunknown_release((IPiUnknown*)host);
+            return 1;
+        }
+
+        /* 这个计数等下用来断言"卸载序列确实又 stop 了一次" */
+        g_stopsBeforeUnload = g_stopMessages;
+        printf("[host] service lifecycle: OK (polls=5, ticks=5, stops=%u)\n",
+               (unsigned)g_stopMessages);
     }
 
     /* Drive a headless "main loop" for a moment to show the plugin is
@@ -194,6 +297,22 @@ int main(int argc, char** argv)
     /* 七步卸载序列由 kit 内化：service stop/release -> detach/release view ->
      * terminate/release plugin -> release factory -> unload module -> 清槽位 */
     pi_host_session_unload(session, slot);
+
+    /* APP-07 的最后一条断言：卸载序列自己也要 stop 一次服务（插件 stop 幂等，
+     * 所以这是一次可观测的额外调用，且模块此刻仍然 mapped）。 */
+    if (g_hadService && g_stopMessages != g_stopsBeforeUnload + 1) {
+        printf("[host] FAILED: the unload sequence did not stop the service "
+               "(stops before=%u after=%u)\n",
+               (unsigned)g_stopsBeforeUnload, (unsigned)g_stopMessages);
+        pi_host_session_destroy(session);
+        pi_iunknown_release((IPiUnknown*)host);
+        return 1;
+    }
+    if (g_hadService) {
+        printf("[host] unload sequence stopped the service (stop #%u)\n",
+               (unsigned)g_stopMessages);
+    }
+
     pi_host_session_destroy(session);        /* 释放 session 持有的宿主服务引用 */
     pi_iunknown_release((IPiUnknown*)host);  /* 释放宿主自己那一份引用 */
 

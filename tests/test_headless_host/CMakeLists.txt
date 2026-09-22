@@ -65,6 +65,18 @@ if(TARGET pi_test_plugin_imgui)
     set_tests_properties(headless_host_imgui_smoke PROPERTIES TIMEOUT 120)
 endif()
 
+# ---- APP-07：headless + service 插件（IPiService 全生命周期）----
+# 宿主自己把 start / poll / status / stop（含幂等与错误路径）逐条断言，任何一条
+# 不符就以退出码 1 结束，所以这个用例只按退出码判定 —— 比正则更严格。
+# 场景矩阵里的"headless 宿主 + service 插件"那一格就是它。
+if(TARGET pi_test_plugin_service)
+    add_test(NAME headless_host_service_lifecycle
+        COMMAND "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}/${TARGET_NAME}.exe" "pi_test_plugin_service.dll"
+        WORKING_DIRECTORY "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
+        )
+    set_tests_properties(headless_host_service_lifecycle PROPERTIES TIMEOUT 120)
+endif()
+
 # ---- APP-01（通道 B：app 自定义宿主服务）的端到端断言 ----
 # 宿主用 pi_host_services_create_ex() 的 extra_qi 钩子暴露自己的服务；插件对
 # 宿主对象 QI 到它并调用。宿主自己只做 QI 探测（不调方法），因此那行计数里的

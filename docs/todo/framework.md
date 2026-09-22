@@ -1,16 +1,13 @@
 # 核心框架待办（Framework）
 
-## 1. IPiService 的真实实现与测试 [P1]
+## 1. IPiService 的真实实现与测试 [P1] —— 已完成（roadmap APP-07）
 
-**现状**：`IPiService` 接口已定义（`pi_plugin_service.h`），headless 宿主
-（`pi_test_host_headless`）会探测 `PI_IID_SERVICE` 并具备 start/stop/poll 驱动逻辑；
-但**现有测试插件都没有实现 SERVICE 能力**，该路径只有接口没有落地示例。
-
-**建议**：
-1. 新增一个 headless 服务型测试插件（如模拟"任务/计算"插件），声明
-   `PI_IID_SERVICE (PROVIDES)`，实现 start（读 `PiServiceOption` 配置）、poll（做工作）、
-   status、stop；
-2. 让 `pi_test_host_headless` 加载它，验证完整服务生命周期。
+> **状态**：已落地。`tests/test_plugin_service/` 是一个纯 C 服务插件
+> （`PROVIDES PI_IID_SERVICE`，实现 start/poll/status/stop，无任何 UI），
+> `tests/test_headless_host/` 加载它并把全生命周期逐条断言
+> （start 缺必填选项 → `PI_E_MISSINGCAPABILITY`、poll 的副作用计数、
+> stop 幂等、卸载序列再 stop 一次），ctest 用例 `headless_host_service_lifecycle`
+> 按退出码判定。场景矩阵（`tests.md` #4）已补上"headless + service"格。
 
 ## 2. 事件/信号机制（框架级） [P2]
 
