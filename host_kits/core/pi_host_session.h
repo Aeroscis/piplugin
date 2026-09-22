@@ -1,5 +1,5 @@
 /*
- * pipluginframework - Host kit L0: PiPluginHostSession
+ * piplugin - Host kit L0: PiPluginHostSession
  *
  * 职责（release-roadmap.md §1.1 的 L0 层）：消灭宿主侧重复的"机制"代码 ——
  * 加载 / 双向能力门禁 / 实例化 / 多插件槽位 / 七步卸载序列。
@@ -11,7 +11,7 @@
  *     pi_host_session_drive_idle() 这一个"把每个活着的 view 过一遍"的机制；
  *   - 布局、样式、可见性策略、窗口数量全部归宿主。
  *
- * 依赖：只依赖框架核心（pipluginframework），零 GUI 依赖 —— 见同目录上级
+ * 依赖：只依赖框架核心（piplugin），零 GUI 依赖 —— 见同目录上级
  * host_kits/README.md 的三层纪律。
  *
  * 线程：本层不加锁，所有函数必须在宿主 GUI 线程上调用（与框架核心的
@@ -23,7 +23,7 @@
 #ifndef PI_HOST_SESSION_H
 #define PI_HOST_SESSION_H
 
-#include "pipluginframework/pi_plugin.h"
+#include "piplugin/pi_plugin.h"
 
 #ifdef __cplusplus
 extern "C" {

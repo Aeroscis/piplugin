@@ -1,5 +1,5 @@
 /*
- * pipluginframework - Host kit L1: Qt 嵌入区域（实现）
+ * piplugin - Host kit L1: Qt 嵌入区域（实现）
  *
  * 纪律见 pi_host_embed_area.h：只做 attach / resize 转发 / idle 驱动，
  * 不创建顶层窗口、不决定布局、不做视觉装饰。

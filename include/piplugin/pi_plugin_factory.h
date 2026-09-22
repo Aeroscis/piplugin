@@ -1,5 +1,5 @@
 /*
- * pipluginframework - IPiPluginFactory
+ * piplugin - IPiPluginFactory
  *
  * Every plugin DLL exports pi_plugin_entry(), which returns an
  * IPiPluginFactory. The host uses the factory to:

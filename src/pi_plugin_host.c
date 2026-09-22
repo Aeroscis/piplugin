@@ -1,11 +1,11 @@
 /*
- * pipluginframework - Host-side implementation
+ * piplugin - Host-side implementation
  *
  * Handles loading plugin DLLs, extracting factories, managing lifecycle,
  * and provides the default IPiHostServices implementation that hosts can
  * hand to plugins.
  */
-#include "pipluginframework/pi_plugin_host.h"
+#include "piplugin/pi_plugin_host.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>

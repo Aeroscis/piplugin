@@ -7,7 +7,7 @@
 ## 1. 宿主最小流程
 
 ```c
-#include "pipluginframework/pi_plugin.h"
+#include "piplugin/pi_plugin.h"
 
 /* 1) 创建宿主服务对象 */
 IPiHostServices* host = NULL;
@@ -124,7 +124,7 @@ pi_host_create_plugin("my_plugin.dll", &classGuid, host, &plugin, &module);
 > 注意 `out_module` 不能传 NULL（那样模块永远不会被卸载，故意泄漏以保证安全）；
 > 请始终接收并管理模块的卸载。
 
-## 6. 少写机制代码：宿主 kit L0（pipluginframework_host）
+## 6. 少写机制代码：宿主 kit L0（piplugin_host）
 
 §1 的 1)~8) 是每个宿主都要重写一遍的**机制**代码（加载 / 能力门禁 / 实例化 / 七步卸载），
 抄错一次顺序就是卸载崩溃。宿主 kit 的 L0 层把它收拢成一个会话对象：

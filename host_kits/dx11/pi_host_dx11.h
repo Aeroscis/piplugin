@@ -1,5 +1,5 @@
 /*
- * pipluginframework - Host kit L1: DX11 嵌入胶水 (pipluginframework_host_dx11)
+ * piplugin - Host kit L1: DX11 嵌入胶水 (piplugin_host_dx11)
  *
  * L1 的职责（release-roadmap.md §1.1）：把**宿主自己创建的**容器变成 embed host，
  * 并把"能正确嵌入子窗口的 D3D11 设备 + flip-model 交换链"的创建参数固化下来。
@@ -30,7 +30,7 @@
 #ifndef PI_HOST_DX11_H
 #define PI_HOST_DX11_H
 
-#include "pipluginframework/pi_plugin.h"
+#include "piplugin/pi_plugin.h"
 
 #include <d3d11.h>
 #include <dxgi.h>

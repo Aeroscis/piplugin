@@ -10,9 +10,9 @@
 # 开关树：总开关 PI_BUILD_HOST_KITS + 每层分开关；Conan 侧同名选项整批转发
 # （见 conanfile.py 的开关树注释）。
 option(PI_BUILD_HOST_KITS "build host-side kits (master switch)" ON)
-option(PI_BUILD_HOST_KIT_CORE "build host kit L0 session library (pipluginframework_host)" ON)          # 依赖: 仅框架核心
-option(PI_BUILD_HOST_KIT_QT "build host kit L1 qt embed area (pipluginframework_host_qt)" ON)           # 依赖: Qt5 + L0
-option(PI_BUILD_HOST_KIT_DX11 "build host kit L1 dx11 embed glue (pipluginframework_host_dx11)" ON)     # 依赖: Windows SDK
+option(PI_BUILD_HOST_KIT_CORE "build host kit L0 session library (piplugin_host)" ON)          # 依赖: 仅框架核心
+option(PI_BUILD_HOST_KIT_QT "build host kit L1 qt embed area (piplugin_host_qt)" ON)           # 依赖: Qt5 + L0
+option(PI_BUILD_HOST_KIT_DX11 "build host kit L1 dx11 embed glue (piplugin_host_dx11)" ON)     # 依赖: Windows SDK
 
 if (NOT PI_BUILD_HOST_KITS)
     return()   # 总开关关死：所有宿主 kit 一律不编（分开关的取值不再有意义）

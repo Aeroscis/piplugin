@@ -1,5 +1,5 @@
 /*
- * pipluginframework — Master include header
+ * piplugin — Master include header
  *
  * Include this single header to use the entire framework.
  */

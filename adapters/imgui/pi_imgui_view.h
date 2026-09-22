@@ -1,7 +1,7 @@
 /*
- * pipluginframework - ImGui UI adapter kit (pipluginframework_imgui)
+ * piplugin - ImGui UI adapter kit (piplugin_imgui)
  *
- * Lets a plugin draw its UI with Dear ImGui inside ANY pipluginframework
+ * Lets a plugin draw its UI with Dear ImGui inside ANY piplugin
  * host (Qt, wxWidgets, imgui itself, ...), without the host knowing
  * Dear ImGui.
  *
@@ -38,7 +38,7 @@
 #ifndef PI_IMGUI_VIEW_H
 #define PI_IMGUI_VIEW_H
 
-#include "pipluginframework/pi_plugin.h"
+#include "piplugin/pi_plugin.h"
 
 #ifdef __cplusplus
 extern "C" {

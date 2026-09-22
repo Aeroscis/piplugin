@@ -1,5 +1,5 @@
 /*
- * pipluginframework - Host kit L1: Qt 嵌入区域 (pipluginframework_host_qt)
+ * piplugin - Host kit L1: Qt 嵌入区域 (piplugin_host_qt)
  *
  * L1 的职责（release-roadmap.md §1.1）：把**宿主自己创建的**容器变成 embed host。
  * 本类只做三件机制：
@@ -21,7 +21,7 @@
 #ifndef PI_HOST_EMBED_AREA_H
 #define PI_HOST_EMBED_AREA_H
 
-#include "pipluginframework/pi_plugin.h"
+#include "piplugin/pi_plugin.h"
 #include "pi_host_session.h"
 
 #include <QWidget>

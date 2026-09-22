@@ -1,7 +1,7 @@
 # 使用 UI 适配器套件（Adapters）
 
-本文讲解两个 UI 适配器套件的用法：`pipluginframework_imgui`（立即模式 UI）与
-`pipluginframework_qt`（窗口控件 UI）。两者的共同点：**插件作者只写纯 UI 逻辑**，
+本文讲解两个 UI 适配器套件的用法：`piplugin_imgui`（立即模式 UI）与
+`piplugin_qt`（窗口控件 UI）。两者的共同点：**插件作者只写纯 UI 逻辑**，
 事件循环合并、窗口嵌入、线程 marshal、生命周期都由套件处理。
 
 ## 1. 选择哪个套件？
@@ -13,7 +13,7 @@
 | 宿主本身就是 Qt 程序 | 不要用 Qt 套件——直接把控件放进宿主 Qt 事件循环（见限制） |
 | 宿主自身也用 imgui | imgui 套件没问题（context 自动隔离） |
 
-## 2. imgui 套件（pipluginframework_imgui）
+## 2. imgui 套件（piplugin_imgui）
 
 ### 2.1 用法
 
@@ -61,7 +61,7 @@ PiResult PI_CALL GetView(void* s, IPiPluginView** out) {
   调用结束恢复原 context —— 所以嵌进也用 imgui 的宿主不会互相污染。
 - 契约：`pi_attach` / `pi_on_idle` / `pi_on_resize` / `pi_detach` 必须都在宿主 GUI 线程调用。
 
-## 3. Qt 套件（pipluginframework_qt）
+## 3. Qt 套件（piplugin_qt）
 
 ### 3.1 用法
 
@@ -119,8 +119,8 @@ pi_qt_view_post(view, &SomeFn, user);      // 任意线程可调，marshal 到 Q
 
 ```cmake
 # 插件 CMakeLists.txt
-target_link_libraries(my_plugin PRIVATE pipluginframework)
-target_link_libraries(my_plugin PRIVATE pipluginframework_imgui)  # 或 pipluginframework_qt
+target_link_libraries(my_plugin PRIVATE piplugin)
+target_link_libraries(my_plugin PRIVATE piplugin_imgui)  # 或 piplugin_qt
 ```
 
 套件是 STATIC 库，会把 imgui / Qt5::Widgets 一起带进来。

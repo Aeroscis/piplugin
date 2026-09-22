@@ -28,12 +28,12 @@ _TEST_HOST_KIT_NEEDS = {
 }
 
 
-class PiPluginFrameworkConan(ConanFile):
-    name = "pipluginframework"
+class PiPluginConan(ConanFile):
+    name = "piplugin"
     version = "1.0.0"
     license = "MIT"
-    author = "pipluginframework"
-    url = "https://github.com/example/pipluginframework"
+    author = "piplugin"
+    url = "https://github.com/example/piplugin"
     description = "Cross-platform plugin framework with COM-style C ABI"
     topics = ("plugin", "framework", "c", "ffi")
     settings = "os", "compiler", "build_type", "arch"
@@ -207,44 +207,44 @@ class PiPluginFrameworkConan(ConanFile):
         self.cpp_info.bindirs = [f"bin/{self.settings.build_type}"]
 
         # 与安装树导出的目标名对齐（NAMESPACE pi::），Conan 消费方与裸 CMake 消费方目标名一致
-        core = self.cpp_info.components["pipluginframework"]
-        core.libs = [f"pipluginframework{suffix}"]
-        core.set_property("cmake_target_name", "pi::pipluginframework")
+        core = self.cpp_info.components["piplugin"]
+        core.libs = [f"piplugin{suffix}"]
+        core.set_property("cmake_target_name", "pi::piplugin")
 
         # 宿主 kit L0（宿主侧机制库；仅依赖核心，无第三方依赖）
         if self._host_kit_enabled("CORE"):
-            comp = self.cpp_info.components["pipluginframework_host"]
-            comp.libs = [f"pipluginframework_host{suffix}"]
-            comp.requires = ["pipluginframework"]
-            comp.set_property("cmake_target_name", "pi::pipluginframework_host")
+            comp = self.cpp_info.components["piplugin_host"]
+            comp.libs = [f"piplugin_host{suffix}"]
+            comp.requires = ["piplugin"]
+            comp.set_property("cmake_target_name", "pi::piplugin_host")
 
         # 宿主 kit L1 Qt 嵌入区域（依赖 L0 + 本地安装的 Qt5，非 conan 依赖）
         if self._host_kit_enabled("QT"):
-            comp = self.cpp_info.components["pipluginframework_host_qt"]
-            comp.libs = [f"pipluginframework_host_qt{suffix}"]
-            comp.requires = ["pipluginframework", "pipluginframework_host"]
-            comp.set_property("cmake_target_name", "pi::pipluginframework_host_qt")
+            comp = self.cpp_info.components["piplugin_host_qt"]
+            comp.libs = [f"piplugin_host_qt{suffix}"]
+            comp.requires = ["piplugin", "piplugin_host"]
+            comp.set_property("cmake_target_name", "pi::piplugin_host_qt")
 
         # 宿主 kit L1 DX11 嵌入胶水（仅 Windows；只依赖核心）
         if self._host_kit_enabled("DX11"):
-            comp = self.cpp_info.components["pipluginframework_host_dx11"]
-            comp.libs = [f"pipluginframework_host_dx11{suffix}"]
-            comp.requires = ["pipluginframework"]
-            comp.set_property("cmake_target_name", "pi::pipluginframework_host_dx11")
+            comp = self.cpp_info.components["piplugin_host_dx11"]
+            comp.libs = [f"piplugin_host_dx11{suffix}"]
+            comp.requires = ["piplugin"]
+            comp.set_property("cmake_target_name", "pi::piplugin_host_dx11")
 
         if self._adapter_enabled("IMGUI"):
-            comp = self.cpp_info.components["pipluginframework_imgui"]
-            comp.libs = [f"pipluginframework_imgui{suffix}"]
+            comp = self.cpp_info.components["piplugin_imgui"]
+            comp.libs = [f"piplugin_imgui{suffix}"]
             # 外部包引用必须写 包名::组件名；无组件的包用 包名::包名 兜底到根 cpp_info
-            comp.requires = ["pipluginframework", "imgui::imgui"]
-            comp.set_property("cmake_target_name", "pi::pipluginframework_imgui")
+            comp.requires = ["piplugin", "imgui::imgui"]
+            comp.set_property("cmake_target_name", "pi::piplugin_imgui")
         elif self._test_enabled("PI_BUILD_TEST_HOST"):
             # imgui 仅为测试宿主拉取（adapter kit 未开启）：测试件不进包，但其依赖须在
             # 包信息中可见，否则 Conan 组件一致性检查会拒绝该变体
             self.cpp_info.requires = ["imgui::imgui"]
         if self._adapter_enabled("QT"):
             # 注意：Qt5 是本地安装（非 conan 依赖），消费方需自行保证 find_package(Qt5) 可达
-            comp = self.cpp_info.components["pipluginframework_qt"]
-            comp.libs = [f"pipluginframework_qt{suffix}"]
-            comp.requires = ["pipluginframework"]
-            comp.set_property("cmake_target_name", "pi::pipluginframework_qt")
+            comp = self.cpp_info.components["piplugin_qt"]
+            comp.libs = [f"piplugin_qt{suffix}"]
+            comp.requires = ["piplugin"]
+            comp.set_property("cmake_target_name", "pi::piplugin_qt")

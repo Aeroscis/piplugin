@@ -1,5 +1,5 @@
 /*
- * pipluginframework - Headless Test Host (console)
+ * piplugin - Headless Test Host (console)
  *
  * Simulates the "task server" side of the distributed application: it
  * loads the SAME plugin binary as the GUI host, but creates its host
@@ -12,11 +12,11 @@
  *   3. IPiService discovery for future server-side plugins
  *
  * 宿主侧机制（加载 / 双向能力门禁 / 实例化 / 七步卸载序列）全部来自宿主 kit L0
- * （pipluginframework_host）；本文件只剩"这一台宿主想展示什么"。
+ * （piplugin_host）；本文件只剩"这一台宿主想展示什么"。
  * 这正是 inspect()/instantiate() 分解形式存在的理由：门禁与实例化的**顺序**由
  * kit 保证（实例化前门禁），而"要不要实例化"的决策仍归宿主。
  */
-#include "pipluginframework/pi_plugin.h"
+#include "piplugin/pi_plugin.h"
 #include "pi_host_session.h"
 
 #include <stdio.h>
@@ -51,7 +51,7 @@ static const char* CapKind(uint32_t flags)
 int main(int argc, char** argv)
 {
     const char* dllPath = (argc > 1) ? argv[1] : "pi_test_plugin_qt.dll";
-    printf("== pipluginframework headless host ==\n");
+    printf("== piplugin headless host ==\n");
     printf("Loading plugin: %s\n\n", dllPath);
 
     /* Headless host services: NO window -> IPiHostUI is not exposed. */

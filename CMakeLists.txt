@@ -6,10 +6,10 @@ cmake_minimum_required(VERSION 3.23)
 include(${CMAKE_CURRENT_LIST_DIR}/cmake/pi/pi.cmake)
 
 # ------------------------------- Project --------------------------------
-project(pipluginframework
+project(piplugin
         VERSION 1.0.0
         DESCRIPTION "Cross-platform plugin framework with COM-style C ABI"
-        HOMEPAGE_URL "https://github.com/example/pipluginframework"
+        HOMEPAGE_URL "https://github.com/example/piplugin"
         LANGUAGES C CXX
     )
 pi_proj_msg(STATUS "project [${PROJECT_NAME}] declared")# project msg
@@ -34,7 +34,7 @@ endif()
 
 #------------------------- build option-------------------------
 # 构建产物位置由各模块自行决定：
-#   - 框架库（pipluginframework）构建产物 -> <root>/lib/<CONFIG>（沿用原始布局，.lib/.dll/cmake 均位于 lib/）
+#   - 框架库（piplugin）构建产物 -> <root>/lib/<CONFIG>（沿用原始布局，.lib/.dll/cmake 均位于 lib/）
 #   - demo/插件构建到各自构建树，通过 install 部署到 <root>/bin/<CONFIG>（参考 xdcs-naspes-common）
 # 部署统一在 install 阶段完成（cmake --install --config <CONFIG> 或 --prefix 指定安装前缀）
 

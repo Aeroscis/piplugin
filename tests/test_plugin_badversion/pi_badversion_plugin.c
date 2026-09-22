@@ -1,5 +1,5 @@
 /*
- * pipluginframework - 故意声明不兼容 api_version 的测试插件（BLK-03 负向用例）
+ * piplugin - 故意声明不兼容 api_version 的测试插件（BLK-03 负向用例）
  *
  * 除了 descriptor 里的 api_version 之外，这个插件是**完全合法**的：有工厂、
  * 有一个 class、声明了 PROVIDES PLUGIN_VIEW。因此宿主拒绝它的**唯一**理由就是
@@ -7,11 +7,11 @@
  *
  * 纯 C，不依赖 Qt 与任何适配器套件。
  */
-#include "pipluginframework/pi_plugin.h"
+#include "piplugin/pi_plugin.h"
 
-/* 比当前 PI_API_VERSION 高一个 major：major 不同 = ABI 不兼容。
+/* 比当前 PIPLUGIN_API_VERSION 高一个 major：major 不同 = ABI 不兼容。
  * 用 MAKE 宏表达，避免手写十六进制。 */
-#define BADVERSION_API_VERSION PI_API_VERSION_MAKE(2, 0)
+#define BADVERSION_API_VERSION PIPLUGIN_API_VERSION_MAKE(2, 0)
 
 /* 完整随机的 128 位 UUID 风格 class GUID（不是框架那种小整数编号；
  * 判定按完整 128 位比较，见 docs/design/interfaces.md 5.1） */
@@ -112,7 +112,7 @@ PI_PLUGIN_ENTRY_DECL
         s_caps[0].flags = PI_CAP_PROVIDES;
 
         s_desc.name             = "Bad Version Test Plugin";
-        s_desc.vendor           = "pipluginframework";
+        s_desc.vendor           = "piplugin";
         s_desc.version          = "1.0.0";
         s_desc.category         = "Test/Negative";
         s_desc.api_version      = BADVERSION_API_VERSION;

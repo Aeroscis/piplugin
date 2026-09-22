@@ -1,5 +1,5 @@
 /*
- * pipluginframework - Host kit L1: DX11 嵌入胶水（实现）
+ * piplugin - Host kit L1: DX11 嵌入胶水（实现）
  *
  * 这里搬的是 tests/test_host 里那段"能正确嵌入子窗口的 D3D11 设备 + flip-model
  * 交换链"的创建与 resize 策略，逐条保持原行为（含日志文本，脚本按模式断言）。

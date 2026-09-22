@@ -1,6 +1,6 @@
-# pipluginframework_qt — Qt UI 适配器套件
+# piplugin_qt — Qt UI 适配器套件
 
-这是 pipluginframework 的第一个 **UI 适配器套件（adapter kit）**：它把"Qt 兼容层"
+这是 piplugin 的第一个 **UI 适配器套件（adapter kit）**：它把"Qt 兼容层"
 从插件代码中抽离出来，封装成一个可复用的静态库。任何 Qt 写的插件链接它之后，
 就获得了在**任意宿主**（imgui、wxWidgets、裸 Win32……）窗口内运行 Qt 界面的能力，
 而宿主完全不需要知道 Qt 的存在。
@@ -90,7 +90,7 @@ PiResult PI_CALL MyPlugin::Term(void* self) {
 CMake：
 
 ```cmake
-target_link_libraries(my_plugin PRIVATE pipluginframework pipluginframework_qt)
+target_link_libraries(my_plugin PRIVATE piplugin piplugin_qt)
 ```
 
 **宿主侧只要遵守两条**：
@@ -144,7 +144,7 @@ target_link_libraries(my_plugin PRIVATE pipluginframework pipluginframework_qt)
   插件场景请把套件编译为 SHARED 并让所有插件共用（TODO）。
 - **宿主不要阻塞自己的消息循环太久**：Qt 的定时器/输入靠宿主的 `pi_on_idle()`
   驱动，宿主卡住的时候插件界面也会卡住（这是正确行为，不是 bug）。
-- 后续可以按同样的模式增加 `pipluginframework_gtk`、`pipluginframework_webview`
+- 后续可以按同样的模式增加 `piplugin_gtk`、`piplugin_webview`
   等套件，插件按需挑选。
 
 ## 宿主窗口的渲染注意事项

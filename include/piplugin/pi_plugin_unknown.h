@@ -1,5 +1,5 @@
 /*
- * pipluginframework - IPiUnknown (COM-style root interface)
+ * piplugin - IPiUnknown (COM-style root interface)
  *
  * All framework interfaces extend IPiUnknown.
  * The vtable layout is a plain C struct of function pointers to guarantee

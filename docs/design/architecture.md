@@ -1,8 +1,8 @@
-# pipluginframework 设计文档
+# piplugin 设计文档
 
 ## 1. 概述
 
-pipluginframework 是一个 **跨平台、纯 C ABI 的插件框架**，采用 **COM 风格接口（vtbl + GUID + 引用计数）** 设计。
+piplugin 是一个 **跨平台、纯 C ABI 的插件框架**，采用 **COM 风格接口（vtbl + GUID + 引用计数）** 设计。
 框架核心极度精简且与 UI 无关，GUI / 网络 / 服务等能力全部作为**可选能力（capability）**，在运行时通过
 `QueryInterface` 双向发现——这一设计直接借鉴了 **LV2 音频插件标准** 的 feature 协商模型。
 
@@ -38,7 +38,7 @@ pipluginframework 是一个 **跨平台、纯 C ABI 的插件框架**，采用 *
 │  └─────────────────────────────────────────────┘         │
 │  可选链接 UI Adapter Kit：                               │
 │  ┌──────────────────────────────┐ ┌──────────────────┐   │
-│  │ pipluginframework_qt         │ │ pipluginframework│   │
+│  │ piplugin_qt         │ │ piplugin│   │
 │  │ （Qt 兼容层：私有线程跑       │ │ _imgui           │   │
 │  │  QApplication + 控件嵌入）    │ │ （立即模式 UI，  │   │
 │  └──────────────────────────────┘ │  宿主 GUI 线程）  │   │
@@ -50,9 +50,9 @@ pipluginframework 是一个 **跨平台、纯 C ABI 的插件框架**，采用 *
 
 | 路径 | 内容 |
 |---|---|
-| `include/pipluginframework/` | 公共头文件（完整框架 API，`pi_plugin.h` 为总入口） |
+| `include/piplugin/` | 公共头文件（完整框架 API，`pi_plugin.h` 为总入口） |
 | `src/` | 框架核心 C 实现（`pi_plugin_host.c`、`pi_plugin_unknown.c`） |
-| `src/pipluginframework/` | 核心库 CMake 工程 + CMake package config |
+| `src/piplugin/` | 核心库 CMake 工程 + CMake package config |
 | `adapters/` | UI 适配器套件（`qt/`、`imgui/`） |
 | `cmake/pi/` | 项目自用的 CMake 模块（消息、文件分类、工程初始化） |
 | `tests/` | 测试宿主与测试插件 |
@@ -180,7 +180,7 @@ typedef struct PiRefCountedBase {
 让插件作者只写纯 UI 逻辑（draw 回调 / widget 工厂），其余（事件循环合并、窗口嵌入、
 线程 marshal、生命周期）全部由套件处理。
 
-### 7.1 pipluginframework_qt（Qt 套件）
+### 7.1 piplugin_qt（Qt 套件）
 
 - **进程级 `PiQtRuntime`**：一个后台线程跑唯一 `QApplication::exec()`，按引用计数启停。
 - **嵌入**：`pi_attach()` 时在 Qt 线程内 `SetParent` 把控件 HWND 挂进宿主容器（X11/macOS 为 TODO）。
@@ -190,7 +190,7 @@ typedef struct PiRefCountedBase {
   并 join 运行时线程，保证宿主随后 `FreeLibrary` 安全。
 - **限制**：面向**非 Qt 宿主**；单进程多 Qt 插件会冲突（套件需改为 SHARED，见 TODO）。
 
-### 7.2 pipluginframework_imgui（imgui 套件）
+### 7.2 piplugin_imgui（imgui 套件）
 
 - **无独立事件循环**：imgui 是立即模式，套件在宿主 GUI 线程的 `pi_on_idle()` 里渲染一帧。
 - **自带 D3D11**：创建独立 ImGui context + Win32/DX11 backend + 子窗口 swapchain。
@@ -214,7 +214,7 @@ typedef struct PiRefCountedBase {
 |---|---|
 | 根 `CMakeLists.txt` | 引入 pi 模块、`pi_init_glob_proj`、汇总子目录 |
 | `cmake/pi/` | 项目自定义模块：语言标准、路径常量、编译选项、消息、文件分类 |
-| `src/pipluginframework/` | 核心 SHARED 库 + export/config 安装 |
+| `src/piplugin/` | 核心 SHARED 库 + export/config 安装 |
 | `adapters/` | 两个 STATIC 套件（依赖不满足时自检禁用） |
 | `tests/` | 三个宿主 + 两个插件，依赖不满足时优雅 DISABLED |
 

@@ -1,5 +1,5 @@
 /*
- * pipluginframework - IPiPluginBase
+ * piplugin - IPiPluginBase
  *
  * Base interface for every plugin instance.
  * Provides lifecycle management (initialize / terminate) and

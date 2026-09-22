@@ -20,9 +20,9 @@ set(FILE_VERSION_TWEAK 0)
 set(FILE_VERSION_COMMA "${FILE_VERSION_MAJOR},${FILE_VERSION_MINOR},${FILE_VERSION_PATCH},${FILE_VERSION_TWEAK}")
 set(FILE_VERSION_STRING "${FILE_VERSION_MAJOR}.${FILE_VERSION_MINOR}.${FILE_VERSION_PATCH}.${FILE_VERSION_TWEAK}")
 
-set(COMPANY_NAME "pipluginframework")
+set(COMPANY_NAME "piplugin")
 set(FILE_DESCRIPTION "qt-based test plugin for pi plugin framework")
-set(LEGAL_COPY_RIGHT "Copyright (c) 2025 pipluginframework")
+set(LEGAL_COPY_RIGHT "Copyright (c) 2025 piplugin")
 set(PRODUCT_NAME "${TARGET_NAME}")
 set(ORIGIN_FILE_NAME "${TARGET_NAME}.dll")#info for windows only
 
@@ -44,8 +44,8 @@ if(NOT Qt5_FOUND)
     message(WARNING "Qt5 not found -> ${TARGET_NAME} DISABLED")
     return()
 endif()
-if(NOT TARGET pipluginframework_qt)
-    message(STATUS "Qt adapter kit (pipluginframework_qt) not built -> ${TARGET_NAME} DISABLED")
+if(NOT TARGET piplugin_qt)
+    message(STATUS "Qt adapter kit (piplugin_qt) not built -> ${TARGET_NAME} DISABLED")
     return()
 endif()
 if(NOT WIN32)
@@ -64,8 +64,8 @@ target_sources(${TARGET_NAME}
 target_include_directories(${TARGET_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 # first party
-target_link_libraries(${TARGET_NAME} PRIVATE pipluginframework)
-target_link_libraries(${TARGET_NAME} PRIVATE pipluginframework_qt)
+target_link_libraries(${TARGET_NAME} PRIVATE piplugin)
+target_link_libraries(${TARGET_NAME} PRIVATE piplugin_qt)
 
 # third party
 target_link_libraries(${TARGET_NAME} PRIVATE Qt5::Widgets)

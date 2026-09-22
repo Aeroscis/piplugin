@@ -8,7 +8,7 @@ cmake_minimum_required(VERSION 3.23)
 include(GNUInstallDirs)
 
 # target name
-set(TARGET_NAME pipluginframework_host)
+set(TARGET_NAME piplugin_host)
 pi_tar_msg(STATUS ${TARGET_NAME} "building host kit L0 (plugin session)...")
 
 # version infos
@@ -26,9 +26,9 @@ set(FILE_VERSION_TWEAK 0)
 set(FILE_VERSION_COMMA "${FILE_VERSION_MAJOR},${FILE_VERSION_MINOR},${FILE_VERSION_PATCH},${FILE_VERSION_TWEAK}")
 set(FILE_VERSION_STRING "${FILE_VERSION_MAJOR}.${FILE_VERSION_MINOR}.${FILE_VERSION_PATCH}.${FILE_VERSION_TWEAK}")
 
-set(COMPANY_NAME "pipluginframework")
+set(COMPANY_NAME "piplugin")
 set(FILE_DESCRIPTION "host-side kit L0 (plugin session) for pi plugin framework")
-set(LEGAL_COPY_RIGHT "Copyright (c) 2025 pipluginframework")
+set(LEGAL_COPY_RIGHT "Copyright (c) 2025 piplugin")
 set(PRODUCT_NAME "${TARGET_NAME}")
 set(ORIGIN_FILE_NAME "${TARGET_NAME}.dll")#info for windows only
 
@@ -56,24 +56,24 @@ target_compile_definitions(${TARGET_NAME} PRIVATE "LIBRARY_VERSION=\"${FILE_VERS
 # self header（BUILD_INTERFACE/INSTALL_INTERFACE 拆分：两侧 #include "pi_host_session.h" 写法一致）
 target_include_directories(${TARGET_NAME} PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
-    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/pipluginframework/host_kits/core>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/piplugin/host_kits/core>
 )
 
 # first party: framework core
-target_link_libraries(${TARGET_NAME} PUBLIC pipluginframework)
+target_link_libraries(${TARGET_NAME} PUBLIC piplugin)
 
 # ------- 安装（Modern CMake：静态库 + 公共头 + 导出目标） -------------
 install(TARGETS ${TARGET_NAME}
-    EXPORT pipluginframeworkHostCoreTargets
+    EXPORT pipluginHostCoreTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}/$<CONFIG>  # 静态库（linux .a / windows .lib）
 )
 
 install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/pi_host_session.h
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/pipluginframework/host_kits/core
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/piplugin/host_kits/core
 )
 
-install(EXPORT pipluginframeworkHostCoreTargets
-    FILE pipluginframeworkHostCoreTargets.cmake
+install(EXPORT pipluginHostCoreTargets
+    FILE pipluginHostCoreTargets.cmake
     NAMESPACE ${NAMESPACE_NAME}:: # 消费方引用 ${NAMESPACE_NAME}::${TARGET_NAME}
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${NAMESPACE_NAME}
 )

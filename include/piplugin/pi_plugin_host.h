@@ -1,5 +1,5 @@
 /*
- * pipluginframework - Host-side API
+ * piplugin - Host-side API
  *
  * Functions for loading, managing, and unloading plugins from DLLs.
  */

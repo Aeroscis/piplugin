@@ -1,5 +1,5 @@
 /*
- * pipluginframework - Test Plugin DLL Entry Point
+ * piplugin - Test Plugin DLL Entry Point
  *
  * The factory is a refcounted object whose release destroys it, so no
  * manual cleanup is done here (DllMain cleanup would be a double free).

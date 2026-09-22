@@ -1,5 +1,5 @@
 /*
- * pipluginframework - IPiService
+ * piplugin - IPiService
  *
  * Optional capability interface for headless / server-side plugins.
  *

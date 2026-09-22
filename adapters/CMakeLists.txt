@@ -6,8 +6,8 @@
 # - imgui/: 针对立即模式 UI，无需合并事件循环，kit 直接在 host GUI 线程的 pi_on_idle() 中渲染一帧
 # 开关树：总开关 PI_BUILD_ADAPTERS + 每框架分开关；Conan 侧同名选项整批转发（见 conanfile.py）
 option(PI_BUILD_ADAPTERS "build ui adapter kits (master switch)" ON)
-option(PI_BUILD_ADAPTER_QT "build qt adapter kit (pipluginframework_qt)" ON)             # 依赖: Qt5
-option(PI_BUILD_ADAPTER_IMGUI "build imgui adapter kit (pipluginframework_imgui)" ON)     # 依赖: imgui(conan)
+option(PI_BUILD_ADAPTER_QT "build qt adapter kit (piplugin_qt)" ON)             # 依赖: Qt5
+option(PI_BUILD_ADAPTER_IMGUI "build imgui adapter kit (piplugin_imgui)" ON)     # 依赖: imgui(conan)
 
 if (NOT PI_BUILD_ADAPTERS)
     return()   # 总开关关死：所有 kit 一律不编（分开关的取值不再有意义）

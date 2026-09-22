@@ -1,7 +1,7 @@
 /*
- * pipluginframework - Test Plugin (Qt-based)
+ * piplugin - Test Plugin (Qt-based)
  *
- * With the Qt adapter kit (pipluginframework_qt) the plugin contains NO
+ * With the Qt adapter kit (piplugin_qt) the plugin contains NO
  * Qt integration code at all: no QApplication management, no embedding,
  * no event-loop plumbing. It only provides a widget factory and the
  * plugin lifecycle.
@@ -9,7 +9,7 @@
 #ifndef PI_QT_TEST_PLUGIN_H
 #define PI_QT_TEST_PLUGIN_H
 
-#include "pipluginframework/pi_plugin.h"
+#include "piplugin/pi_plugin.h"
 
 class QWidget;
 

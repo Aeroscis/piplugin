@@ -1,5 +1,5 @@
 /*
- * pipluginframework — Test Host (imgui + Win32 + DirectX 11)
+ * piplugin — Test Host (imgui + Win32 + DirectX 11)
  *
  * Demonstrates:
  *   1. Loading a plugin DLL at runtime
@@ -9,7 +9,7 @@
  *   4. Embedding the plugin Qt widget inside the host window
  *   5. Pumping the plugin event loop via pi_on_idle() each frame
  */
-#include "pipluginframework/pi_plugin.h"
+#include "piplugin/pi_plugin.h"
 #include "pi_host_session.h"
 #include "pi_host_dx11.h"
 
@@ -33,12 +33,12 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg
  * Globals
  * -------------------------------------------------------------------------- */
 
-/* 宿主 kit L1（pipluginframework_host_dx11）持有"可嵌入子窗口的 D3D11 设备 +
+/* 宿主 kit L1（piplugin_host_dx11）持有"可嵌入子窗口的 D3D11 设备 +
  * flip-model 交换链"的创建参数与 resize 策略（含 DXGI_SCALING_NONE 降级路径）。
  * 本宿主只决定"窗口长什么样、画什么、什么时候画"。 */
 static PiHostDx11Device* g_dx = NULL;
 
-/* 宿主 kit L0（pipluginframework_host）持有全部插件生命周期机制：
+/* 宿主 kit L0（piplugin_host）持有全部插件生命周期机制：
  * 加载 / 双向能力门禁 / 实例化 / 七步卸载序列。 */
 static IPiHostServices*     g_hostServices = NULL;
 static PiPluginHostSession* g_session      = NULL;
@@ -566,7 +566,7 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPSTR, _In
     WNDCLASSEXW wc = { sizeof(wc), CS_CLASSDC, WndProc, 0L, 0L, hInstance,
                        NULL, NULL, NULL, NULL, L"PiTestHost", NULL };
     ::RegisterClassExW(&wc);
-    HWND hwnd = ::CreateWindowW(wc.lpszClassName, L"pipluginframework — Test Host (imgui)",
+    HWND hwnd = ::CreateWindowW(wc.lpszClassName, L"piplugin — Test Host (imgui)",
                                 WS_OVERLAPPEDWINDOW | pi_host_dx11_top_level_style(),
                                 100, 100, 1280, 720,
                                 NULL, NULL, wc.hInstance, NULL);

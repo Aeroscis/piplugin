@@ -9,10 +9,10 @@ option(PI_BUILD_FRAMEWORK "build pi plugin framework core lib" ON)
 
 
 # pi plugin framework core
-set(LIB_PIPLUGINFRAMEWORK_PATH ${CMAKE_CURRENT_SOURCE_DIR}/pipluginframework)
-# pi_exam_var(LIB_PIPLUGINFRAMEWORK_PATH)
+set(LIB_PIPLUGIN_PATH ${CMAKE_CURRENT_SOURCE_DIR}/piplugin)
+# pi_exam_var(LIB_PIPLUGIN_PATH)
 if (PI_BUILD_FRAMEWORK)
-    add_subdirectory(${LIB_PIPLUGINFRAMEWORK_PATH})
+    add_subdirectory(${LIB_PIPLUGIN_PATH})
 endif ()
 
 

@@ -1,6 +1,6 @@
 # 编写一个插件（Write a Plugin）
 
-本文以 C++ 为例（参照 `tests/test_plugin`），介绍从零写一个 pipluginframework 插件所需的最小骨架。
+本文以 C++ 为例（参照 `tests/test_plugin`），介绍从零写一个 piplugin 插件所需的最小骨架。
 插件 = 一个导出 `pi_plugin_entry` 的 DLL。
 
 ## 1. 最小骨架
@@ -11,7 +11,7 @@
 
 ```cpp
 // entry.cpp
-#include "pipluginframework/pi_plugin.h"
+#include "piplugin/pi_plugin.h"
 
 extern "C" PI_PLUGIN_ENTRY_DECL   // 展开为 PI_EXPORT PiResult pi_plugin_entry(IPiPluginFactory** out)
 {
@@ -40,7 +40,7 @@ public:
         m_descriptor.vendor = "Me";
         m_descriptor.version = "1.0.0";
         m_descriptor.category = "Demo";
-        m_descriptor.api_version = PI_API_VERSION;
+        m_descriptor.api_version = PIPLUGIN_API_VERSION;
 
         // 能力声明（LV2 风格）：提供视图，可选使用宿主 GUI
         m_capabilities[0] = { PI_IID_PLUGIN_VIEW, PI_CAP_PROVIDES };
@@ -168,10 +168,10 @@ set(TARGET_NAME my_plugin)
 add_library(${TARGET_NAME} SHARED)
 target_sources(${TARGET_NAME} PRIVATE entry.cpp my_plugin.cpp my_plugin.h)
 target_include_directories(${TARGET_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(${TARGET_NAME} PRIVATE pipluginframework)
+target_link_libraries(${TARGET_NAME} PRIVATE piplugin)
 
 # 若用到 UI 适配器：
-# target_link_libraries(${TARGET_NAME} PRIVATE pipluginframework_imgui)  # 或 _qt
+# target_link_libraries(${TARGET_NAME} PRIVATE piplugin_imgui)  # 或 _qt
 ```
 
 在你的工程树里，把这个目录 `add_subdirectory` 进去即可（测试工程参照 `tests/test_plugin*`）。

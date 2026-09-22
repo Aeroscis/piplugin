@@ -22,9 +22,9 @@ set(FILE_VERSION_TWEAK 0)
 set(FILE_VERSION_COMMA "${FILE_VERSION_MAJOR},${FILE_VERSION_MINOR},${FILE_VERSION_PATCH},${FILE_VERSION_TWEAK}")
 set(FILE_VERSION_STRING "${FILE_VERSION_MAJOR}.${FILE_VERSION_MINOR}.${FILE_VERSION_PATCH}.${FILE_VERSION_TWEAK}")
 
-set(COMPANY_NAME "pipluginframework")
+set(COMPANY_NAME "piplugin")
 set(FILE_DESCRIPTION "unit tests for the pi plugin framework core")
-set(LEGAL_COPY_RIGHT "Copyright (c) 2025 pipluginframework")
+set(LEGAL_COPY_RIGHT "Copyright (c) 2025 piplugin")
 set(PRODUCT_NAME "${TARGET_NAME}")
 set(ORIGIN_FILE_NAME "${TARGET_NAME}.exe")#info for windows only
 
@@ -44,10 +44,10 @@ target_sources(${TARGET_NAME}
     )
 
 # first party
-target_link_libraries(${TARGET_NAME} PRIVATE pipluginframework)
+target_link_libraries(${TARGET_NAME} PRIVATE piplugin)
 
 # ------- 部署到开发目录 bin/<CONFIG>（POST_BUILD：构建即就绪） -------------
-# 核心是 SHARED，可执行文件必须与 pipluginframework*.dll 同目录才能启动；
+# 核心是 SHARED，可执行文件必须与 piplugin*.dll 同目录才能启动；
 # ctest 运行的是部署后的副本（见下面的 add_test）。
 add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"

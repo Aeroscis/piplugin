@@ -1,7 +1,7 @@
 /*
- * pipluginframework - Qt UI adapter kit (pipluginframework_qt)
+ * piplugin - Qt UI adapter kit (piplugin_qt)
  *
- * Lets a plugin expose its UI as Qt widgets inside ANY pipluginframework
+ * Lets a plugin expose its UI as Qt widgets inside ANY piplugin
  * host (imgui, wxWidgets, raw Win32, ...), without the host knowing Qt.
  *
  * The kit owns the whole "Qt compatibility layer":
@@ -51,7 +51,7 @@
 #ifndef PI_QT_VIEW_H
 #define PI_QT_VIEW_H
 
-#include "pipluginframework/pi_plugin.h"
+#include "piplugin/pi_plugin.h"
 
 #include <QWidget>
 

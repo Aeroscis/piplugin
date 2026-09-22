@@ -12,8 +12,8 @@
 ## 2. Conan 2 配方（conanfile.py）
 
 ```python
-class PiPluginFrameworkConan(ConanFile):
-    name = "pipluginframework"
+class PiPluginConan(ConanFile):
+    name = "piplugin"
     version = "1.0.0"
     settings = "os", "compiler", "build_type", "arch"
     # 开关树：选项与 CMake 缓存选项同名（PI_BUILD_*），generate() 整批转发给 CMake
@@ -62,7 +62,7 @@ cmake --build --preset conan-release
 
 ```cmake
 include(${CMAKE_CURRENT_LIST_DIR}/cmake/pi/pi.cmake)   # 引入 pi 模块
-project(pipluginframework VERSION 1.0.0 LANGUAGES C CXX)
+project(piplugin VERSION 1.0.0 LANGUAGES C CXX)
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     pi_init_glob_proj(CXX 17 C 11 REQUIRED)   # 顶层工程才做全局初始化
@@ -110,15 +110,15 @@ Windows 全局：`WIN32_LEAN_AND_MEAN`。
 > 一律显式 `PI_EXPORT`，插件入口显式 `__declspec(dllexport)`，见
 > `docs/design/interface-freeze-review.md`。
 
-### 3.3 核心库（src/pipluginframework/CMakeLists.txt）
+### 3.3 核心库（src/piplugin/CMakeLists.txt）
 
-- `add_library(pipluginframework SHARED)` + 别名 `pi::pipluginframework`
+- `add_library(piplugin SHARED)` + 别名 `pi::piplugin`
 - 源文件：`src/pi_plugin_host.c`、`src/pi_plugin_unknown.c`（C11）
 - PUBLIC include：`<root>/include`（build 接口 `FILE_SET HEADERS`）
 - Debug 输出名带 `d` 后缀（`GLOBAL_PROJECT_BUILD_TYPE_SUFFIX`）
 - 产物输出到 `<root>/lib/<CONFIG>/`
-- 安装：export `pipluginframeworkTargets.cmake`（namespace `pi::`）+ `pipluginframeworkConfig.cmake`
-- 伞配置 `piConfig.cmake` → include `pipluginframeworkConfig.cmake`
+- 安装：export `pipluginTargets.cmake`（namespace `pi::`）+ `pipluginConfig.cmake`
+- 伞配置 `piConfig.cmake` → include `pipluginConfig.cmake`
 
 ### 3.4 适配器套件（adapters/）
 
@@ -130,19 +130,19 @@ if(NOT imgui_FOUND)
     message(STATUS "imgui not found -> ${TARGET_NAME} disabled")
     return()                              # 优雅禁用
 endif()
-add_library(pipluginframework_imgui STATIC)
-target_link_libraries(... PUBLIC pipluginframework imgui::imgui)
+add_library(piplugin_imgui STATIC)
+target_link_libraries(... PUBLIC piplugin imgui::imgui)
 ```
 
 | 套件 | 依赖 | 状态 |
 |---|---|---|
-| `pipluginframework_qt` | Qt5 Widgets | 找不到 Qt5 则禁用 |
-| `pipluginframework_imgui` | imgui (conan) | 找不到 imgui 则禁用 |
+| `piplugin_qt` | Qt5 Widgets | 找不到 Qt5 则禁用 |
+| `piplugin_imgui` | imgui (conan) | 找不到 imgui 则禁用 |
 
 总开关 `PI_BUILD_ADAPTERS`（Conan 侧同名选项透传）：关死时所有 kit 一律不编。
 每个 kit 另有独立安装规则：静态库 → `lib/<CONFIG>/`，公共头 →
-`include/pipluginframework/adapters/<kit>/`，导出目标 → 独立
-`pipluginframework<Kit>AdapterTargets.cmake`（由伞配置按存在性挂接）。
+`include/piplugin/adapters/<kit>/`，导出目标 → 独立
+`piplugin<Kit>AdapterTargets.cmake`（由伞配置按存在性挂接）。
 
 ### 3.5 测试（tests/）
 
@@ -176,9 +176,9 @@ cmake --install build --config Debug --prefix <prefix>
 
 ```cmake
 find_package(pi CONFIG REQUIRED)
-target_link_libraries(app PRIVATE pi::pipluginframework)
+target_link_libraries(app PRIVATE pi::piplugin)
 # 套件目标随安装树自动可用（该套件开关开启时才安装/导出）：
-target_link_libraries(app PRIVATE pi::pipluginframework_imgui)
+target_link_libraries(app PRIVATE pi::piplugin_imgui)
 ```
 
 Conan 打包（adapters 已随核心一并打包，测试件不进包）：
@@ -187,8 +187,8 @@ Conan 打包（adapters 已随核心一并打包，测试件不进包）：
 conan create . -pr MSVC2022-amd64-Cpp17-Debug -o PI_BUILD_TESTS=False
 ```
 
-包内容：核心 `bin/<CONFIG>/` + `lib/<CONFIG>/` + `include/pipluginframework/`、
-adapter 静态库与公共头（`include/pipluginframework/adapters/<kit>/`）、
+包内容：核心 `bin/<CONFIG>/` + `lib/<CONFIG>/` + `include/piplugin/`、
+adapter 静态库与公共头（`include/piplugin/adapters/<kit>/`）、
 cmake 配置（伞配置 `piConfig.cmake` 按存在性挂接各 `*AdapterTargets.cmake`，
 安装了哪个套件就自动暴露哪个目标）。消费方经 CMakeDeps 使用
-`pi::pipluginframework` / `pi::pipluginframework_imgui` 等目标。
+`pi::piplugin` / `pi::piplugin_imgui` 等目标。

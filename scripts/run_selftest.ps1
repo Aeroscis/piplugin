@@ -8,8 +8,13 @@
 # The host keeps pi_test_host.log open with an exclusive fopen(...,"a") while
 # it lives, so the log is read through FileShare.ReadWrite.
 #
-# -BinDir / -OutFile 默认按"仓库根目录"推导（脚本在 <root>\scripts\ 下），
-# 因此换机器或换构建配置时只需传 -BinDir，不必改脚本。
+# -BinDir / -OutFile default to paths derived from the repository root (this
+# script lives in <root>\scripts\), so another machine or build configuration
+# only needs -BinDir.
+#
+# Keep this file ASCII-only: it has no BOM, and Windows PowerShell 5.1 decodes a
+# BOM-less script as ANSI, where non-ASCII bytes mis-decode and can even eat the
+# following line (a mangled byte turning into a backtick/backslash continuation).
 
 param(
     [int]$Cycles = 3,

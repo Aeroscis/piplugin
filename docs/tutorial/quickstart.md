@@ -47,7 +47,7 @@ cmake --build --preset conan-debug      # Debug 版
 
 | 产物 | 位置 |
 |---|---|
-| `pipluginframeworkd.dll`（核心库） | `lib/Debug/` |
+| `piplugind.dll`（核心库） | `lib/Debug/` |
 | 测试宿主 exe / 插件 dll | `build/tests/.../Debug/` 及 `bin/Debug/`（install 后） |
 | `pi_test_host_headless.exe` | console 宿主（可独立运行验证） |
 
@@ -208,14 +208,14 @@ unset https_proxy http_proxy all_proxy HTTPS_PROXY HTTP_PROXY ALL_PROXY
 
 ```text
 -- Install configuration: "Debug"
-CMake Error at src/pipluginframework/cmake_install.cmake:37 (file):
+CMake Error at src/piplugin/cmake_install.cmake:37 (file):
   file INSTALL cannot set permissions on
-  "C:/Program Files/pipluginframework/lib/Debug/pipluginframeworkd.lib": Permission denied.
+  "C:/Program Files/piplugin/lib/Debug/piplugind.lib": Permission denied.
 ```
 
 **原因**：项目里从来没有设置过 `CMAKE_INSTALL_PREFIX`，CMake 在 Windows 上
 回落到默认值 `C:/Program Files/<PROJECT_NAME>`，本仓库即
-`C:/Program Files/pipluginframework`。往那里写文件（哪怕只是给已存在的文件
+`C:/Program Files/piplugin`。往那里写文件（哪怕只是给已存在的文件
 重设权限）都需要管理员权限，非提权终端必然失败。
 
 **影响范围**：安装脚本是嵌套 `include()` 执行的，顺序为
@@ -223,19 +223,19 @@ CMake Error at src/pipluginframework/cmake_install.cmake:37 (file):
 ```text
 cmake_install.cmake
   ├─ src/cmake_install.cmake
-  │    └─ src/pipluginframework/cmake_install.cmake   ← 在这里失败
+  │    └─ src/piplugin/cmake_install.cmake   ← 在这里失败
   ├─ adapters/cmake_install.cmake                     ← 不会执行
   └─ tests/cmake_install.cmake                        ← 不会执行
 ```
 
-`src/pipluginframework` 排在最前面且第一条 `file(INSTALL)` 就报错，所以后面的
+`src/piplugin` 排在最前面且第一条 `file(INSTALL)` 就报错，所以后面的
 子目录全被跳过。**编译产物是好的**（`lib/Debug/`、`build/**/Debug/` 都在），
 但仓库里的 `bin/<Config>` **不会被刷新**——它那些 `install()` 用的是绝对目标
 `GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH = <root>/bin/$<CONFIG>`，正好排在后面
 被跳过的 `adapters/` 和 `tests/` 里。所以"报 INSTALL 失败"之后 `bin/<Config>`
 里的东西是旧的，别误以为已经更新过。
 
-**两条 `install(TARGETS)` 的关系**（`src/pipluginframework/CMakeLists.txt:141` 与 `:150`）：
+**两条 `install(TARGETS)` 的关系**（`src/piplugin/CMakeLists.txt:141` 与 `:150`）：
 
 | | 第 141 行 | 第 150 行 |
 |---|---|---|

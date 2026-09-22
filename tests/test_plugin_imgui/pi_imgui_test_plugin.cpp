@@ -26,10 +26,10 @@ ImGuiPluginFactory::ImGuiPluginFactory()
                                     &pi_cpp_destroy<ImGuiPluginFactory>);
 
     m_descriptor.name = "ImGui Test Plugin";
-    m_descriptor.vendor = "pipluginframework";
+    m_descriptor.vendor = "piplugin";
     m_descriptor.version = "1.0.0";
     m_descriptor.category = "UI/Test";
-    m_descriptor.api_version = PI_API_VERSION;
+    m_descriptor.api_version = PIPLUGIN_API_VERSION;
 
     m_capabilities[0].iid = PI_IID_PLUGIN_VIEW;
     m_capabilities[0].flags = PI_CAP_PROVIDES;

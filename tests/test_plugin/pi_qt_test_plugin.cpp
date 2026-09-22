@@ -79,10 +79,10 @@ QtPluginFactory::QtPluginFactory()
                                     &pi_cpp_destroy<QtPluginFactory>);
 
     m_descriptor.name = "Qt Test Plugin";
-    m_descriptor.vendor = "pipluginframework";
+    m_descriptor.vendor = "piplugin";
     m_descriptor.version = "1.2.0";
     m_descriptor.category = "UI/Test";
-    m_descriptor.api_version = PI_API_VERSION;
+    m_descriptor.api_version = PIPLUGIN_API_VERSION;
 
     /* LV2-style capability declaration:
      *  - this plugin provides a GUI view

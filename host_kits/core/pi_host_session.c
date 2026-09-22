@@ -1,5 +1,5 @@
 /*
- * pipluginframework - Host kit L0: PiPluginHostSession (implementation)
+ * piplugin - Host kit L0: PiPluginHostSession (implementation)
  *
  * 设计纪律见 pi_host_session.h 与 host_kits/README.md。
  * 本文件只做机制：加载、门禁、实例化、多槽位、七步卸载；不碰任何 UI 决策。
@@ -289,15 +289,15 @@ PiResult pi_host_session_inspect(PiPluginHostSession* session,
 
     /* 版本门禁（roadmap BLK-03）：插件声明的 api_version 必须与宿主兼容。
      * 与能力门禁一样在**实例化之前**判定，所以不兼容的插件连实例都不会被创建。 */
-    if (desc && !pi_api_version_compatible(PI_API_VERSION, desc->api_version)) {
+    if (desc && !pi_api_version_compatible(PIPLUGIN_API_VERSION, desc->api_version)) {
         SessionSetError(session,
                         "plugin api_version 0x%08X (major %u, minor %u) is incompatible with host 0x%08X (major %u, minor %u); the plugin must not be newer than the host",
                         (unsigned)desc->api_version,
-                        (unsigned)PI_API_VERSION_MAJOR(desc->api_version),
-                        (unsigned)PI_API_VERSION_MINOR(desc->api_version),
-                        (unsigned)PI_API_VERSION,
-                        (unsigned)PI_API_VERSION_MAJOR(PI_API_VERSION),
-                        (unsigned)PI_API_VERSION_MINOR(PI_API_VERSION));
+                        (unsigned)PIPLUGIN_API_VERSION_MAJOR(desc->api_version),
+                        (unsigned)PIPLUGIN_API_VERSION_MINOR(desc->api_version),
+                        (unsigned)PIPLUGIN_API_VERSION,
+                        (unsigned)PIPLUGIN_API_VERSION_MAJOR(PIPLUGIN_API_VERSION),
+                        (unsigned)PIPLUGIN_API_VERSION_MINOR(PIPLUGIN_API_VERSION));
         SessionTearDownSlot(session, slot, (uint32_t)index, "rollback");
         return PI_E_VERSIONMISMATCH;
     }

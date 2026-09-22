@@ -1,5 +1,5 @@
 /*
- * pipluginframework - IPiHostServices / IPiHostUI
+ * piplugin - IPiHostServices / IPiHostUI
  *
  * The host is handed to the plugin at initialization time as an
  * IPiHostServices COM-style object instead of a raw callback struct.

@@ -1,5 +1,5 @@
 /*
- * pipluginframework - ImGui Test Plugin DLL Entry Point
+ * piplugin - ImGui Test Plugin DLL Entry Point
  */
 #include "pi_imgui_test_plugin.h"
 

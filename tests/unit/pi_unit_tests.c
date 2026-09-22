@@ -1,5 +1,5 @@
 /*
- * pipluginframework - 单元测试（裸 C，无第三方框架）
+ * piplugin - 单元测试（裸 C，无第三方框架）
  *
  * 覆盖 roadmap BLK-06 列出的核心回归：
  *   pi_guid_equal / descriptor 帮助函数 / PiRefCountedBase 引用计数与 destroy
@@ -8,7 +8,7 @@
  * 由 ctest 注册为 `unit`：`ctest -C Debug`（或 --preset）一条命令跑完。
  * 断言失败不中断，全部跑完后按失败数决定退出码（0 = 全过）。
  */
-#include "pipluginframework/pi_plugin.h"
+#include "piplugin/pi_plugin.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -253,37 +253,37 @@ static void TestApiVersion(void)
     Section("pi_api_version_compatible");
 
     /* 编码：高 16 位 major，低 16 位 minor */
-    CHECK_EQ_INT(PI_API_VERSION_MAJOR(PI_API_VERSION), 1);
-    CHECK_EQ_INT(PI_API_VERSION_MINOR(PI_API_VERSION), 0);
-    CHECK_EQ_INT(PI_API_VERSION_MAKE(1, 0), 0x00010000);
-    CHECK_EQ_INT(PI_API_VERSION_MAKE(2, 5), 0x00020005);
-    CHECK_EQ_INT(PI_API_VERSION_MAJOR(PI_API_VERSION_MAKE(0xFFFF, 0xFFFF)), 0xFFFF);
-    CHECK_EQ_INT(PI_API_VERSION_MINOR(PI_API_VERSION_MAKE(0xFFFF, 0xFFFF)), 0xFFFF);
+    CHECK_EQ_INT(PIPLUGIN_API_VERSION_MAJOR(PIPLUGIN_API_VERSION), 1);
+    CHECK_EQ_INT(PIPLUGIN_API_VERSION_MINOR(PIPLUGIN_API_VERSION), 0);
+    CHECK_EQ_INT(PIPLUGIN_API_VERSION_MAKE(1, 0), 0x00010000);
+    CHECK_EQ_INT(PIPLUGIN_API_VERSION_MAKE(2, 5), 0x00020005);
+    CHECK_EQ_INT(PIPLUGIN_API_VERSION_MAJOR(PIPLUGIN_API_VERSION_MAKE(0xFFFF, 0xFFFF)), 0xFFFF);
+    CHECK_EQ_INT(PIPLUGIN_API_VERSION_MINOR(PIPLUGIN_API_VERSION_MAKE(0xFFFF, 0xFFFF)), 0xFFFF);
 
     /* 相等 -> 兼容 */
-    CHECK(pi_api_version_compatible(PI_API_VERSION, PI_API_VERSION) != 0);
+    CHECK(pi_api_version_compatible(PIPLUGIN_API_VERSION, PIPLUGIN_API_VERSION) != 0);
 
     /* major 不同 -> 两个方向都不兼容（ABI 已变） */
-    CHECK(pi_api_version_compatible(PI_API_VERSION, PI_API_VERSION_MAKE(2, 0)) == 0);
-    CHECK(pi_api_version_compatible(PI_API_VERSION_MAKE(2, 0), PI_API_VERSION) == 0);
-    CHECK(pi_api_version_compatible(PI_API_VERSION_MAKE(1, 9), PI_API_VERSION_MAKE(2, 0)) == 0);
+    CHECK(pi_api_version_compatible(PIPLUGIN_API_VERSION, PIPLUGIN_API_VERSION_MAKE(2, 0)) == 0);
+    CHECK(pi_api_version_compatible(PIPLUGIN_API_VERSION_MAKE(2, 0), PIPLUGIN_API_VERSION) == 0);
+    CHECK(pi_api_version_compatible(PIPLUGIN_API_VERSION_MAKE(1, 9), PIPLUGIN_API_VERSION_MAKE(2, 0)) == 0);
 
     /* 同 major、插件 minor 更高 -> 拒绝（插件可能用到宿主没有的接口） */
-    CHECK(pi_api_version_compatible(PI_API_VERSION_MAKE(1, 3), PI_API_VERSION_MAKE(1, 4)) == 0);
-    CHECK(pi_api_version_compatible(PI_API_VERSION_MAKE(1, 0), PI_API_VERSION_MAKE(1, 1)) == 0);
+    CHECK(pi_api_version_compatible(PIPLUGIN_API_VERSION_MAKE(1, 3), PIPLUGIN_API_VERSION_MAKE(1, 4)) == 0);
+    CHECK(pi_api_version_compatible(PIPLUGIN_API_VERSION_MAKE(1, 0), PIPLUGIN_API_VERSION_MAKE(1, 1)) == 0);
 
     /* 同 major、插件 minor 更低或相等 -> 接受 */
-    CHECK(pi_api_version_compatible(PI_API_VERSION_MAKE(1, 3), PI_API_VERSION_MAKE(1, 2)) != 0);
-    CHECK(pi_api_version_compatible(PI_API_VERSION_MAKE(1, 3), PI_API_VERSION_MAKE(1, 3)) != 0);
-    CHECK(pi_api_version_compatible(PI_API_VERSION_MAKE(1, 0), PI_API_VERSION_MAKE(1, 0)) != 0);
+    CHECK(pi_api_version_compatible(PIPLUGIN_API_VERSION_MAKE(1, 3), PIPLUGIN_API_VERSION_MAKE(1, 2)) != 0);
+    CHECK(pi_api_version_compatible(PIPLUGIN_API_VERSION_MAKE(1, 3), PIPLUGIN_API_VERSION_MAKE(1, 3)) != 0);
+    CHECK(pi_api_version_compatible(PIPLUGIN_API_VERSION_MAKE(1, 0), PIPLUGIN_API_VERSION_MAKE(1, 0)) != 0);
 
     /* major 0（未版本化）只与 major 0 相容 */
     CHECK(pi_api_version_compatible(0u, 0u) != 0);
-    CHECK(pi_api_version_compatible(0u, PI_API_VERSION) == 0);
-    CHECK(pi_api_version_compatible(PI_API_VERSION, 0u) == 0);
+    CHECK(pi_api_version_compatible(0u, PIPLUGIN_API_VERSION) == 0);
+    CHECK(pi_api_version_compatible(PIPLUGIN_API_VERSION, 0u) == 0);
 
     /* 测试所用的负向插件常量：必须被判为不兼容（与 BLK-03 的 ctest 用例呼应） */
-    CHECK(pi_api_version_compatible(PI_API_VERSION, PI_API_VERSION_MAKE(2, 0)) == 0);
+    CHECK(pi_api_version_compatible(PIPLUGIN_API_VERSION, PIPLUGIN_API_VERSION_MAKE(2, 0)) == 0);
 }
 
 /* --------------------------------------------------------------------------
@@ -409,7 +409,7 @@ int main(int argc, char** argv)
 {
     g_argv0 = (argc > 0) ? argv[0] : NULL;
 
-    printf("== pipluginframework unit tests ==\n");
+    printf("== piplugin unit tests ==\n");
     TestGuidEqual();
     TestDescriptorHelpers();
     TestRefCounted();

@@ -30,9 +30,9 @@ kit 把这段顺序收拢成一份实现，把「窗口长什么样」完整留�
 
 ```
 host_kits/
-  core/    L0：pipluginframework_host       （STATIC，纯 C，零 GUI 依赖）
-  qt/      L1：pipluginframework_host_qt    （STATIC，Qt5；依赖 L0）
-  dx11/    L1：pipluginframework_host_dx11  （STATIC，仅 Windows；只依赖核心）
+  core/    L0：piplugin_host       （STATIC，纯 C，零 GUI 依赖）
+  qt/      L1：piplugin_host_qt    （STATIC，Qt5；依赖 L0）
+  dx11/    L1：piplugin_host_dx11  （STATIC，仅 Windows；只依赖核心）
 ```
 
 开关树与 `adapters/` 同构（Conan 侧同名选项整批转发，见 `conanfile.py`）：
@@ -42,7 +42,7 @@ host_kits/
 
 ## 当前状态
 
-- **L0（`core/`）已落地**：`pipluginframework_host`，API 见 `core/pi_host_session.h`。
+- **L0（`core/`）已落地**：`piplugin_host`，API 见 `core/pi_host_session.h`。
 - **L1（`qt/`、`dx11/`）已落地**：
   - `qt/`：`PiPluginEmbedArea` —— 容器包装 + attach + resize 转发 + idle 驱动（`driveIdle()`
     手动或 `setAutoIdleEnabled()` 内部 `QTimer(0)`，默认关闭）；

@@ -1,15 +1,15 @@
 /*
- * pipluginframework - Test Plugin (Dear ImGui-based)
+ * piplugin - Test Plugin (Dear ImGui-based)
  *
  * The mirror twin of the Qt test plugin: same COM structure, same
  * capability declaration, but the UI is drawn with Dear ImGui through
- * the pipluginframework_imgui adapter kit - designed to run inside a
+ * the piplugin_imgui adapter kit - designed to run inside a
  * Qt host.
  */
 #ifndef PI_IMGUI_TEST_PLUGIN_H
 #define PI_IMGUI_TEST_PLUGIN_H
 
-#include "pipluginframework/pi_plugin.h"
+#include "piplugin/pi_plugin.h"
 
 template <typename T>
 void pi_cpp_destroy(void* self_ptr) { delete static_cast<T*>(self_ptr); }

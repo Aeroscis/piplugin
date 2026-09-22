@@ -7,8 +7,8 @@
 ## 1. 状态
 
 - **根因已确认**：`CMAKE_INSTALL_PREFIX` 从未设置 → 回落 Windows 默认
-  `C:/Program Files/pipluginframework` → 非提权终端 `Permission denied`。
-- **影响已确认**：安装脚本嵌套 include，`src/pipluginframework` 排第一且首条
+  `C:/Program Files/piplugin` → 非提权终端 `Permission denied`。
+- **影响已确认**：安装脚本嵌套 include，`src/piplugin` 排第一且首条
   `file(INSTALL)` 即失败 → 整体中断 → `adapters/`、`tests/` 被跳过 →
   仓库 `bin/<Config>` 不会被刷新。
 - **已修复**：`bin/<Config>` 改为完全由 `POST_BUILD` 维护（框架库 + 5 个测试
@@ -29,9 +29,9 @@
 
 ### 1. 项目环境
 - Windows 11 + Visual Studio 2022 多配置生成器，CMake 3.23+，Conan 2.x
-- 仓库根：`D:/Flora/ProgramProjects/pipluginframework`，构建目录 `build/`
+- 仓库根：`D:/Flora/ProgramProjects/piplugin`，构建目录 `build/`
   （由 preset `conan-debug` 生成，只能构建 Debug 配置）
-- 这是一个 C ABI 插件框架：核心库 `pipluginframework`（SHARED）
+- 这是一个 C ABI 插件框架：核心库 `piplugin`（SHARED）
   + Qt / ImGui 适配器 + 若干测试宿主与测试插件（exe 与 dll）
 - 开发期要求：能在 `<root>/bin/Debug/` 下直接双击/命令行跑测试宿主，
   该目录必须同时有核心库 dll、Qt 运行时 dll、`platforms/qwindows.dll`
@@ -39,18 +39,18 @@
 ### 2. 已实测确认的事实
 F1. 全仓库没有任何一处设置过 `CMAKE_INSTALL_PREFIX`（已 grep 全仓库确认）。
     因此生成的 `build/**/cmake_install.cmake` 顶部都有：
-    `if(NOT DEFINED CMAKE_INSTALL_PREFIX) set(CMAKE_INSTALL_PREFIX "C:/Program Files/pipluginframework")`
+    `if(NOT DEFINED CMAKE_INSTALL_PREFIX) set(CMAKE_INSTALL_PREFIX "C:/Program Files/piplugin")`
 F2. 非提权终端执行 `cmake --build build --config Debug --target INSTALL` 必然失败：
 
     -- Install configuration: "Debug"
-    -- Up-to-date: C:/Program Files/pipluginframework/lib/Debug/pipluginframeworkd.lib
-    CMake Error at src/pipluginframework/cmake_install.cmake:37 (file):
+    -- Up-to-date: C:/Program Files/piplugin/lib/Debug/piplugind.lib
+    CMake Error at src/piplugin/cmake_install.cmake:37 (file):
       file INSTALL cannot set permissions on
-      "C:/Program Files/pipluginframework/lib/Debug/pipluginframeworkd.lib": Permission denied.
+      "C:/Program Files/piplugin/lib/Debug/piplugind.lib": Permission denied.
     MSB3073 ... 已退出，代码为 1
 
 F3. 安装脚本是嵌套 `include()` 执行，顺序为
-    `cmake_install.cmake` → `src/` → `src/pipluginframework/` → `adapters/` → `tests/`。
+    `cmake_install.cmake` → `src/` → `src/piplugin/` → `adapters/` → `tests/`。
     `file(INSTALL)` 报错在 `cmake -P` 脚本模式下是 fatal：第一条失败即整体中断，
     后面的 `adapters/` 与 `tests/` 一条都不执行。
 F4. 项目里「把产物放进 `<root>/bin/<Config>`」的规则，全部使用**绝对安装目标**
@@ -59,13 +59,13 @@ F4. 项目里「把产物放进 `<root>/bin/<Config>`」的规则，全部使用
     但这些规则位于 `adapters/` 与 `tests/`，被 F3 的中断连带跳过。
 F5. 一旦前缀可写，整条链立刻通。`cmake --install build --config Debug --prefix <可写目录>`
     实测 exit 0，日志依次出现：
-      -- Installing: <prefix>/lib/Debug/pipluginframeworkd.lib
-      -- Installing: <prefix>/include/pipluginframework/*.h
-      -- Up-to-date: D:/.../bin/Debug/pipluginframeworkd.dll      ← 绝对目标，执行了
+      -- Installing: <prefix>/lib/Debug/piplugind.lib
+      -- Installing: <prefix>/include/piplugin/*.h
+      -- Up-to-date: D:/.../bin/Debug/piplugind.dll      ← 绝对目标，执行了
       -- Installing: D:/.../bin/Debug/pi_test_host_imgui.exe
       -- Installing: D:/.../bin/Debug/pi_test_plugin_imgui.dll
     即 `bin/Debug` 被正常刷新。
-F6. `src/pipluginframework/CMakeLists.txt` 对一个 target 写了两条 `install(TARGETS)`：
+F6. `src/piplugin/CMakeLists.txt` 对一个 target 写了两条 `install(TARGETS)`：
       :141  相对目标（`${CMAKE_INSTALL_LIBDIR}/$<CONFIG>`、`${CMAKE_INSTALL_BINDIR}/$<CONFIG>`、
              `FILE_SET HEADERS`、`EXPORT`）—— 真·安装，供外部 `find_package`
       :150  绝对目标（`${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}`）—— 只装 dll，
@@ -77,9 +77,9 @@ F7. 另有两条 `add_custom_command(... POST_BUILD)` 也在往同一个 `bin/<C
 
 ### 3. 关键代码位置
 - `cmake/pi/pi_project.cmake:73`  定义 `GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH = <root>/bin/$<CONFIG>`
-- `src/pipluginframework/CMakeLists.txt:141`  第一条 install（相对目标 + EXPORT）
-- `src/pipluginframework/CMakeLists.txt:150`  第二条 install（绝对目标，只装 dll）
-- `src/pipluginframework/CMakeLists.txt:155/170`  导出集与 CMake config 的 install
+- `src/piplugin/CMakeLists.txt:141`  第一条 install（相对目标 + EXPORT）
+- `src/piplugin/CMakeLists.txt:150`  第二条 install（绝对目标，只装 dll）
+- `src/piplugin/CMakeLists.txt:155/170`  导出集与 CMake config 的 install
 - `tests/test_host/CMakeLists.txt:71`、`tests/test_plugin/CMakeLists.txt:91`、
   `tests/test_host_qt/CMakeLists.txt:84/87/93`、`tests/test_plugin_imgui/CMakeLists.txt:65`、
   `tests/test_headless_host/CMakeLists.txt:48`  全部用同一个绝对目标

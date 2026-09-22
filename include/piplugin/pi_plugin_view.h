@@ -1,5 +1,5 @@
 /*
- * pipluginframework - IPiPluginView
+ * piplugin - IPiPluginView
  *
  * GUI view interface that allows a plugin to render inside the host window.
  * The host embeds the plugin's native window handle, and can pump the

@@ -20,8 +20,8 @@
 #   powershell -ExecutionPolicy Bypass -File scripts\drag_measure.ps1 -Tag fixed
 
 param(
-    [string]$ExePath    = "D:\Flora\ProgramProjects\pipluginframework\bin\Debug\pi_test_host_imgui.exe",
-    [string]$PluginPath = "D:\Flora\ProgramProjects\pipluginframework\bin\Debug\pi_test_plugin_qt.dll",
+    [string]$ExePath    = "",
+    [string]$PluginPath = "",
     [string]$Tag        = "run",
     [int]$Steps         = 10,
     [int]$StepPx        = 36,
@@ -30,6 +30,12 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Defaults are derived from the repository root (this script lives in
+# <root>\scripts\) instead of hardcoding absolute paths.
+$repoRoot = Split-Path -Parent $PSScriptRoot
+if (-not $ExePath)    { $ExePath    = Join-Path $repoRoot "bin\Debug\pi_test_host_imgui.exe" }
+if (-not $PluginPath) { $PluginPath = Join-Path $repoRoot "bin\Debug\pi_test_plugin_qt.dll" }
 if (-not $OutDir) { $OutDir = Join-Path $PSScriptRoot "out" }
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 

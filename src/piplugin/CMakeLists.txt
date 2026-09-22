@@ -1,4 +1,4 @@
-# ./src/pipluginframework/CMakeLists.txt
+# ./src/piplugin/CMakeLists.txt
 cmake_minimum_required(VERSION 3.23)
 
 # include GNU best practice
@@ -10,7 +10,7 @@ if(NOT NAMESPACE_NAME)
 endif()
 
 # component name（库名与工程同名，FULL_NAME 不再拼接 namespace 前缀）
-set(COMPONENT_NAME pipluginframework)
+set(COMPONENT_NAME piplugin)
 
 # target name & full name
 set(TARGET_NAME ${COMPONENT_NAME})
@@ -32,9 +32,9 @@ set(FILE_VERSION_TWEAK 0)
 set(FILE_VERSION_COMMA "${FILE_VERSION_MAJOR},${FILE_VERSION_MINOR},${FILE_VERSION_PATCH},${FILE_VERSION_TWEAK}")
 set(FILE_VERSION_STRING "${FILE_VERSION_MAJOR}.${FILE_VERSION_MINOR}.${FILE_VERSION_PATCH}.${FILE_VERSION_TWEAK}")
 
-set(COMPANY_NAME "pipluginframework")
+set(COMPANY_NAME "piplugin")
 set(FILE_DESCRIPTION "cross-platform plugin framework with COM-style C ABI")
-set(LEGAL_COPY_RIGHT "Copyright (c) 2025 pipluginframework")
+set(LEGAL_COPY_RIGHT "Copyright (c) 2025 piplugin")
 set(PRODUCT_NAME "${FULL_NAME}")
 set(ORIGIN_FILE_NAME "${FULL_NAME}.dll")#info for windows only
 
@@ -66,15 +66,15 @@ set(SRC_FILE_LIST
     ../pi_plugin_unknown.c
     )
 set(HEADER_FILE_LIST
-    ../../include/pipluginframework/pi_plugin.h
-    ../../include/pipluginframework/pi_plugin_base.h
-    ../../include/pipluginframework/pi_plugin_factory.h
-    ../../include/pipluginframework/pi_plugin_host.h
-    ../../include/pipluginframework/pi_plugin_host_services.h
-    ../../include/pipluginframework/pi_plugin_service.h
-    ../../include/pipluginframework/pi_plugin_types.h
-    ../../include/pipluginframework/pi_plugin_unknown.h
-    ../../include/pipluginframework/pi_plugin_view.h
+    ../../include/piplugin/pi_plugin.h
+    ../../include/piplugin/pi_plugin_base.h
+    ../../include/piplugin/pi_plugin_factory.h
+    ../../include/piplugin/pi_plugin_host.h
+    ../../include/piplugin/pi_plugin_host_services.h
+    ../../include/piplugin/pi_plugin_service.h
+    ../../include/piplugin/pi_plugin_types.h
+    ../../include/piplugin/pi_plugin_unknown.h
+    ../../include/piplugin/pi_plugin_view.h
     )
 
 set(TARGET_SRC_FILE_LIST
@@ -122,7 +122,7 @@ target_sources(${TARGET_NAME}
 )
 
 # 预制宏定义
-target_compile_definitions(${TARGET_NAME} PRIVATE PI_BUILDING_FRAMEWORK)
+target_compile_definitions(${TARGET_NAME} PRIVATE PIPLUGIN_BUILDING)
 target_compile_definitions(${TARGET_NAME} PRIVATE "LIBRARY_VERSION=\"${FILE_VERSION_STRING}\"")
 
 # self header

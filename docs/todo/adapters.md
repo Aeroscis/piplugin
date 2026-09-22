@@ -7,17 +7,17 @@
 - 若一个进程加载多个各自链接套件的 Qt 插件 → 多个 `QApplication` 冲突。
 
 **建议**：
-1. 将 `pipluginframework_qt` 改为 SHARED 库，让所有 Qt 插件共享同一个
+1. 将 `piplugin_qt` 改为 SHARED 库，让所有 Qt 插件共享同一个
    `PiQtRuntime`（进程级唯一 `QApplication`）；
 2. 需要解决：套件内部进程级状态（`g_rt_mutex` 等）从"每 DLL 一份"变成"进程共享一份"，
    静态库模式下这些全局量在各 DLL 中独立，SHARED 后统一。
 
-## 2. 新增 gtk 套件（pipluginframework_gtk）[P2]
+## 2. 新增 gtk 套件（piplugin_gtk）[P2]
 
 插件用 GTK 写 UI 时，按 `qt/` 套件同样的模式实现：私有线程跑 GTK 主循环 +
 X11 嵌入。README（`adapters/qt/README.md`）已预留此方向。
 
-## 3. 新增 webview 套件（pipluginframework_webview）[P2]
+## 3. 新增 webview 套件（piplugin_webview）[P2]
 
 插件 UI 用 HTML/JS（WebView2 / WebKitGTK / WKWebView）时，封装成同一模式。
 

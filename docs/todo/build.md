@@ -2,8 +2,8 @@
 
 ## 1. 适配器套件纳入 Conan 包 [P1]
 
-**现状**：`conanfile.py` 只打包核心库（`cpp_info.libs = ["pipluginframework"]`，
-只 copy `include/` 与构建产物）。`pipluginframework_qt` / `pipluginframework_imgui`
+**现状**：`conanfile.py` 只打包核心库（`cpp_info.libs = ["piplugin"]`，
+只 copy `include/` 与构建产物）。`piplugin_qt` / `piplugin_imgui`
 两个套件**不在** conan 包内。
 
 **建议**：
@@ -11,7 +11,7 @@
 2. `package_info()` 增加组件：`self.cpp_info.components["imgui"]`、
    `self.cpp_info.components["qt"]`，各自带上 imgui / Qt5 依赖；
 3. 这样消费方 `conan install` 后可直接 `find_package(pi)` + 链接
-   `pi::pipluginframework_imgui` 等。
+   `pi::piplugin_imgui` 等。
 
 > 注意：Qt 目前是本地安装（非 conan 依赖），套件打包时需处理 Qt 依赖传播
 > （要么要求消费方自行 find Qt，要么用 conan `qt` 包替代——见第 4 条）。
@@ -53,12 +53,12 @@
 
 ## 6. 库名/产物名一致性 [P2]
 
-- Debug 库名带 `d` 后缀（`pipluginframeworkd.dll`），Release 不带——
+- Debug 库名带 `d` 后缀（`piplugind.dll`），Release 不带——
   这是既有约定；建议在文档与 CI 中固定，避免误用。
 
 ## 7. 许可证/元数据完善 [P2]
 
 - `conanfile.py` / `CMakeLists.txt` 的 `url` 目前是占位
-  （`https://github.com/example/pipluginframework`）；HOMEPAGE_URL 亦为占位。
+  （`https://github.com/example/piplugin`）；HOMEPAGE_URL 亦为占位。
   补充真实仓库地址与 LICENSE 文件传播（backends/LICENSE.txt 是 imgui 的）。
 - 打包时随包带上 LICENSE。

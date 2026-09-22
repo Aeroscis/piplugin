@@ -1,4 +1,4 @@
-#include "pipluginframework/pi_plugin_unknown.h"
+#include "piplugin/pi_plugin_unknown.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -49,7 +49,7 @@ PI_EXPORT int pi_api_version_compatible(uint32_t host_version, uint32_t plugin_v
 {
     /* 策略见 pi_plugin_types.h：major 必须相同，且插件不得高于宿主。
      * 同 major 时 plugin_version <= host_version 等价于 minor 比较。 */
-    if (PI_API_VERSION_MAJOR(host_version) != PI_API_VERSION_MAJOR(plugin_version)) return 0;
+    if (PIPLUGIN_API_VERSION_MAJOR(host_version) != PIPLUGIN_API_VERSION_MAJOR(plugin_version)) return 0;
     return plugin_version <= host_version;
 }
 

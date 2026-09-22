@@ -1,7 +1,7 @@
 # 接口参考（Interface Reference）
 
 > 本文档描述框架公开的全部接口、帮助函数与数据类型。
-> 完整定义见 `include/pipluginframework/*.h`；`pi_plugin.h` 是总入口，包含所有头文件。
+> 完整定义见 `include/piplugin/*.h`；`pi_plugin.h` 是总入口，包含所有头文件。
 
 ## 1. 数据类型（pi_plugin_types.h）
 
@@ -48,7 +48,7 @@ typedef struct PiPluginDescriptor {
     const char* vendor;      /* 厂商 */
     const char* version;     /* 语义化版本 "1.0.0" */
     const char* category;    /* 分类 */
-    uint32_t    api_version; /* PI_API_VERSION (0x00010000) */
+    uint32_t    api_version; /* PIPLUGIN_API_VERSION (0x00010000) */
 
     const PiPluginCapability* capabilities;
     uint32_t                  capability_count;
@@ -64,7 +64,7 @@ typedef struct PiPluginDescriptor {
 ### 1.5 api_version 协商策略
 
 `api_version` 是**插件编译时所用框架 API 的版本**，编码为 `major << 16 | minor`
-（用 `PI_API_VERSION_MAJOR` / `PI_API_VERSION_MINOR` / `PI_API_VERSION_MAKE` 读写）。
+（用 `PIPLUGIN_API_VERSION_MAJOR` / `PIPLUGIN_API_VERSION_MINOR` / `PIPLUGIN_API_VERSION_MAKE` 读写）。
 
 | 情况 | 判定 |
 |---|---|
@@ -93,7 +93,7 @@ plugin api_version 0x00020000 (major 2, minor 0) is incompatible with host
 ```c
 const PiPluginDescriptor* desc = NULL;
 pi_factory_get_descriptor(factory, &desc);
-if (desc && !pi_api_version_compatible(PI_API_VERSION, desc->api_version))
+if (desc && !pi_api_version_compatible(PIPLUGIN_API_VERSION, desc->api_version))
     return;   /* 拒绝：版本不兼容 */
 ```
 
@@ -346,7 +346,7 @@ python -c "import uuid; print(uuid.uuid4())"       # 任意平台
 ### 5.2 第一步：app 定义协议（`my_app_protocol.h`）
 
 ```c
-#include "pipluginframework/pi_plugin.h"
+#include "piplugin/pi_plugin.h"
 
 /* 随机生成一次，此后永不改动（PI_GUID 展开成花括号初始化器，故定义为变量） */
 static const PiGuid MY_APP_PROTOCOL_IID =
@@ -424,7 +424,7 @@ static void DeclareCapabilities(void)
     s_desc.vendor = "me";
     s_desc.version = "1.0.0";
     s_desc.category = "worker";
-    s_desc.api_version = PI_API_VERSION;
+    s_desc.api_version = PIPLUGIN_API_VERSION;
     s_desc.capabilities = s_caps;
     s_desc.capability_count = 1;
 }

@@ -28,13 +28,21 @@
 # Run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts\verify_resize_fix.ps1
 
 param(
-    [string]$BinDir  = "D:\Flora\ProgramProjects\pipluginframework\bin\Debug",
-    [string]$ShotDir = "D:\Flora\ProgramProjects\pipluginframework\build\verify_shots",
+    [string]$BinDir  = "",
+    [string]$ShotDir = "",
     [double]$GrowFactor  = 1.5,   # target client size while growing
     [double]$ShrinkFactor = 0.62  # target client size while shrinking (relative to initial)
 )
 
 $ErrorActionPreference = "Stop"
+
+# Defaults are derived from the repository root (this script lives in
+# <root>\scripts\), so another machine, another checkout directory or another
+# build configuration only needs -BinDir. The old hardcoded absolute paths
+# broke when the repository was renamed to piplugin.
+$repoRoot = Split-Path -Parent $PSScriptRoot
+if (-not $BinDir)  { $BinDir  = Join-Path $repoRoot "bin\Debug" }
+if (-not $ShotDir) { $ShotDir = Join-Path $repoRoot "build\verify_shots" }
 
 # ------------------------- Win32 + screenshot helpers (one compilation) ------
 Add-Type -ReferencedAssemblies System.Drawing -TypeDefinition @"
@@ -197,7 +205,7 @@ Write-Host "[1/8] starting host with Qt plugin..."
 $proc = Start-Process -FilePath $exe -ArgumentList "pi_test_plugin_qt.dll" -WorkingDirectory $BinDir -PassThru
 Start-Sleep -Seconds 3
 
-$hwnd = [PiWin32]::FindHostWindow("PiTestHost", "pipluginframework")
+$hwnd = [PiWin32]::FindHostWindow("PiTestHost", "piplugin")
 if ($hwnd -eq [IntPtr]::Zero) { throw "host window not found" }
 
 $wr   = [PiWin32]::WindowRect($hwnd)      # left, top, w, h  (logical px)

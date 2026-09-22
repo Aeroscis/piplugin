@@ -10,7 +10,7 @@
 
 | 类别 | 数量 | 出处 |
 |---|---|---|
-| 接口 vtbl | 7 个接口 / 26 个槽位 | `include/pipluginframework/*.h` |
+| 接口 vtbl | 7 个接口 / 26 个槽位 | `include/piplugin/*.h` |
 | 公共数据导出 | 7 个 `PI_IID_*` GUID 常量 | `src/pi_plugin_unknown.c` |
 | 公共帮助函数 | 16 个 `pi_*` 函数 | `pi_plugin_unknown.c`、`pi_plugin_host.c` |
 
@@ -143,7 +143,7 @@
 | **F3** | `pi_host_create_plugin` 失败时不给 `*out_plugin` / `*out_module` 赋值，调用方会读到自己残留的旧值 | 入口处预置 NULL，并写入头文件注释与 2.4 约定 |
 | **F4** | `PI_PLUGIN_ENTRY_DECL` 展开成 `PI_EXPORT`，而 `PI_EXPORT` 在插件侧是 **dllimport** —— 该宏按其字面用途（定义插件入口）**根本无法编译** | 新增 `PI_PLUGIN_EXPORT`（插件侧的 dllexport / visibility default），`PI_PLUGIN_ENTRY_DECL` 改用它；`pi_test_plugin_badversion` 现在就用该宏定义入口，兼作编译验证 |
 
-导出符号终审结果（`dumpbin /exports bin/Debug/pipluginframeworkd.dll`，共 **23** 个）：
+导出符号终审结果（`dumpbin /exports bin/Debug/piplugind.dll`，共 **23** 个）：
 
 ```
 PI_IID_UNKNOWN / PLUGIN_FACTORY / PLUGIN_BASE / PLUGIN_VIEW / HOST_SERVICES / HOST_UI / SERVICE

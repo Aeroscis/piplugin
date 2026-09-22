@@ -1,5 +1,5 @@
 /*
- * pipluginframework — Test Host (Qt / Widgets)
+ * piplugin — Test Host (Qt / Widgets)
  *
  * The mirror twin of the imgui test host: a Qt application that embeds
  * an ImGui-based plugin. Demonstrates how a Qt host merges foreign
@@ -18,7 +18,7 @@
  * L1 嵌入区域 = 容器/attach/resize 转发）。本文件只剩"这台宿主的窗口、
  * 布局、样式与帧时钟长什么样"——容器是谁、在哪、多大、怎么美化，全归宿主。
  */
-#include "pipluginframework/pi_plugin.h"
+#include "piplugin/pi_plugin.h"
 #include "pi_host_session.h"
 #include "pi_host_embed_area.h"
 
@@ -176,13 +176,13 @@ class PiQtHostWindow : public QWidget {
 public:
     explicit PiQtHostWindow(QWidget* parent = NULL) : QWidget(parent)
     {
-        setWindowTitle(QString::fromUtf8("pipluginframework — Test Host (Qt)"));
+        setWindowTitle(QString::fromUtf8("piplugin — Test Host (Qt)"));
         resize(1280, 720);
 
         QVBoxLayout* root = new QVBoxLayout(this);
 
         QHBoxLayout* bar = new QHBoxLayout();
-        QLabel* title = new QLabel(QString::fromUtf8("pipluginframework Qt host — embedding an ImGui plugin"));
+        QLabel* title = new QLabel(QString::fromUtf8("piplugin Qt host — embedding an ImGui plugin"));
         g_statusLabel = new QLabel(QString::fromUtf8("No plugin loaded"));
         QPushButton* loadBtn = new QPushButton(QString::fromUtf8("Load ImGui Plugin"));
         QPushButton* unloadBtn = new QPushButton(QString::fromUtf8("Unload"));
