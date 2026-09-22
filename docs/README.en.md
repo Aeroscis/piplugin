@@ -133,12 +133,14 @@ The full architecture, interface family and threading model are in
 
 | Entry point | What it covers |
 |---|---|
+| `scripts/verify.ps1` | **every check in one command** (this is what CI calls): `ctest` + the conformance harness + the clang-format drift report |
 | `ctest -C Debug` | core unit suite (109 assertions), headless smoke test, negative version-gate case |
 | `scripts/run_selftest.ps1` | **conformance harness**: runs every given plugin DLL through `load → attach → idle → resize round trip → unload` and decides by exit code |
 | `scripts/verify_resize_fix.ps1` | pixel-level regression for the resize fix (measures panel and plugin edges in screenshots) |
 
-CI (GitHub Actions, [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)) runs the build,
-`ctest` and the conformance harness on every push and pull request.
+CI (GitHub Actions, [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)) only installs
+dependencies and builds on every push and pull request; the checks themselves are
+`scripts/verify.ps1`, so they can be reproduced locally.
 
 ## Ecosystem
 

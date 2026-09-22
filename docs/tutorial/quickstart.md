@@ -146,20 +146,35 @@ powershell -ExecutionPolicy Bypass -File scripts\verify_resize_fix.ps1
 > **注意**：以上只能覆盖缩放路径的**稳态**正确性。
 > "拖动过程中是否还有可感知闪烁"属于**瞬态**问题，需人工快速拖动确认。
 
-### 4.5 持续集成（GitHub Actions）
+### 4.5 一条命令跑完全部检查（`scripts/verify.ps1`）
 
-`.github/workflows/ci.yml` 在 push 到 `main` 与所有 PR 上运行（`windows-latest` + MSVC + conan）：
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\verify.ps1
+```
+
+依次跑：
+
+1. `ctest` —— 核心单测 + headless 冒烟 + 版本门禁负向用例；
+2. **一致性验收**（`scripts/run_selftest.ps1`）—— 自动发现 `bin\<CONFIG>` 里存在哪些测试插件，
+   对每个跑完整生命周期 + 尺寸往返（`--cycles` 不依赖 GPU：拿不到硬件设备时宿主回退 WARP）；
+3. **clang-format 漂移报告**（不阻塞）：当前全仓 C/C++ 文件都不符合已提交的 `.clang-format`
+   （含 include 排序与缩进/wrap 漂移），一次性重排会产生淹没评审的巨型 diff，
+   故现在"暴露但不阻塞"；收紧方式见 `verify.ps1` 里该检查的注释。
+
+退出码 0 = 所有**强制**检查通过。`-SkipGui`（无桌面会话时）、`-SkipFormat` 可按需跳过。
+
+### 4.6 持续集成（GitHub Actions）
+
+`.github/workflows/ci.yml` 在 push 到 `main` 与所有 PR 上运行（`windows-latest` + MSVC + conan）。
+**CI 只负责"装依赖 + 构建"，检查全部交给上面那个脚本** —— 这样检查项能在本地复现：
 
 1. `conan install` —— **Qt 三件套显式关闭**（Qt5 是本工程的本地安装依赖，runner 上没有；去硬编码属 ECO-05）；
-2. 构建核心库 + headless 宿主 + 单元测试 + imgui 宿主；
-3. `ctest` —— 核心单测 + 版本门禁负向用例（Qt 插件关掉后，headless 冒烟用例按 CMake 守卫自动不注册）；
-4. conformance harness —— imgui 插件跑完整生命周期 + 尺寸往返（`--cycles` 不依赖 GPU：拿不到硬件设备时宿主回退 WARP）；
-5. clang-format 漂移**以信息方式报告**：当前全仓 C/C++ 文件都不符合已提交的 `.clang-format`
-   （含 include 排序与缩进/wrap 漂移），一次性重排会产生淹没评审的巨型 diff，
-   故本轮"暴露但不阻塞"；收紧方式见工作流内该步骤的注释。
+2. `cmake --preset conan-default` + `cmake --build --preset conan-debug`；
+3. `pwsh scripts/verify.ps1`。
 
 失败时会把 `bin/Debug/*.log` 与 `build/selftest.txt` 作为 artifact 上传，便于定位。
-README 就位（BLK-02）后在 README 挂 badge。
+README 顶部挂着该工作流的 badge；依赖更新由 `.github/dependabot.yml` 每周提 PR（Conan 没有
+Dependabot 生态，所以 imgui 的 pin 仍需手工定期升级并靠 CI 验证）。
 
 ## 5. 常见问题
 

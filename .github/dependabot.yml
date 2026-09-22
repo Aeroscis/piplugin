@@ -1,0 +1,17 @@
+# Dependabot runs on the GitHub mirror (CI runs there; Gitee is the primary
+# remote). This project has no runtime dependencies, so what is left to update
+# is tooling - and each PR it opens is gated by the ci workflow before it can land.
+#
+# Note: there is no Dependabot ecosystem for Conan, so the imgui pin
+# (imgui/1.92.8, see conanfile.py) is NOT covered here. Bumping it stays a
+# deliberate periodic task, verified by CI the same way.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      actions:
+        patterns: ["*"]

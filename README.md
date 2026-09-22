@@ -130,12 +130,13 @@ cd bin\Debug
 
 | 入口 | 内容 |
 |---|---|
+| `scripts/verify.ps1` | **一条命令跑完全部检查**（CI 调用的就是它）：`ctest` + 一致性验收 + clang-format 漂移报告 |
 | `ctest -C Debug` | 核心单元测试（109 项断言）、headless 冒烟、版本门禁负向用例 |
 | `scripts/run_selftest.ps1` | **一致性验收**：对每个给定的插件 DLL 跑 `load → attach → idle → 尺寸往返 → unload`，退出码裁决 |
 | `scripts/verify_resize_fix.ps1` | 缩放修复的**像素级**回归（截图量测面板与插件边缘是否恒定） |
 
 CI（GitHub Actions，见 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)）在每次 push 与 PR 上
-跑构建 + `ctest` + 一致性验收。
+只做"装依赖 + 构建"，然后把检查全部交给 `scripts/verify.ps1` —— 这样检查项能在本地复现。
 
 ## 生态
 

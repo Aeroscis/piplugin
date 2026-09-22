@@ -101,9 +101,12 @@ load（模块 + 双向能力门禁 + 实例化 + 初始化）
 
 | 入口 | 管什么 |
 |---|---|
+| `scripts/verify.ps1` | **一条命令跑完全部检查**（CI 调用的就是它）：下面三项按顺序跑，退出码裁决 |
 | `ctest -C Debug` | 核心单元测试 + headless 冒烟 + 版本门禁负向用例；非 GUI，最快（见 quickstart 4.1） |
 | `scripts/run_selftest.ps1` | **本 harness**：生命周期 + 尺寸往返，多插件，退出码裁决 |
 | `scripts/verify_resize_fix.ps1` | 缩放修复的**像素级**回归：截图量测面板/插件边缘是否恒定 |
 | `scripts/drag_measure.ps1` | 交互拖拽路径的耗时/失败计数诊断 |
 
-接入 CI 见 roadmap BLK-05（`windows-latest` + MSVC + conan）与 ECO-07（`run_host_tests.ps1`）。
+CI 见 `.github/workflows/ci.yml`：它只做"装依赖 + 构建"，然后调用 `scripts/verify.ps1`
+（检查项留在仓库脚本里，本地可复现）。harness 覆盖哪些插件由 `scripts/verify.ps1`
+从 `bin/<CONFIG>` 里自动发现 —— 所以 CI 上（Qt 关闭）只测 imgui 插件，本机则两个都测。
