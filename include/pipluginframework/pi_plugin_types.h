@@ -169,6 +169,25 @@ typedef PiResult (*PiPluginEntryProc)(IPiPluginFactory** out_factory);
 
 /* --------------------------------------------------------------------------
  * Known interface GUIDs (for IPiUnknown::pi_query_interface)
+ *
+ * GUID 分配规则（规范与完整示例见 docs/design/interfaces.md §5）：
+ *
+ *   1) 框架接口 IID：data1 < 0x80000000，由框架在 src/pi_plugin_unknown.c 中
+ *      集中分配（当前已用 data1 = 0x00000000/01/02/03/10/11/20）。
+ *      **第三方不得在这个区间自行编号** —— 那是框架未来的接口保留区。
+ *
+ *   2) app / 第三方接口 IID、以及插件 class GUID：必须使用**随机生成的
+ *      128 位 UUID**（`uuidgen`、`python -c "import uuid;print(uuid.uuid4())"`、
+ *      任意 GUID 生成器都行），作为常量写进你自己的头文件：
+ *
+ *          static const PiGuid MY_IID =
+ *              PI_GUID(0x9F3C1D42, 0x7B08, 0x4E55, 0xA1, 0x6C, 0x0D, 0xF2, 0x88, 0x37, 0x51, 0xBE);
+ *
+ *      判定由 pi_guid_equal 对**完整 128 位**比较，随机值的碰撞概率可忽略；
+ *      不要手工编造"看起来像框架编号"的小整数 GUID（例如 0x00000021）。
+ *
+ *   3) IID 一旦随 PUBLIC 版本发布就不可再改（COM 规则：已发布接口不可变，
+ *      要改只能新增一个 IID 并新增接口）。
  * -------------------------------------------------------------------------- */
 extern PI_EXPORT const PiGuid PI_IID_UNKNOWN;         /* IPiUnknown        */
 extern PI_EXPORT const PiGuid PI_IID_HOST_SERVICES;   /* IPiHostServices   */

@@ -260,7 +260,187 @@ QWidget* pi_qt_view_widget(IPiPluginView* view);                       /* Qt 线
 void pi_qt_view_post(IPiPluginView* view, void (*fn)(void* user), void* user);
 ```
 
-## 5. 线程模型总结
+## 5. 定义你自己的接口（特化协议，通道 A）
+
+框架刻意只提供**机制**：任何 GUID 标识的接口都能被 QI、能力声明与宿主门禁处理。
+因此 app 作者不需要 fork 框架，就能实现"**我生态内所有插件必须符合 XXX**"这类特化协议：
+
+- 插件侧：实现你的接口，在 descriptor 里声明 `PI_CAP_PROVIDES`；
+- 宿主侧：声明"本生态要求该接口"，不满足的插件在**实例化之前**被拒绝。
+
+### 5.1 GUID 分配规则（必读）
+
+| 用途 | 谁分配 | 形式 |
+|---|---|---|
+| 框架接口 IID | 框架集中分配（`src/pi_plugin_unknown.c`） | `data1 < 0x80000000`，如 `0x00000003` |
+| app / 第三方接口 IID | **你自己** | 随机生成的完整 128 位 UUID |
+| 插件 class GUID | 插件作者 | 随机生成的完整 128 位 UUID |
+
+生成一次即可，此后**永不改动**：
+
+```bash
+uuidgen                                            # Linux/macOS/WSL
+python -c "import uuid; print(uuid.uuid4())"       # 任意平台
+```
+
+为什么随机就够：判定是 `pi_guid_equal` 对**完整 128 位**比较，随机值的碰撞概率可忽略。
+框架保留 `data1 < 0x80000000` 只是把**编号风格**留给自己，避免"看起来像框架接口"的
+伪 GUID（如 `0x00000021`）混进生态造成误读。`data1 = 0x00000000/01/02/03/10/11/20`
+这七个已被占用，不要重复使用。
+
+> IID 一旦随 PUBLIC 版本发布就是 ABI 的一部分：**只能新增接口，不能修改已发布的 vtbl**。
+
+### 5.2 第一步：app 定义协议（`my_app_protocol.h`）
+
+```c
+#include "pipluginframework/pi_plugin.h"
+
+/* 随机生成一次，此后永不改动（PI_GUID 展开成花括号初始化器，故定义为变量） */
+static const PiGuid MY_APP_PROTOCOL_IID =
+    PI_GUID(0x9F3C1D42, 0x7B08, 0x4E55, 0xA1, 0x6C, 0x0D, 0xF2, 0x88, 0x37, 0x51, 0xBE);
+
+/* vtbl 的第一项必须是 IPiUnknownVtbl；方法一律 PI_CALL + 纯 C ABI 类型 */
+typedef struct IMyAppProtocolVtbl {
+    IPiUnknownVtbl base;
+
+    PiResult (PI_CALL *pi_my_do_work)(void* this_ptr, const char* job, int32_t* out_result);
+} IMyAppProtocolVtbl;
+
+typedef struct IMyAppProtocol {
+    const IMyAppProtocolVtbl* lpVtbl;
+} IMyAppProtocol;
+
+static inline PiResult pi_my_do_work(IMyAppProtocol* self, const char* job, int32_t* out)
+{
+    if (!self || !self->lpVtbl || !self->lpVtbl->pi_my_do_work) return PI_E_INVALIDARG;
+    return self->lpVtbl->pi_my_do_work((void*)self, job, out);
+}
+```
+
+> 若你的编译器对头文件里未使用的 `static const` 报警，改为在一个 `.c` 里定义、
+> 头里 `extern const PiGuid MY_APP_PROTOCOL_IID;` 即可。
+
+### 5.3 第二步：插件实现它
+
+```c
+typedef struct MyPlugin {
+    PiRefCountedBase base;     /* 必须是第一个数据成员 */
+    IPiHostServices* host;     /* add-ref'd */
+} MyPlugin;
+
+static PiResult PI_CALL MyPlugin_DoWork(void* self_ptr, const char* job, int32_t* out)
+{
+    (void)self_ptr;
+    if (!job || !out) return PI_E_INVALIDARG;
+    *out = 42;                 /* 真正的工作 */
+    return PI_OK;
+}
+
+/* QI：命中自己的 IID 就返回接口指针并 AddRef —— 返回的通常就是同一个对象 */
+static PiResult PI_CALL MyPlugin_Qi(void* self_ptr, const PiGuid* iid, void** out)
+{
+    MyPlugin* me = (MyPlugin*)self_ptr;
+    if (!out) return PI_E_INVALIDARG;
+    if (pi_guid_equal(iid, &PI_IID_UNKNOWN) ||
+        pi_guid_equal(iid, &PI_IID_PLUGIN_BASE) ||
+        pi_guid_equal(iid, &MY_APP_PROTOCOL_IID)) {
+        *out = me;
+        pi_refcounted_add_ref(self_ptr);       /* 宿主一定会 release，必须 AddRef */
+        return PI_OK;
+    }
+    *out = NULL;
+    return PI_E_NOINTERFACE;
+}
+
+/* vtbl：base 三项（用框架提供的标准实现）+ 你的方法 */
+static const IMyAppProtocolVtbl s_protocol_vtbl = {
+    { &MyPlugin_Qi, &pi_refcounted_add_ref, &pi_refcounted_release },
+    &MyPlugin_DoWork
+};
+
+/* descriptor 里声明 PROVIDES —— 宿主据此在实例化前门禁 */
+static PiPluginCapability s_caps[1];
+static PiPluginDescriptor s_desc;
+
+static void DeclareCapabilities(void)
+{
+    s_caps[0].iid   = MY_APP_PROTOCOL_IID;
+    s_caps[0].flags = PI_CAP_PROVIDES;
+
+    s_desc.name = "My Plugin";
+    s_desc.vendor = "me";
+    s_desc.version = "1.0.0";
+    s_desc.category = "worker";
+    s_desc.api_version = PI_API_VERSION;
+    s_desc.capabilities = s_caps;
+    s_desc.capability_count = 1;
+}
+```
+
+> **C 语言的一个小坑**：把框架导出的 `pi_refcounted_add_ref` / `pi_refcounted_release`
+> 直接填进 vtbl，在 **C** 里会触发 `warning C4232`（取 dllimport 函数地址，不保证跨模块标识）。
+> 这是本框架填充 vtbl 的固有模式，C++ 编译不报。若你的工程把警告当错误，二选一：
+> ① 局部 `#pragma warning(disable:4232)`；② 在插件里写一对薄封装
+> `MyPlugin_AddRef/Release`（内部转调框架函数）再填进 vtbl，取到的就是本模块内的函数地址。
+>
+> （上面两段代码已用 `cl /W4 /utf-8 /std:c11` 与 `/std:c++17` 各编译通过。）
+
+### 5.4 第三步：宿主消费它
+
+用宿主 kit（推荐，见 `docs/tutorial/write-host.md`）：
+
+```c
+#include "my_app_protocol.h"
+#include "pi_host_session.h"
+
+PiPluginHostSession* session = NULL;
+pi_host_session_create(host, &session);
+
+/* 声明本 app 生态要求的能力：不满足的插件在 create_instance 之前就被拒绝 */
+pi_host_session_require(session, &MY_APP_PROTOCOL_IID);
+
+uint32_t slot = PI_HOST_SESSION_INVALID_SLOT;
+if (PI_FAILED(pi_host_session_load(session, "my_plugin.dll", &slot))) {
+    /* 例如：plugin does not provide iid data1=0x9F3C1D42 required by this host */
+    printf("%s\n", pi_host_session_last_error(session));
+    return;
+}
+
+IPiPluginBase* plugin = pi_host_session_get_plugin(session, slot);   /* 借用 */
+IMyAppProtocol* proto = NULL;
+if (PI_SUCCEEDED(pi_iunknown_query_interface((IPiUnknown*)plugin,
+                                             &MY_APP_PROTOCOL_IID, (void**)&proto))) {
+    int32_t result = 0;
+    pi_my_do_work(proto, "job-1", &result);
+    pi_iunknown_release((IPiUnknown*)proto);    /* QI 返回的是 add-ref 过的 */
+}
+```
+
+不用宿主 kit 的宿主，门禁自己做一次即可（必须在 `create_instance` 之前）：
+
+```c
+const PiPluginDescriptor* desc = NULL;
+pi_factory_get_descriptor(factory, &desc);
+if (!pi_descriptor_provides(desc, &MY_APP_PROTOCOL_IID))
+    return;   /* 拒绝：本生态要求插件实现该接口 */
+```
+
+### 5.5 目前不能做的两件事
+
+- **反向通道（宿主把自己的自定义服务提供给插件）**：`PiDefaultHost` 封闭，只认
+  框架内建的三个 IID，插件无法 QI 到 app 自定义的宿主服务。这是 roadmap 的 APP-01
+  （可组合宿主服务 `pi_host_services_create_ex`），尚未落地。
+- **自定义接口的版本协商**：`descriptor->api_version` 的运行时检查属 roadmap BLK-03，
+  尚未落地；在它完成前，接口演进请用"新增 IID + 新增接口"的方式，不要改已有 vtbl。
+
+### 5.6 三条禁令
+
+1. **不改已发布的 vtbl**——要扩展就新增 IID 与接口（COM 规则）；
+2. **vtbl 里不放 C++ 类型、不抛异常**——必须纯 C ABI，调用约定一律 `PI_CALL`，
+   否则 Rust/C#/Python 的 FFI 承诺立刻失效；
+3. **QI 必须返回 AddRef 过的指针**——宿主（以及框架的 session）一定会 release。
+
+## 6. 线程模型总结
 
 | 组件 | 线程 |
 |---|---|
