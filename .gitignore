@@ -27,3 +27,9 @@ __pycache__/
 .idea/
 .vscode/
 *.user
+
+# 工具草稿：AI/助手会话的临时诊断输出与记忆文件，不入库
+.workbuddy/
+
+# 验证脚本的生成产物（脚本本身在 scripts/ 下，正常入库）
+scripts/out/
