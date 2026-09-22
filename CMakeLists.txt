@@ -45,6 +45,8 @@ list(APPEND CMAKE_PREFIX_PATH "C:/Qt/5.15.2/msvc2019_64")
 add_subdirectory(${GLOBAL_PROJECT_SRC_PATH})
 # adapter kits path（UI 兼容层，独立于 src 存在）
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/adapters)
+# host kits path（宿主侧机制库，独立于 src 与 adapters 存在；tests 里的宿主会链接它）
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/host_kits)
 # tests path
 option(PI_BUILD_TESTS "Build test hosts and plugins" ON)
 if(PI_BUILD_TESTS AND DEFINED GLOBAL_PROJECT_TESTS_PATH)

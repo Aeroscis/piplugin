@@ -5,26 +5,29 @@
  * an ImGui-based plugin. Demonstrates how a Qt host merges foreign
  * plugin UIs into ITS event loop:
  *
- *   1. A native QWidget acts as the embed container; its winId() is the
- *      PiNativeWindow passed to pi_view_attach().
- *   2. A QTimer (fires on every event-loop iteration) calls
- *      pi_view_on_idle() — Qt's idiomatic way to drive per-frame plugin
- *      work without stealing the loop.
- *   3. Container resizes are forwarded via pi_view_on_resize().
+ *   1. A PiPluginEmbedArea (host kit L1) is the embed container; the host
+ *      creates it and puts it in its own layout, the kit makes it an
+ *      embed host (native window + attach + resize forwarding).
+ *   2. The host's own QTimer (fires on every event-loop iteration) drives
+ *      plugin frames — the cadence is the HOST's decision.
  *
  * The host knows nothing about Dear ImGui (or Qt-as-a-plugin): the whole
  * compatibility burden lives in the plugin-side adapter kits.
+ *
+ * 分层：宿主侧机制来自宿主 kit（L0 会话 = 加载/门禁/实例化/卸载序列；
+ * L1 嵌入区域 = 容器/attach/resize 转发）。本文件只剩"这台宿主的窗口、
+ * 布局、样式与帧时钟长什么样"——容器是谁、在哪、多大、怎么美化，全归宿主。
  */
 #include "pipluginframework/pi_plugin.h"
+#include "pi_host_session.h"
+#include "pi_host_embed_area.h"
 
 #include <QApplication>
-#include <QWidget>
 #include <QLabel>
 #include <QPushButton>
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QTimer>
-#include <QEvent>
 #include <QCloseEvent>
 #include <QString>
 #include <cstdio>
@@ -59,14 +62,13 @@ static void LogStatus(const char* fmt, ...)
 /* --------------------------------------------------------------------------
  * Host state
  * ------------------------------------------------------------------------ */
-static IPiPluginBase*   g_plugin       = NULL;
-static IPiPluginView*   g_pluginView   = NULL;
-static PiPluginModule*  g_pluginModule = NULL;
-static IPiHostServices* g_hostServices = NULL;
+static IPiHostServices*     g_hostServices = NULL;
+static PiPluginHostSession* g_session      = NULL;
+static uint32_t             g_slot         = PI_HOST_SESSION_INVALID_SLOT;
 
-static QWidget*  g_embedContainer = NULL;
-static QLabel*   g_statusLabel     = NULL;
-static QTimer*   g_idleDriver      = NULL;
+static PiPluginEmbedArea* g_embedArea  = NULL;   /* 宿主创建、宿主摆位、宿主美化 */
+static QLabel*            g_statusLabel = NULL;
+static QTimer*            g_idleDriver  = NULL;
 
 static void HostMessageProc(void* user_data, uint32_t msg,
                             uintptr_t wparam, intptr_t lparam)
@@ -74,6 +76,13 @@ static void HostMessageProc(void* user_data, uint32_t msg,
     (void)user_data; (void)lparam;
     LogStatus("[plugin message] msg=0x%04X wparam=%llu",
               msg, (unsigned long long)wparam);
+}
+
+/* kit 的步骤日志 -> 本宿主的日志文件（去向由宿主决定） */
+static void SessionLogProc(void* user_data, const char* message)
+{
+    (void)user_data;
+    LogStatus("%s", message);
 }
 
 static std::string ExeDirPath(const char* dllName)
@@ -93,24 +102,17 @@ static void SetStatus(const QString& text)
 }
 
 /* --------------------------------------------------------------------------
- * Plugin load / unload
+ * Plugin load / unload（机制全部在 kit 里；这里只做本宿主的 UI 反应）
  * ------------------------------------------------------------------------ */
 static void UnloadPlugin()
 {
     LogStatus("unload: begin");
-    if (g_pluginView) {
-        pi_view_detach(g_pluginView);
-        pi_iunknown_release((IPiUnknown*)g_pluginView);
-        g_pluginView = NULL;
-    }
-    if (g_plugin) {
-        pi_plugin_terminate(g_plugin);
-        pi_iunknown_release((IPiUnknown*)g_plugin);
-        g_plugin = NULL;
-    }
-    if (g_pluginModule) {
-        pi_module_unload(g_pluginModule);
-        g_pluginModule = NULL;
+    if (g_session && g_slot != PI_HOST_SESSION_INVALID_SLOT) {
+        /* 先解除嵌入区域的绑定，再让 session 走七步卸载序列：
+         * 解绑后本控件不再持有任何指向该插件的视图（也就不会在卸载后再转发 resize） */
+        if (g_embedArea) g_embedArea->detachBinding();
+        pi_host_session_unload(g_session, g_slot);
+        g_slot = PI_HOST_SESSION_INVALID_SLOT;
     }
     SetStatus(QString::fromUtf8("No plugin loaded"));
     LogStatus("unload: done");
@@ -124,84 +126,45 @@ static void LoadPlugin(const char* dllPath)
         /* Create the host services object with the embed container's
          * native window, so IPiHostUI is exposed to plugins. */
         if (PI_FAILED(pi_host_services_create_default(&HostMessageProc, NULL,
-                                                      (PiNativeWindow)g_embedContainer->winId(),
+                                                      (PiNativeWindow)g_embedArea->winId(),
                                                       &g_hostServices))) {
             SetStatus(QString::fromUtf8("Host services unavailable"));
             return;
         }
     }
-
-    PiPluginModule* module = pi_module_load(dllPath);
-    if (!module) {
-        SetStatus(QString::fromUtf8("Load failed: %1")
-                  .arg(QString::fromLocal8Bit(pi_module_get_load_error())));
-        return;
-    }
-
-    IPiPluginFactory* factory = NULL;
-    if (PI_FAILED(pi_module_get_factory(module, &factory))) {
-        SetStatus(QString::fromUtf8("No factory in plugin"));
-        pi_module_unload(module);
-        return;
-    }
-
-    const PiPluginDescriptor* desc = NULL;
-    pi_factory_get_descriptor(factory, &desc);
-
-    /* Capability gate (LV2-style): check requirements BEFORE instantiating. */
-    if (desc && pi_descriptor_requires(desc, &PI_IID_HOST_UI)) {
-        void* dummy = NULL;
-        if (PI_FAILED(pi_iunknown_query_interface((IPiUnknown*)g_hostServices,
-                                                  &PI_IID_HOST_UI, &dummy))) {
-            SetStatus(QString::fromUtf8("Rejected: plugin requires GUI host"));
-            pi_iunknown_release((IPiUnknown*)factory);
-            pi_module_unload(module);
+    if (!g_session) {
+        if (PI_FAILED(pi_host_session_create(g_hostServices, &g_session))) {
+            SetStatus(QString::fromUtf8("Host session unavailable"));
             return;
         }
-        pi_iunknown_release((IPiUnknown*)dummy);
+        pi_host_session_set_logger(g_session, &SessionLogProc, NULL);
     }
 
-    PiGuid classGuid;
-    if (PI_FAILED(pi_factory_get_class_guid(factory, 0, &classGuid))) {
-        SetStatus(QString::fromUtf8("Plugin has no classes"));
-        pi_iunknown_release((IPiUnknown*)factory);
-        pi_module_unload(module);
+    uint32_t slot = PI_HOST_SESSION_INVALID_SLOT;
+    PiResult hr = pi_host_session_load(g_session, dllPath, &slot);
+    if (PI_FAILED(hr)) {
+        /* 失败原因（含 pi_module_load 的错误描述与双向门禁的拒绝理由）由 kit 给出 */
+        const QString why = QString::fromLocal8Bit(pi_host_session_last_error(g_session));
+        if (hr == PI_E_MISSINGCAPABILITY)
+            SetStatus(QString::fromUtf8("Rejected: %1").arg(why));
+        else
+            SetStatus(QString::fromUtf8("Load failed: %1").arg(why));
         return;
     }
+    g_slot = slot;
 
-    if (PI_FAILED(pi_factory_create_instance(factory, &classGuid, g_hostServices, &g_plugin))) {
-        SetStatus(QString::fromUtf8("Failed to create instance"));
-        pi_iunknown_release((IPiUnknown*)factory);
-        pi_module_unload(module);
-        return;
-    }
+    const PiPluginDescriptor* desc = pi_host_session_get_descriptor(g_session, slot);
 
-    if (PI_FAILED(pi_plugin_initialize(g_plugin, g_hostServices))) {
-        SetStatus(QString::fromUtf8("Plugin initialize failed"));
-        pi_iunknown_release((IPiUnknown*)g_plugin); g_plugin = NULL;
-        pi_iunknown_release((IPiUnknown*)factory);
-        pi_module_unload(module);
-        return;
-    }
-
-    g_pluginModule = module;
-
-    IPiPluginView* view = NULL;
-    if (PI_SUCCEEDED(pi_plugin_get_view(g_plugin, &view)) && view) {
-        g_pluginView = view;
-        if (PI_SUCCEEDED(pi_view_attach(g_pluginView,
-                                        (PiNativeWindow)g_embedContainer->winId()))) {
-            pi_view_set_visible(g_pluginView, 1);
-        }
-    }
-
-    pi_iunknown_release((IPiUnknown*)factory);
+    /* 嵌入：区域是本宿主创建并摆位的，L1 kit 负责让它成为 embed host */
+    const bool view_attached = PI_SUCCEEDED(g_embedArea->attach(g_session, slot, true));
 
     if (desc) {
         SetStatus(QString::fromUtf8("Loaded: %1 %2 (view:%3)")
                   .arg(QString::fromUtf8(desc->name))
                   .arg(QString::fromUtf8(desc->version))
-                  .arg(g_pluginView ? QString('Y') : QString('N')));
+                  .arg(view_attached ? QString('Y') : QString('N')));
+    } else {
+        SetStatus(QString::fromUtf8("Loaded (no descriptor)"));
     }
 }
 
@@ -230,12 +193,11 @@ public:
         bar->addWidget(unloadBtn);
         root->addLayout(bar);
 
-        /* Native child widget: the embed container for plugin views. */
-        g_embedContainer = new QWidget(this);
-        g_embedContainer->setAttribute(Qt::WA_NativeWindow);
-        g_embedContainer->setStyleSheet("background-color: #26262a;");
-        g_embedContainer->installEventFilter(this);
-        root->addWidget(g_embedContainer, 1);
+        /* 嵌入区域：本宿主创建、放进自己的布局、并自己决定外观（样式表归宿主；
+         * L1 kit 不做任何视觉决策，所以 QSS 完全由这里说了算）。 */
+        g_embedArea = new PiPluginEmbedArea(this);
+        g_embedArea->setStyleSheet("background-color: #26262a;");
+        root->addWidget(g_embedArea, 1);
 
         connect(loadBtn, &QPushButton::clicked, this, [this]() {
             LoadPlugin(ExeDirPath("pi_test_plugin_imgui.dll").c_str());
@@ -244,32 +206,21 @@ public:
             UnloadPlugin();
         });
 
-        /* THE Qt-side "compatibility glue": drive plugin frames from the
-         * Qt event loop. A 0-interval timer fires once per loop pass. */
+        /* THE Qt-side cadence: drive plugin frames from the Qt event loop.
+         * A 0-interval timer fires once per loop pass. 何时 pump 归宿主决定
+         * （L1 也提供内部定时器，但默认关闭，避免和宿主自己的时钟打架）。 */
         g_idleDriver = new QTimer(this);
         connect(g_idleDriver, &QTimer::timeout, this, []() {
-            if (g_pluginView)
-                pi_view_on_idle(g_pluginView);
+            if (g_embedArea) g_embedArea->driveIdle();
         });
         g_idleDriver->start(0);
     }
 
 protected:
-    bool eventFilter(QObject* watched, QEvent* event) override
-    {
-        if (watched == g_embedContainer && event->type() == QEvent::Resize) {
-            if (g_pluginView) {
-                const QSize& s = g_embedContainer->size();
-                if (s.width() > 0 && s.height() > 0)
-                    pi_view_on_resize(g_pluginView, s.width(), s.height());
-            }
-        }
-        return QWidget::eventFilter(watched, event);
-    }
-
     void closeEvent(QCloseEvent* event) override
     {
         UnloadPlugin();
+        if (g_session) { pi_host_session_destroy(g_session); g_session = NULL; }
         if (g_hostServices) {
             pi_iunknown_release((IPiUnknown*)g_hostServices);
             g_hostServices = NULL;

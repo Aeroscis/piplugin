@@ -124,7 +124,108 @@ pi_host_create_plugin("my_plugin.dll", &classGuid, host, &plugin, &module);
 > 注意 `out_module` 不能传 NULL（那样模块永远不会被卸载，故意泄漏以保证安全）；
 > 请始终接收并管理模块的卸载。
 
-## 6. 宿主清单（Checklist）
+## 6. 少写机制代码：宿主 kit L0（pipluginframework_host）
+
+§1 的 1)~8) 是每个宿主都要重写一遍的**机制**代码（加载 / 能力门禁 / 实例化 / 七步卸载），
+抄错一次顺序就是卸载崩溃。宿主 kit 的 L0 层把它收拢成一个会话对象：
+
+```c
+#include "pi_host_session.h"
+
+PiPluginHostSession* session = NULL;
+pi_host_session_create(host, &session);
+pi_host_session_set_logger(session, OnSessionLog, NULL);  /* 步骤日志去哪由宿主决定 */
+
+/* 本宿主生态要求插件必须 PROVIDES 的能力（特化协议门禁，可多次调用） */
+pi_host_session_require(session, &MY_APP_PROTOCOL_IID);
+
+uint32_t slot = PI_HOST_SESSION_INVALID_SLOT;
+if (PI_FAILED(pi_host_session_load(session, "my_plugin.dll", &slot))) {
+    printf("%s\n", pi_host_session_last_error(session));  /* 含拒绝理由 */
+    return;
+}
+
+/* 容器由宿主自己创建并摆位；kit 只接收它 */
+pi_host_session_attach_view(session, slot, (PiNativeWindow)myContainer, /*set_visible=*/1);
+
+while (running) {
+    …处理宿主自己的事件…
+    pi_host_session_drive_idle(session);                  /* 每帧 pump；时机归宿主 */
+    pi_view_on_resize(pi_host_session_get_view(session, slot), w, h);
+}
+
+pi_host_session_unload(session, slot);   /* 七步序列，顺序由 kit 保证 */
+pi_host_session_destroy(session);
+```
+
+要点：
+
+- kit **不创建窗口、不持计时器、不决定布局**：容器是谁、在哪、多大、几个、可否见，全归宿主；
+- `pi_host_session_get_*` 返回的都是**借用**指针（禁止 release），所有权在 session；
+- 需要"实例化前按 descriptor 过滤"时用 `pi_host_session_inspect()` +
+  `pi_host_session_instantiate()`（`load()` 就是这两步合起来）；
+- 门禁是**双向**的：插件 `PI_CAP_REQUIRED` 的能力宿主给不出就拒绝；宿主
+  `pi_host_session_require()` 声明的能力插件没 `PROVIDES` 也拒绝；
+- 三层纪律与边界见 `host_kits/README.md`；
+- 参照实现：`tests/test_host`（imgui）、`tests/test_host_qt`（Qt）、
+  `tests/test_headless_host`（headless，演示 inspect/instantiate 的实例化前门禁）。
+
+## 7. 少写粘合代码：宿主 kit L1（嵌入胶水）
+
+容器仍然由你自己创建和摆位；L1 只负责"让它成为一个正确的 embed host"。
+
+**Qt 宿主**（`host_kits/qt/`，`PiPluginEmbedArea`）：
+
+```cpp
+#include "pi_host_embed_area.h"
+
+g_embedArea = new PiPluginEmbedArea(this);   /* 你创建、你放进布局、你决定样式 */
+g_embedArea->setStyleSheet("background-color: #26262a;");   /* 视觉决策归你，QSS 全穿透 */
+layout->addWidget(g_embedArea, 1);
+
+/* 插件加载成功后 */
+g_embedArea->attach(session, slot);          /* 原生窗口 + attach + resize 转发，一步到位 */
+
+/* 你自己的帧时钟里 */
+g_embedArea->driveIdle();                    /* 或 setAutoIdleEnabled(true) 交给内部 QTimer(0) */
+
+/* 卸载前 */
+g_embedArea->detachBinding();
+pi_host_session_unload(session, slot);
+```
+
+它只做 attach / resize 转发 / idle 驱动，不设样式、不画背景、不占布局。绑定的是
+`(session, slot)` 而不是裸 view 指针，所以插件卸载后它自动拿到 NULL，不会留下悬垂指针。
+
+**imgui + D3D11 宿主**（`host_kits/dx11/`）：
+
+```cpp
+#include "pi_host_dx11.h"
+
+/* 顶层窗口 OR 上它（WS_CLIPCHILDREN），否则每次 Present 都会擦掉插件的像素 */
+HWND hwnd = CreateWindowW(cls, title, WS_OVERLAPPEDWINDOW | pi_host_dx11_top_level_style(), ...);
+
+PiHostDx11Desc desc = {};
+desc.background[0] = 0.15f; desc.background[1] = 0.15f;   /* 传你的清屏色 */
+desc.background[2] = 0.15f; desc.background[3] = 1.0f;
+desc.log = &YourLogger;                      /* 创建/降级/resize 日志去哪由你决定 */
+pi_host_dx11_create((PiNativeWindow)hwnd, &desc, &g_dx);
+
+/* 容器：矩形你说了算 */
+g_embedContainer = (HWND)pi_host_dx11_create_embed_container((PiNativeWindow)hwnd, 410, 0, w, h);
+
+/* 每帧：kit 给你 device/context/render target，画什么由你决定 */
+ImGui_ImplDX11_Init(pi_host_dx11_device(g_dx), pi_host_dx11_context(g_dx));
+...
+pi_host_dx11_prepare_size(g_dx, clientW, clientH);   /* WM_SIZE 里转发；策略在 kit 内 */
+pi_host_dx11_present(g_dx, 1);
+```
+
+这一层固化的是**创建参数与 resize 策略**（flip model 的必要性、`DXGI_SCALING_NONE` 及其降级、
+"缓冲只增不减"、帧延迟等待对象、背景色、`ResizeBuffers` 必须传回创建时的 flags），
+不是"画什么"。
+
+## 8. 宿主清单（Checklist）
 
 - [ ] 创建 `IPiHostServices`（GUI 传容器窗口 / headless 传 `PI_INVALID_WINDOW`）
 - [ ] `pi_module_load` 失败时检查 `pi_module_get_load_error()`

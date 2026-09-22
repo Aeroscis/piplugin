@@ -18,6 +18,15 @@ _TEST_ADAPTER_NEEDS = {
     "PI_BUILD_TEST_PLUGIN_IMGUI": "IMGUI",  # imgui 测试插件：需要 imgui adapter kit
 }
 
+# 各测试宿主对宿主 kit 的需求（三个测试宿主都已改用宿主 kit；
+# 关闭对应 kit 时 CMake 侧会禁用该宿主，这里显式报错而不是静默降级）
+#   值 = 需要的宿主 kit 分开关名，对应 PI_BUILD_HOST_KIT_<名>
+_TEST_HOST_KIT_NEEDS = {
+    "PI_BUILD_TEST_HOST": ("CORE", "DX11"),     # imgui 宿主：L0 会话 + L1 dx11 交换链
+    "PI_BUILD_TEST_HOST_QT": ("CORE", "QT"),    # qt 宿主：L0 会话 + L1 qt 嵌入区域
+    "PI_BUILD_HEADLESS_HOST": ("CORE",),        # headless 宿主：仅 L0 会话
+}
+
 
 class PiPluginFrameworkConan(ConanFile):
     name = "pipluginframework"
@@ -32,11 +41,11 @@ class PiPluginFrameworkConan(ConanFile):
     # ------------------------- 开关树（与 CMake 选项同名，一一对应）-------------------------
     # 结构：核心（必编，无开关）
     #      + adapter kits   ：总开关 PI_BUILD_ADAPTERS          + 每框架分开关 PI_BUILD_ADAPTER_*
+    #      + host kits      ：总开关 PI_BUILD_HOST_KITS         + 每层分开关 PI_BUILD_HOST_KIT_*
+    #        （宿主侧机制库；L0 core 已抽出，三个测试宿主都已改用它）
     #      + tests          ：总开关 PI_BUILD_TESTS             + 每测试件分开关 PI_BUILD_TEST_*
-    #        （宿主 kit 暂时内化在测试件里：test_host / test_host_qt / test_headless_host；
-    #          未来抽出后，新增 PI_BUILD_HOST_KITS 总开关 + PI_BUILD_HOST_KIT_* 分开关，套用同一模式）
     # 依赖：开任一需要 imgui 的开关 -> requirements() 自动拉取；总开关关死 -> 下层分开关有效关闭
-    #      （有效状态计算见 _adapter_enabled/_test_enabled，与 CMake 侧守卫语义一致）。
+    #      （有效状态计算见 _adapter_enabled/_host_kit_enabled/_test_enabled，与 CMake 侧守卫语义一致）。
     options = {
         "shared": [True, False],
         "fPIC": [True, False],
@@ -44,6 +53,11 @@ class PiPluginFrameworkConan(ConanFile):
         "PI_BUILD_ADAPTERS": [True, False],       # 总开关
         "PI_BUILD_ADAPTER_QT": [True, False],     # 分开关：Qt5 为本地安装，非 conan 依赖
         "PI_BUILD_ADAPTER_IMGUI": [True, False],  # 分开关：依赖 conan imgui
+        # host kits（宿主侧 kit，产品部件，默认全开；无 conan 依赖）
+        "PI_BUILD_HOST_KITS": [True, False],      # 总开关
+        "PI_BUILD_HOST_KIT_CORE": [True, False],  # 分开关：L0 会话库（仅依赖核心）
+        "PI_BUILD_HOST_KIT_QT": [True, False],    # 分开关：L1 Qt 嵌入区域（Qt5 本地安装 + L0）
+        "PI_BUILD_HOST_KIT_DX11": [True, False],  # 分开关：L1 DX11 嵌入胶水（Windows）
         # tests（测试件，默认全开；conan create 打包时建议 -o PI_BUILD_TESTS=False）
         "PI_BUILD_TESTS": [True, False],          # 总开关
         "PI_BUILD_TEST_HOST": [True, False],      # imgui 测试宿主（依赖 imgui）
@@ -58,6 +72,10 @@ class PiPluginFrameworkConan(ConanFile):
         "PI_BUILD_ADAPTERS": True,
         "PI_BUILD_ADAPTER_QT": True,
         "PI_BUILD_ADAPTER_IMGUI": True,
+        "PI_BUILD_HOST_KITS": True,
+        "PI_BUILD_HOST_KIT_CORE": True,
+        "PI_BUILD_HOST_KIT_QT": True,
+        "PI_BUILD_HOST_KIT_DX11": True,
         "PI_BUILD_TESTS": True,
         "PI_BUILD_TEST_HOST": True,
         "PI_BUILD_TEST_HOST_QT": True,
@@ -66,7 +84,7 @@ class PiPluginFrameworkConan(ConanFile):
         "PI_BUILD_TEST_PLUGIN_IMGUI": True,
     }
 
-    exports_sources = "CMakeLists.txt", "cmake/*", "include/*", "src/*", "adapters/*", "tests/*"
+    exports_sources = "CMakeLists.txt", "cmake/*", "include/*", "src/*", "adapters/*", "host_kits/*", "tests/*"
     # CMakeToolchain 不在 generators 声明：需要在 generate() 手动实例化以注入自定义 cache 变量。
     # （Conan 禁止同一生成器既声明又手动实例化；CMakeDeps 的依赖查找路径经
     #   conan_cmakedeps_paths.cmake 由工具链在 configure 时包含，与生成顺序无关）
@@ -90,6 +108,11 @@ class PiPluginFrameworkConan(ConanFile):
         return bool(self.options.PI_BUILD_ADAPTERS) and bool(getattr(self.options,
                                                                     f"PI_BUILD_ADAPTER_{kit}"))
 
+    def _host_kit_enabled(self, kit):
+        """宿主 kit 有效状态：总开关 PI_BUILD_HOST_KITS AND 分开关 PI_BUILD_HOST_KIT_<kit>"""
+        return bool(self.options.PI_BUILD_HOST_KITS) and bool(getattr(self.options,
+                                                                     f"PI_BUILD_HOST_KIT_{kit}"))
+
     def _test_enabled(self, test_switch):
         """测试件有效状态：总开关 PI_BUILD_TESTS AND 分开关；无需 adapter 的测试件不在表内"""
         return bool(self.options.PI_BUILD_TESTS) and bool(getattr(self.options, test_switch))
@@ -102,10 +125,17 @@ class PiPluginFrameworkConan(ConanFile):
             if adapter and self._test_enabled(test_switch) and not self._adapter_enabled(adapter):
                 problems.append(f"{test_switch} requires PI_BUILD_ADAPTERS=True "
                                 f"and PI_BUILD_ADAPTER_{adapter}=True")
+        # 同理：测试宿主需要宿主 kit（各自需要哪几个见 _TEST_HOST_KIT_NEEDS）
+        for test_switch, kits in _TEST_HOST_KIT_NEEDS.items():
+            if not self._test_enabled(test_switch):
+                continue
+            if not all(self._host_kit_enabled(kit) for kit in kits):
+                need = ", ".join(f"PI_BUILD_HOST_KIT_{kit}=True" for kit in kits)
+                problems.append(f"{test_switch} requires PI_BUILD_HOST_KITS=True and {need}")
         if problems:
             raise ConanException(
                 "; ".join(problems)
-                + ". Enable the adapter kit switches or disable those test switches.")
+                + ". Enable the required kit switches or disable those test switches.")
 
     def requirements(self):
         # 依赖自动管理：任一需要 imgui 的部件有效开启即自动拉取（Qt5 为本地安装，非 conan 依赖）
@@ -176,6 +206,27 @@ class PiPluginFrameworkConan(ConanFile):
         core = self.cpp_info.components["pipluginframework"]
         core.libs = [f"pipluginframework{suffix}"]
         core.set_property("cmake_target_name", "pi::pipluginframework")
+
+        # 宿主 kit L0（宿主侧机制库；仅依赖核心，无第三方依赖）
+        if self._host_kit_enabled("CORE"):
+            comp = self.cpp_info.components["pipluginframework_host"]
+            comp.libs = [f"pipluginframework_host{suffix}"]
+            comp.requires = ["pipluginframework"]
+            comp.set_property("cmake_target_name", "pi::pipluginframework_host")
+
+        # 宿主 kit L1 Qt 嵌入区域（依赖 L0 + 本地安装的 Qt5，非 conan 依赖）
+        if self._host_kit_enabled("QT"):
+            comp = self.cpp_info.components["pipluginframework_host_qt"]
+            comp.libs = [f"pipluginframework_host_qt{suffix}"]
+            comp.requires = ["pipluginframework", "pipluginframework_host"]
+            comp.set_property("cmake_target_name", "pi::pipluginframework_host_qt")
+
+        # 宿主 kit L1 DX11 嵌入胶水（仅 Windows；只依赖核心）
+        if self._host_kit_enabled("DX11"):
+            comp = self.cpp_info.components["pipluginframework_host_dx11"]
+            comp.libs = [f"pipluginframework_host_dx11{suffix}"]
+            comp.requires = ["pipluginframework"]
+            comp.set_property("cmake_target_name", "pi::pipluginframework_host_dx11")
 
         if self._adapter_enabled("IMGUI"):
             comp = self.cpp_info.components["pipluginframework_imgui"]

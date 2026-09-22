@@ -45,6 +45,18 @@ if(NOT imgui_FOUND OR NOT EXISTS ${IMGUI_BACKEND_DIR}/imgui_impl_win32.cpp)
     return()
 endif()
 
+# 宿主 kit 缺失则禁用本宿主（L0 会话 + L1 DX11 嵌入胶水）
+if(NOT TARGET pipluginframework_host)
+    message(WARNING "host kit L0 (pipluginframework_host) not built -> ${TARGET_NAME} DISABLED")
+    message(WARNING "  enable -o PI_BUILD_HOST_KITS=True -o PI_BUILD_HOST_KIT_CORE=True")
+    return()
+endif()
+if(NOT TARGET pipluginframework_host_dx11)
+    message(WARNING "host kit L1 dx11 (pipluginframework_host_dx11) not built -> ${TARGET_NAME} DISABLED")
+    message(WARNING "  enable -o PI_BUILD_HOST_KITS=True -o PI_BUILD_HOST_KIT_DX11=True")
+    return()
+endif()
+
 # add executable target
 add_executable(${TARGET_NAME})
 set_target_properties(${TARGET_NAME} PROPERTIES
@@ -60,6 +72,10 @@ target_include_directories(${TARGET_NAME} PRIVATE ${IMGUI_BACKEND_DIR})
 
 # first party
 target_link_libraries(${TARGET_NAME} PRIVATE pipluginframework)
+# 宿主侧 kit：本宿主直接用两层的 API（L0 会话 + L1 DX11 胶水），故两者都显式链接
+# （L1 dx11 只依赖核心，不依赖 L0 —— 不靠传递性拿 L0）
+target_link_libraries(${TARGET_NAME} PRIVATE pipluginframework_host)
+target_link_libraries(${TARGET_NAME} PRIVATE pipluginframework_host_dx11)
 
 # third party
 target_link_libraries(${TARGET_NAME} PRIVATE imgui::imgui)

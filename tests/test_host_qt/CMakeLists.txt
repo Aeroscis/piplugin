@@ -46,6 +46,17 @@ if(NOT TARGET pipluginframework_imgui)
     message(STATUS "ImGui adapter kit (pipluginframework_imgui) not built -> ${TARGET_NAME} DISABLED")
     return()
 endif()
+# 宿主 kit 缺失则禁用本宿主（L0 会话 + L1 Qt 嵌入区域）
+if(NOT TARGET pipluginframework_host)
+    message(WARNING "host kit L0 (pipluginframework_host) not built -> ${TARGET_NAME} DISABLED")
+    message(WARNING "  enable -o PI_BUILD_HOST_KITS=True -o PI_BUILD_HOST_KIT_CORE=True")
+    return()
+endif()
+if(NOT TARGET pipluginframework_host_qt)
+    message(WARNING "host kit L1 qt (pipluginframework_host_qt) not built -> ${TARGET_NAME} DISABLED")
+    message(WARNING "  enable -o PI_BUILD_HOST_KITS=True -o PI_BUILD_HOST_KIT_QT=True")
+    return()
+endif()
 
 # add executable target
 add_executable(${TARGET_NAME})
@@ -59,6 +70,9 @@ target_sources(${TARGET_NAME}
 
 # first party
 target_link_libraries(${TARGET_NAME} PRIVATE pipluginframework)
+# 宿主侧 kit：本宿主直接用两层的 API（L0 会话 + L1 Qt 嵌入区域），故两者都显式链接
+target_link_libraries(${TARGET_NAME} PRIVATE pipluginframework_host)
+target_link_libraries(${TARGET_NAME} PRIVATE pipluginframework_host_qt)
 
 # third party
 target_link_libraries(${TARGET_NAME} PRIVATE Qt5::Widgets)

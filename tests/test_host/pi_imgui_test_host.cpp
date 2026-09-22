@@ -10,16 +10,14 @@
  *   5. Pumping the plugin event loop via pi_on_idle() each frame
  */
 #include "pipluginframework/pi_plugin.h"
+#include "pi_host_session.h"
+#include "pi_host_dx11.h"
 
 #include "imgui.h"
 #include "imgui_impl_win32.h"
 #include "imgui_impl_dx11.h"
 
 #include <windows.h>
-#include <d3d11.h>
-/* IDXGIFactory2 / DXGI_SWAP_CHAIN_DESC1 / IDXGISwapChain2 (frame-latency
- * waitable object) live in the newer DXGI headers. */
-#include <dxgi1_3.h>
 #include <tchar.h>
 #include <objbase.h>
 #include <stdio.h>
@@ -34,33 +32,21 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg
 /* --------------------------------------------------------------------------
  * Globals
  * -------------------------------------------------------------------------- */
-static ID3D11Device*           g_pd3dDevice       = NULL;
-static ID3D11DeviceContext*    g_pd3dDeviceContext = NULL;
-static IDXGISwapChain*         g_pSwapChain        = NULL;
-static ID3D11RenderTargetView* g_mainRenderTargetView = NULL;
-/* Signalled by DXGI when the app may queue another frame. Waiting on it before
- * letting Windows apply a drag step is what keeps Present() non-blocking. */
-static HANDLE                  g_frameLatencyWaitable = NULL;
-/* Flags the swap chain was created with: ResizeBuffers() rejects the call with
- * E_INVALIDARG if they do not match (notably the frame-latency waitable flag). */
-static UINT                    g_swapChainFlags = 0;
 
-static IPiPluginBase*     g_plugin       = NULL;
-static IPiPluginView*     g_pluginView   = NULL;
-static IPiService*        g_pluginService = NULL;  /* demonstrates headless capability query */
-static PiPluginModule*    g_pluginModule = NULL;
-static IPiHostServices*   g_hostServices = NULL;
-static char               g_status[256]  = "No plugin loaded";
-static char               g_lastMessage[128] = "(none)";
+/* 宿主 kit L1（pipluginframework_host_dx11）持有"可嵌入子窗口的 D3D11 设备 +
+ * flip-model 交换链"的创建参数与 resize 策略（含 DXGI_SCALING_NONE 降级路径）。
+ * 本宿主只决定"窗口长什么样、画什么、什么时候画"。 */
+static PiHostDx11Device* g_dx = NULL;
 
-static HWND g_embedContainer = NULL;  /* child window to hold plugin */
+/* 宿主 kit L0（pipluginframework_host）持有全部插件生命周期机制：
+ * 加载 / 双向能力门禁 / 实例化 / 七步卸载序列。 */
+static IPiHostServices*     g_hostServices = NULL;
+static PiPluginHostSession* g_session      = NULL;
+static uint32_t             g_slot         = PI_HOST_SESSION_INVALID_SLOT;
+static char                 g_status[256]  = "No plugin loaded";
+static char                 g_lastMessage[128] = "(none)";
 
-/* Swap-chain presentation model actually in use. The flip model is what
- * makes the embedded plugin window survive our Present() calls: with the
- * legacy bitblt models DXGI blits the back buffer straight over the whole
- * client area, i.e. right across the plugin's child HWND. */
-static const char* g_presentModel = "unknown";
-static bool        g_flipModel    = false;
+static HWND g_embedContainer = NULL;  /* child window to hold plugin（宿主自己创建、自己摆位） */
 
 /* Frames rendered since startup (self-test pacing / diagnostics). */
 static unsigned    g_frameCount   = 0;
@@ -115,15 +101,9 @@ static bool     g_sizeLoopActive = false;  /* inside RunSizeLoop() */
 static bool     g_sizeMoveActive = false;  /* a drag is in progress (logging/state) */
 static bool     g_renderingFrame = false;  /* re-entrancy guard for RenderFrame */
 static unsigned g_resizeFrames   = 0;      /* steps rendered during one drag */
-static unsigned g_resizeFailures = 0;      /* ResizeBuffers returned a failure */
 static unsigned g_clientW = 0, g_clientH = 0;      /* client size last applied */
-/* Back-buffer size currently allocated. Grown on demand, never shrunk - see
- * the comment block above. */
-static unsigned g_swapW = 0, g_swapH = 0;
-/* Whether the swap chain really is running with DXGI_SCALING_NONE. If the
- * driver rejects it (not expected before Win8+flip), the fallbacks keep the
- * exact-resize behaviour this file used before the fix. */
-static bool     g_scalingNone = false;
+/* 后台缓冲的大小与"只增不减"策略、SCALING_NONE 是否生效，都在 L1 kit 里；
+ * 宿主只报"客户区想变成多大"。 */
 /* Non-client size (window minus client): needed to turn a dragged window
  * rectangle into a client size, and vice versa. */
 static int      g_frameDW = 0, g_frameDH = 0;
@@ -154,11 +134,34 @@ static double NowMs()
  * keeps the process alive long enough to catch crashes that only show up
  * once the Qt event loop is running.
  * -------------------------------------------------------------------------- */
-static int      g_selfTestCycles     = 0;   /* 0 = disabled */
-static int      g_selfTestCycleIndex = 0;
-static unsigned g_selfTestIdleFrames = 20;
-static const char* g_pluginOverride  = NULL;
-static bool     g_selfTestFailed     = false;
+/* --------------------------------------------------------------------------
+ * Self-test / conformance driver
+ *
+ *   --cycles N [--plugin a.dll[,b.dll,...]] [--idle-frames N]
+ *
+ * 对**每一个**列出的插件跑 N 轮真实生命周期循环：
+ *   load -> attach -> idle 若干帧 -> 拉伸窗口 -> 恢复尺寸 -> detach -> unload
+ * 全部通过则退出码 0，任一环节失败则退出码 2。这是 ECO-02 的 conformance
+ * harness：任何插件 DLL（含社区适配器产出的）都能拿官方宿主验收一次。
+ * -------------------------------------------------------------------------- */
+#define PI_SELFTEST_MAX_PLUGINS  16
+#define PI_SELFTEST_RESIZE_FRAMES 4
+
+static int      g_selfTestCycles      = 0;   /* 0 = disabled */
+static int      g_selfTestCycleIndex  = 0;   /* 当前插件内的轮次 */
+static unsigned g_selfTestIdleFrames  = 20;
+static const char* g_pluginOverride   = NULL;
+static bool     g_selfTestFailed      = false;
+
+static char     g_selfTestPlugins[PI_SELFTEST_MAX_PLUGINS][MAX_PATH];
+static int      g_selfTestPluginCount = 0;
+static int      g_selfTestPluginIndex = 0;
+static bool     g_selfTestDone        = false;   /* 全部跑完（用于退出码） */
+static bool     g_selfTestAborted     = false;   /* 出现失败：跑完当前轮就收工 */
+
+/* 尺寸往返用的原始窗口矩形，以及宿主自己的窗口（resize 要真的作用在它上面） */
+static HWND     g_hostWindow   = NULL;
+static RECT     g_selfTestRect = { 0, 0, 0, 0 };
 /* Self-test option: skip pi_view_detach() and let the plugin's own
  * pi_terminate() do the teardown - exercises the "host just drops the
  * module" path that used to crash. */
@@ -177,10 +180,6 @@ static char       g_log[2048];
 /* --------------------------------------------------------------------------
  * Forward declarations
  * -------------------------------------------------------------------------- */
-static bool CreateDeviceD3D(HWND hWnd);
-static void CleanupDeviceD3D();
-static void CreateRenderTarget();
-static void CleanupRenderTarget();
 static LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 static void LoadPlugin(const char* dllPath);
 static void UnloadPlugin();
@@ -188,9 +187,11 @@ static void CreateEmbedContainer(HWND parent);
 static std::string ExeDirPath(const char* dllName);
 static void LogStatus(const char* fmt, ...);
 static void SelfTestStep();
+static void SelfTestParsePlugins(const char* list);
 static DWORD WINAPI DetachWatchdog(LPVOID param);
 static bool CaptureWindowBmp(HWND hwnd, const char* path);
 static bool CaptureHwndClientBmp(HWND hwnd, const char* path);
+static IPiPluginView* CurrentView(void);
 
 /* Set the UI status line and mirror it to the debug log. */
 static void SetStatus(const char* fmt, ...)
@@ -224,6 +225,33 @@ static void LogStatus(const char* fmt, ...)
 }
 
 /* --------------------------------------------------------------------------
+ * Host kit L0 bridge
+ *
+ * kit 把自身步骤（load / attach / unload 各步）经日志回调上报，去向由本宿主
+ * 决定 —— 这里就写进同一个日志文件，保持既有的诊断契约（脚本按日志模式断言）。
+ * -------------------------------------------------------------------------- */
+static void SessionLogProc(void* user_data, const char* message)
+{
+    (void)user_data;
+    LogStatus("%s", message);
+}
+
+/* L1 dx11 kit 的日志（交换链创建、SCALING_NONE 降级、缓冲增长）也进同一个日志
+ * 文件 —— 脚本正是按这些模式断言的（见 scripts/verify_resize_fix.ps1）。 */
+static void Dx11LogProc(void* user_data, const char* message)
+{
+    (void)user_data;
+    LogStatus("%s", message);
+}
+
+/* 当前槽位的 view（借用指针：所有权在 session，卸载也由 session 负责）。
+ * 没有插件、插件是 headless、或槽位已卸载时返回 NULL。 */
+static IPiPluginView* CurrentView(void)
+{
+    return pi_host_session_get_view(g_session, g_slot);
+}
+
+/* --------------------------------------------------------------------------
  * Host message callback (may be called from any plugin thread)
  * -------------------------------------------------------------------------- */
 static void HostMessageProc(void* user_data, uint32_t msg,
@@ -253,7 +281,9 @@ static void HostMessageProc(void* user_data, uint32_t msg,
  * -------------------------------------------------------------------------- */
 static bool RenderFrame(bool resizeFrame, bool present, unsigned overrideW, unsigned overrideH)
 {
-    if (g_renderingFrame || !g_pSwapChain || !g_mainRenderTargetView)
+    ID3D11RenderTargetView* rtv = g_dx ? pi_host_dx11_render_target(g_dx) : NULL;
+    ID3D11DeviceContext*    ctx = g_dx ? pi_host_dx11_context(g_dx) : NULL;
+    if (g_renderingFrame || !g_dx || !rtv || !ctx)
         return false;
     g_renderingFrame = true;
     if (resizeFrame)
@@ -291,41 +321,38 @@ static bool RenderFrame(bool resizeFrame, bool present, unsigned overrideW, unsi
 
         ImGui::Separator();
 
-        if (g_pluginModule) {
-            IPiPluginFactory* factory = NULL;
-            if (PI_SUCCEEDED(pi_module_get_factory(g_pluginModule, &factory))) {
-                const PiPluginDescriptor* desc = NULL;
-                pi_factory_get_descriptor(factory, &desc);
-                if (desc) {
-                    ImGui::Text("Plugin: %s", desc->name);
-                    ImGui::Text("Vendor: %s", desc->vendor);
-                    ImGui::Text("Version: %s", desc->version);
-                    ImGui::Text("API: 0x%08X", desc->api_version);
+        if (g_session && g_slot != PI_HOST_SESSION_INVALID_SLOT) {
+            const PiPluginDescriptor* desc = pi_host_session_get_descriptor(g_session, g_slot);
+            if (desc) {
+                ImGui::Text("Plugin: %s", desc->name);
+                ImGui::Text("Vendor: %s", desc->vendor);
+                ImGui::Text("Version: %s", desc->version);
+                ImGui::Text("API: 0x%08X", desc->api_version);
 
-                    /* Capability declarations (LV2-style) */
-                    if (desc->capability_count > 0) {
-                        ImGui::Separator();
-                        ImGui::TextUnformatted("Capabilities:");
-                        for (uint32_t i = 0; i < desc->capability_count; ++i) {
-                            const PiPluginCapability* cap = &desc->capabilities[i];
-                            const char* kind =
-                                (cap->flags & PI_CAP_PROVIDES) ? "provides" :
-                                (cap->flags & PI_CAP_REQUIRED) ? "requires" : "optional";
-                            uint32_t id = cap->iid.data1;
-                            const char* what =
-                                pi_guid_equal(&cap->iid, &PI_IID_PLUGIN_VIEW) ? "PLUGIN_VIEW" :
-                                pi_guid_equal(&cap->iid, &PI_IID_HOST_UI)    ? "HOST_UI"    :
-                                pi_guid_equal(&cap->iid, &PI_IID_SERVICE)    ? "SERVICE"    : "?";
-                            ImGui::BulletText("%s %s (iid=%08X)", kind, what, id);
-                        }
+                /* Capability declarations (LV2-style) */
+                if (desc->capability_count > 0) {
+                    ImGui::Separator();
+                    ImGui::TextUnformatted("Capabilities:");
+                    for (uint32_t i = 0; i < desc->capability_count; ++i) {
+                        const PiPluginCapability* cap = &desc->capabilities[i];
+                        const char* kind =
+                            (cap->flags & PI_CAP_PROVIDES) ? "provides" :
+                            (cap->flags & PI_CAP_REQUIRED) ? "requires" : "optional";
+                        uint32_t id = cap->iid.data1;
+                        const char* what =
+                            pi_guid_equal(&cap->iid, &PI_IID_PLUGIN_VIEW) ? "PLUGIN_VIEW" :
+                            pi_guid_equal(&cap->iid, &PI_IID_HOST_UI)    ? "HOST_UI"    :
+                            pi_guid_equal(&cap->iid, &PI_IID_SERVICE)    ? "SERVICE"    : "?";
+                        ImGui::BulletText("%s %s (iid=%08X)", kind, what, id);
                     }
                 }
-                pi_iunknown_release((IPiUnknown*)factory);
             }
 
             ImGui::Separator();
-            ImGui::Text("Has GUI view:   %s", g_pluginView ? "yes" : "no");
-            ImGui::Text("Has service:    %s", g_pluginService ? "yes" : "no");
+            ImGui::Text("Has GUI view:   %s",
+                        pi_host_session_get_view(g_session, g_slot) ? "yes" : "no");
+            ImGui::Text("Has service:    %s",
+                        pi_host_session_get_service(g_session, g_slot) ? "yes" : "no");
 
             ImGui::Separator();
             ImGui::Text("Last plugin message: %s", g_lastMessage);
@@ -343,8 +370,8 @@ static bool RenderFrame(bool resizeFrame, bool present, unsigned overrideW, unsi
     ImGui::Render();
 
     const float clear_color[4] = { 0.15f, 0.15f, 0.15f, 1.0f };
-    g_pd3dDeviceContext->OMSetRenderTargets(1, &g_mainRenderTargetView, NULL);
-    g_pd3dDeviceContext->ClearRenderTargetView(g_mainRenderTargetView, clear_color);
+    ctx->OMSetRenderTargets(1, &rtv, NULL);
+    ctx->ClearRenderTargetView(rtv, clear_color);
     ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 
     /* The flip model is composited by DWM, so presenting without waiting for
@@ -353,46 +380,9 @@ static bool RenderFrame(bool resizeFrame, bool present, unsigned overrideW, unsi
      * the previous frame, which SCALING_NONE clips 1:1 - shape-safe by
      * construction. */
     if (present)
-        g_pSwapChain->Present(resizeFrame ? 0 : 1, 0);
+        pi_host_dx11_present(g_dx, resizeFrame ? 0u : 1u);
 
     g_renderingFrame = false;
-    return true;
-}
-
-/* --------------------------------------------------------------------------
- * Grow the back buffer so it covers at least w x h. NEVER shrinks it - the
- * whole fix relies on the buffer never being smaller than the window while a
- * stale (smaller-window) frame could still be on screen. With
- * DXGI_SCALING_NONE an oversized buffer is clipped, so growth is the only
- * resize a drag can need, and it happens at most once per drag.
- * Returns false if the resize failed so badly that no render target exists.
- * -------------------------------------------------------------------------- */
-static bool EnsureSwapChainSizeAtLeast(unsigned w, unsigned h)
-{
-    if (!g_pSwapChain) return false;
-    if (w <= g_swapW && h <= g_swapH)
-        return g_mainRenderTargetView != NULL;
-
-    unsigned nw = (w > g_swapW) ? w : g_swapW;
-    unsigned nh = (h > g_swapH) ? h : g_swapH;
-
-    CleanupRenderTarget();
-    HRESULT hr = g_pSwapChain->ResizeBuffers(0, nw, nh, DXGI_FORMAT_UNKNOWN, g_swapChainFlags);
-    if (FAILED(hr)) {
-        if (g_resizeFailures == 0)
-            LogStatus("resize: ResizeBuffers(%ux%u) FAILED hr=0x%08X", nw, nh, (unsigned)hr);
-        ++g_resizeFailures;
-        hr = g_pSwapChain->ResizeBuffers(0, nw, nh, DXGI_FORMAT_UNKNOWN, g_swapChainFlags);
-        if (FAILED(hr)) {
-            LogStatus("resize: retry FAILED hr=0x%08X", (unsigned)hr);
-            CreateRenderTarget();
-            return g_mainRenderTargetView != NULL;
-        }
-    }
-    CreateRenderTarget();
-    g_swapW = nw;
-    g_swapH = nh;
-    LogStatus("resize: swap chain grows to %ux%u (client was %ux%u)", nw, nh, w, h);
     return true;
 }
 
@@ -402,40 +392,20 @@ static bool EnsureSwapChainSizeAtLeast(unsigned w, unsigned h)
  * size, the frame on screen still matches it, and nothing on screen changes
  * yet.
  *
- * With DXGI_SCALING_NONE this needs no ResizeBuffers for any step that fits
- * the current buffer (the layout just follows w x h - see the comment block
- * above RunSizeLoop()); only genuine growth re-allocates.
+ * 后台缓冲怎么调（SCALING_NONE 时"只增不减"、否则精确跟随、ResizeBuffers 失败
+ * 重试与计数）全部归 L1 kit —— 那是嵌入正确性的地基，不该由每个宿主重写一遍。
+ * 本函数只负责"按即将生效的新尺寸渲染一帧、但不呈现"这个宿主侧动作与时序。
  * -------------------------------------------------------------------------- */
 static void PrepareFrameFor(unsigned w, unsigned h)
 {
-    if (!g_pSwapChain || !g_pd3dDeviceContext || w == 0 || h == 0)
+    if (!g_dx || w == 0 || h == 0)
         return;
 
     double t0 = NowMs();
     ++g_resizeFrames;
 
-    if (g_scalingNone) {
-        EnsureSwapChainSizeAtLeast(w, h);
-    } else {
-        /* Pre-fix behaviour (STRETCH / bitblt): the buffer must track the
-         * window exactly, otherwise it is scaled to fit. */
-        CleanupRenderTarget();
-        HRESULT hr = g_pSwapChain->ResizeBuffers(0, w, h, DXGI_FORMAT_UNKNOWN, g_swapChainFlags);
-        if (FAILED(hr)) {
-            if (g_resizeFailures == 0)
-                LogStatus("resize: ResizeBuffers(%ux%u) FAILED hr=0x%08X", w, h, (unsigned)hr);
-            ++g_resizeFailures;
-            hr = g_pSwapChain->ResizeBuffers(0, w, h, DXGI_FORMAT_UNKNOWN, g_swapChainFlags);
-            if (FAILED(hr)) {
-                LogStatus("resize: retry FAILED hr=0x%08X", (unsigned)hr);
-                CreateRenderTarget();
-                return;
-            }
-        }
-        CreateRenderTarget();
-    }
-    if (!g_mainRenderTargetView)
-        return;
+    if (!pi_host_dx11_prepare_size(g_dx, w, h))
+        return;   /* 渲染目标不可用：这一帧画不出来 */
 
     RenderFrame(/*resizeFrame=*/true, /*present=*/false, w, h);
 
@@ -456,8 +426,12 @@ static void ResizeContainerAndPlugin(unsigned clientW, unsigned clientH)
     int h = (int)clientH;
     if (w < 0) w = 0;
     SetWindowPos(g_embedContainer, NULL, 410, 0, w, h, SWP_NOZORDER);
-    if (g_pluginView && w > 0 && h > 0)
-        pi_view_on_resize(g_pluginView, w, h);
+    {
+        /* resize 转发：容器归宿主、尺寸也归宿主，故由宿主发起 */
+        IPiPluginView* view = CurrentView();
+        if (view && w > 0 && h > 0)
+            pi_view_on_resize(view, w, h);
+    }
 }
 
 /* --------------------------------------------------------------------------
@@ -484,7 +458,7 @@ static void RunSizeLoop(HWND hWnd, UINT hitTest)
 
     const int minClientW = 520, minClientH = 360;
     g_resizeFrames = 0;
-    g_resizeFailures = 0;
+    pi_host_dx11_reset_resize_stats(g_dx);   /* 计数在 L1 kit 里，这里清零 */
     g_presentTotalMs = g_presentMaxMs = 0.0;
     g_prepareTotalMs = g_prepareMaxMs = 0.0;
     g_sizeMoveActive = true;
@@ -538,7 +512,7 @@ static void RunSizeLoop(HWND hWnd, UINT hitTest)
          *    Present waits here, and every frame the screen shows in the
          *    meantime - old or new - is clipped 1:1, never scaled */
         double p0 = NowMs();
-        g_pSwapChain->Present(0, 0);
+        pi_host_dx11_present(g_dx, 0);
         double pms = NowMs() - p0;
         g_presentTotalMs += pms;
         if (pms > g_presentMaxMs) g_presentMaxMs = pms;
@@ -559,7 +533,7 @@ static void RunSizeLoop(HWND hWnd, UINT hitTest)
     g_sizeMoveActive = false;
     LogStatus("resize: host size loop ended after %u steps (failures=%u) "
               "present avg=%.2fms max=%.2fms  prepare avg=%.2fms max=%.2fms",
-              g_resizeFrames, g_resizeFailures,
+              g_resizeFrames, pi_host_dx11_resize_failures(g_dx),
               g_resizeFrames ? g_presentTotalMs / g_resizeFrames : 0.0, g_presentMaxMs,
               g_resizeFrames ? g_prepareTotalMs / g_resizeFrames : 0.0, g_prepareMaxMs);
 }
@@ -587,20 +561,34 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPSTR, _In
     ::OleInitialize(NULL);
 
     /* Create window.
-     * WS_CLIPCHILDREN is essential: without it the window's own painting
-     * region includes the embedded plugin HWND, so every frame we present
-     * erases the plugin's pixels. */
+     * WS_CLIPCHILDREN 是必需的（否则每次 Present 都会擦掉内嵌插件的像素）；
+     * 这个"必须带上的风格位"由 L1 kit 提供，宿主仍旧自己创建、自己摆位。 */
     WNDCLASSEXW wc = { sizeof(wc), CS_CLASSDC, WndProc, 0L, 0L, hInstance,
                        NULL, NULL, NULL, NULL, L"PiTestHost", NULL };
     ::RegisterClassExW(&wc);
     HWND hwnd = ::CreateWindowW(wc.lpszClassName, L"pipluginframework — Test Host (imgui)",
-                                WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
+                                WS_OVERLAPPEDWINDOW | pi_host_dx11_top_level_style(),
                                 100, 100, 1280, 720,
                                 NULL, NULL, wc.hInstance, NULL);
     if (!hwnd) return 1;
 
-    /* Initialize Direct3D */
-    if (!CreateDeviceD3D(hwnd)) { ::UnregisterClassW(wc.lpszClassName, wc.hInstance); return 1; }
+    /* Initialize Direct3D。
+     * 交换链的创建参数（flip model / DXGI_SCALING_NONE / 帧延迟等待对象 / 背景色）
+     * 全部由 L1 kit 固化；宿主只提供自己的 HWND 与清屏色。 */
+    {
+        PiHostDx11Desc dxdesc;
+        memset(&dxdesc, 0, sizeof(dxdesc));
+        dxdesc.background[0] = 0.15f;   /* 与 RenderFrame 的清屏色一致 */
+        dxdesc.background[1] = 0.15f;
+        dxdesc.background[2] = 0.15f;
+        dxdesc.background[3] = 1.0f;
+        dxdesc.log           = &Dx11LogProc;
+        dxdesc.log_user_data = NULL;
+        if (PI_FAILED(pi_host_dx11_create((PiNativeWindow)hwnd, &dxdesc, &g_dx))) {
+            ::UnregisterClassW(wc.lpszClassName, wc.hInstance);
+            return 1;
+        }
+    }
     ::ShowWindow(hwnd, nCmdShow);
     ::UpdateWindow(hwnd);
 
@@ -611,7 +599,7 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPSTR, _In
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     ImGui::StyleColorsDark();
     ImGui_ImplWin32_Init(hwnd);
-    ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
+    ImGui_ImplDX11_Init(pi_host_dx11_device(g_dx), pi_host_dx11_context(g_dx));
 
     /* Create embed container for plugin views */
     CreateEmbedContainer(hwnd);
@@ -625,11 +613,25 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPSTR, _In
         g_hostServices = NULL;
     }
 
+    /* 宿主 kit L0：会话对象持有加载 / 双向门禁 / 实例化 / 七步卸载序列。
+     * 本宿主只负责"容器是哪个窗口、怎么渲染、尺寸策略如何"。 */
+    if (g_hostServices) {
+        if (PI_FAILED(pi_host_session_create(g_hostServices, &g_session))) {
+            g_session = NULL;
+            LogStatus("startup: host session unavailable (load/unload disabled)");
+        } else {
+            pi_host_session_set_logger(g_session, &SessionLogProc, NULL);
+        }
+    }
+
     /* Command line.
-     *   <plugin.dll>                auto-load once (legacy behaviour)
-     *   --plugin <dll>[,<dll>...]   plugin(s) used by the self-test
-     *   --cycles <n>                run n load/unload cycles, then exit
-     *   --idle-frames <n>           frames to let the view live per cycle */
+     *   <plugin.dll>                     auto-load once (legacy behaviour)
+     *   --plugin <dll>[,<dll>...]        plugin(s) the self-test cycles through
+     *   --cycles <n>                     n load/attach/resize/unload cycles PER plugin
+     *   --idle-frames <n>                frames to let each view live per cycle
+     *
+     * --cycles 模式即 conformance harness（roadmap ECO-02）：对列表里每个插件
+     * 都跑完整生命周期 + 一次尺寸往返，全过 -> 退出码 0，否则 2。 */
     for (int i = 1; i < __argc; ++i) {
         const char* a = __argv[i];
         if (a && strcmp(a, "--cycles") == 0 && i + 1 < __argc) {
@@ -650,16 +652,25 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPSTR, _In
             LogStatus("warning: unknown option '%s'", a);
         }
     }
+    /* 尺寸往返要真的作用在宿主窗口上，故把 HWND 交给自检驱动 */
+    g_hostWindow = hwnd;
+    SelfTestParsePlugins(g_pluginOverride);
+
     if (g_selfTestCycles <= 0 && __argc > 1 && __argv[1] && __argv[1][0] != '-') {
         LogStatus("auto-load: %s", __argv[1]);
         LoadPlugin(__argv[1]);
     }
+    /* --skip-detach 是诊断开关，交给 kit 的卸载序列执行 */
+    if (g_skipDetach && g_session)
+        pi_host_session_set_skip_detach(g_session, 1);
 
-    LogStatus("startup: present-model=%s ffi=%s", g_presentModel,
-              g_flipModel ? "yes" : "no");
-    LogStatus("startup: self-test-cycles=%d idle-frames=%u plugin=%s",
+    LogStatus("startup: present-model=%s ffi=%s", pi_host_dx11_present_model(g_dx),
+              pi_host_dx11_is_flip_model(g_dx) ? "yes" : "no");
+    LogStatus("startup: self-test-cycles=%d idle-frames=%u plugins=%d",
               g_selfTestCycles, g_selfTestIdleFrames,
-              g_pluginOverride ? g_pluginOverride : "(default)");
+              g_selfTestCycles > 0 ? g_selfTestPluginCount : 0);
+    for (int i = 0; i < (g_selfTestCycles > 0 ? g_selfTestPluginCount : 0); ++i)
+        LogStatus("startup:   plugin[%d] = %s", i, g_selfTestPlugins[i]);
 
     /* Main loop */
     bool done = false;
@@ -672,15 +683,15 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPSTR, _In
         }
         if (done) break;
 
-        /* Pump plugin events each frame */
-        if (g_pluginView) {
-            pi_view_on_idle(g_pluginView);
+        /* Pump plugin events each frame（每帧 pump 的时机归宿主，kit 只提供机制） */
+        if (g_session) {
+            pi_host_session_drive_idle(g_session);
         }
 
         if (g_selfTestCycles > 0)
             SelfTestStep();
 
-        if (g_screenshotPath && g_pluginView && ++g_frameCount >= g_screenshotAfter) {
+        if (g_screenshotPath && CurrentView() && ++g_frameCount >= g_screenshotAfter) {
             LogStatus("screenshot: capturing after %u frames", g_frameCount);
             if (CaptureWindowBmp(hwnd, g_screenshotPath))
                 LogStatus("screenshot: wrote %s", g_screenshotPath);
@@ -690,7 +701,7 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPSTR, _In
             /* Also grab the plugin's own HWND: proves what Qt itself painted,
              * independent of DWM composition. */
             std::string pluginShot = std::string(g_screenshotPath) + ".plugin.bmp";
-            HWND pluginHwnd = (HWND)(uintptr_t)pi_view_get_native_window(g_pluginView);
+            HWND pluginHwnd = (HWND)(uintptr_t)pi_view_get_native_window(CurrentView());
             unsigned tries = 0;
             while (pluginHwnd && ++tries < 30) {
                 if (CaptureHwndClientBmp(pluginHwnd, pluginShot.c_str())) {
@@ -707,20 +718,22 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPSTR, _In
 
     /* Cleanup */
     UnloadPlugin();
+    if (g_session) { pi_host_session_destroy(g_session); g_session = NULL; }
     if (g_hostServices) { pi_iunknown_release((IPiUnknown*)g_hostServices); g_hostServices = NULL; }
 
     ImGui_ImplDX11_Shutdown();
     ImGui_ImplWin32_Shutdown();
     ImGui::DestroyContext();
-    CleanupDeviceD3D();
+    pi_host_dx11_destroy(g_dx); g_dx = NULL;
     ::DestroyWindow(hwnd);
     ::UnregisterClassW(wc.lpszClassName, wc.hInstance);
     ::OleUninitialize();
 
-    LogStatus("exit: cycles=%d failed=%d", g_selfTestCycleIndex,
-              g_selfTestFailed ? 1 : 0);
+    LogStatus("exit: plugins=%d cycles/plugin=%d failed=%d aborted=%d done=%d",
+              g_selfTestPluginCount, g_selfTestCycles,
+              g_selfTestFailed ? 1 : 0, g_selfTestAborted ? 1 : 0, g_selfTestDone ? 1 : 0);
     if (g_selfTestCycles > 0)
-        return (g_selfTestFailed || g_selfTestCycleIndex < g_selfTestCycles) ? 2 : 0;
+        return (g_selfTestFailed || !g_selfTestDone) ? 2 : 0;
     return 0;
 }
 
@@ -741,16 +754,24 @@ static void LoadPlugin(const char* dllPath)
 {
     UnloadPlugin();
 
-    if (!g_hostServices) {
-        SetStatus("Host services unavailable");
+    if (!g_session) {
+        SetStatus("Host session unavailable");
         return;
     }
 
-    PiPluginModule* module = pi_module_load(dllPath);
-    if (!module) {
-        SetStatus("Load failed: %s", pi_module_get_load_error());
+    /* 加载 + 双向能力门禁 + 实例化 + 初始化：机制全在 kit 里，
+     * 门禁在 create_instance 之前跑（顺序由 kit 保证，不再由宿主手抄）。 */
+    uint32_t slot = PI_HOST_SESSION_INVALID_SLOT;
+    PiResult hr = pi_host_session_load(g_session, dllPath, &slot);
+    if (PI_FAILED(hr)) {
+        /* 失败原因（pi_module_load 的错误描述、双向门禁的拒绝理由）由 kit 给出 */
+        if (hr == PI_E_MISSINGCAPABILITY)
+            SetStatus("Rejected: %s", pi_host_session_last_error(g_session));
+        else
+            SetStatus("Load failed: %s", pi_host_session_last_error(g_session));
         return;
     }
+    g_slot = slot;
 
     /* Diagnostics: report exactly which image the loader mapped, so a stale
      * copy shadowing our build output cannot hide. */
@@ -767,138 +788,48 @@ static void LoadPlugin(const char* dllPath)
             LogStatus("load: mapped (unknown) for %s", dllPath);
     }
 
-    IPiPluginFactory* factory = NULL;
-    if (PI_FAILED(pi_module_get_factory(module, &factory))) {
-        SetStatus("No factory in plugin");
-        pi_module_unload(module);
-        return;
+    /* 嵌入：容器是本宿主创建并摆位的，kit 只接收它并记账 */
+    if (CurrentView() && g_embedContainer) {
+        PiResult ahr = pi_host_session_attach_view(g_session, g_slot,
+                                                  (PiNativeWindow)g_embedContainer, 1);
+        if (PI_FAILED(ahr))
+            LogStatus("attach failed (hr=%d): %s", (int)ahr,
+                      pi_host_session_last_error(g_session));
     }
 
-    const PiPluginDescriptor* desc = NULL;
-    pi_factory_get_descriptor(factory, &desc);
-
-    /* Capability gate (LV2-style): check requirements BEFORE instantiating */
-    if (desc && pi_descriptor_requires(desc, &PI_IID_HOST_UI)) {
-        void* dummy = NULL;
-        if (PI_FAILED(pi_iunknown_query_interface((IPiUnknown*)g_hostServices,
-                                                  &PI_IID_HOST_UI, &dummy))) {
-            snprintf(g_status, sizeof(g_status),
-                     "Rejected: plugin requires GUI host (we are headless)");
-            pi_iunknown_release((IPiUnknown*)factory);
-            pi_module_unload(module);
-            return;
-        }
-        pi_iunknown_release((IPiUnknown*)dummy);
-    }
-
-    uint32_t count = pi_factory_get_class_count(factory);
-    if (count == 0) {
-        SetStatus("Plugin has no classes");
-        pi_iunknown_release((IPiUnknown*)factory);
-        pi_module_unload(module);
-        return;
-    }
-
-    PiGuid classGuid;
-    pi_factory_get_class_guid(factory, 0, &classGuid);
-
-    if (PI_FAILED(pi_factory_create_instance(factory, &classGuid, g_hostServices, &g_plugin))) {
-        SetStatus("Failed to create instance");
-        pi_iunknown_release((IPiUnknown*)factory);
-        pi_module_unload(module);
-        return;
-    }
-
-    if (PI_FAILED(pi_plugin_initialize(g_plugin, g_hostServices))) {
-        SetStatus("Plugin initialize failed");
-        pi_iunknown_release((IPiUnknown*)g_plugin); g_plugin = NULL;
-        pi_iunknown_release((IPiUnknown*)factory);
-        pi_module_unload(module);
-        return;
-    }
-
-    /* Keep the module loaded for the plugin's lifetime */
-    g_pluginModule = module;
-
-    /* GUI view comes through the base interface contract */
-    IPiPluginView* view = NULL;
-    if (PI_SUCCEEDED(pi_plugin_get_view(g_plugin, &view)) && view) {
-        g_pluginView = view;
-    }
-    /* Headless capabilities are discovered via QueryInterface */
-    IPiService* service = NULL;
-    if (PI_SUCCEEDED(pi_iunknown_query_interface((IPiUnknown*)g_plugin,
-                                                 &PI_IID_SERVICE, (void**)&service))) {
-        g_pluginService = service;
-    }
-
-    if (g_pluginView && g_embedContainer) {
-        if (PI_SUCCEEDED(pi_view_attach(g_pluginView, (PiNativeWindow)g_embedContainer))) {
-            pi_view_set_visible(g_pluginView, 1);
-            LogStatus("attach: plugin hwnd=%llx host container=%llx",
-                      (unsigned long long)(uintptr_t)pi_view_get_native_window(g_pluginView),
-                      (unsigned long long)(uintptr_t)g_embedContainer);
-        }
-    }
-
-    if (g_selfTestCycles > 0 && !g_pluginView) {
+    if (g_selfTestCycles > 0 && !CurrentView()) {
         LogStatus("selftest: FAIL - plugin published no view");
         g_selfTestFailed = true;
     }
 
-    pi_iunknown_release((IPiUnknown*)factory);
-
-    if (desc) {
-        SetStatus("Loaded: %s %s (view:%s service:%s)",
-                 desc->name, desc->version,
-                 g_pluginView ? "Y" : "N",
-                 g_pluginService ? "Y" : "N");
-    } else {
-        SetStatus("Loaded (no descriptor)");
+    {
+        const PiPluginDescriptor* desc = pi_host_session_get_descriptor(g_session, g_slot);
+        if (desc) {
+            SetStatus("Loaded: %s %s (view:%s service:%s)",
+                      desc->name, desc->version,
+                      CurrentView() ? "Y" : "N",
+                      pi_host_session_get_service(g_session, g_slot) ? "Y" : "N");
+        } else {
+            SetStatus("Loaded (no descriptor)");
+        }
     }
 }
 
 static void UnloadPlugin()
 {
     LogStatus("unload: begin (thread=%lu)", (unsigned long)GetCurrentThreadId());
-    if (g_pluginService) {
-        pi_service_stop(g_pluginService);
-        pi_iunknown_release((IPiUnknown*)g_pluginService);
-        g_pluginService = NULL;
-    }
-    if (g_pluginView) {
+    if (g_session && g_slot != PI_HOST_SESSION_INVALID_SLOT) {
         DWORD t0 = GetTickCount();
-        if (g_skipDetach) {
-            LogStatus("unload: SKIPPING detach (plugin must tear itself down)");
-        } else {
-            LogStatus("unload: detaching view");
-            /* Watchdog: if a teardown step wedges, break into an attached
-             * debugger instead of hanging silently - a stack at the exact
-             * blocking call is worth more than any amount of log spelunking. */
+        /* Watchdog：整个卸载序列（含 kit 内部的 detach/terminate）超出预算就
+         * break 进调试器，而不是无声卡死。kit 每一步都写日志，故"卡在哪一步"
+         * 由最后一行日志定位 —— 这正是把序列内化后保留诊断能力的办法。 */
+        if (!g_skipDetach)
             CreateThread(NULL, 0, DetachWatchdog, (LPVOID)(uintptr_t)t0, 0, NULL);
-            pi_view_detach(g_pluginView);
-            LogStatus("unload: detach returned after %lu ms", (unsigned long)(GetTickCount() - t0));
-        }
-        LogStatus("unload: releasing view");
-        pi_iunknown_release((IPiUnknown*)g_pluginView);
-        g_pluginView = NULL;
-        LogStatus("unload: view released (total %lu ms)", (unsigned long)(GetTickCount() - t0));
-    }
-    /* Release the plugin BEFORE unloading the module: the module's code
-     * must stay mapped while plugin objects are alive. */
-    if (g_plugin) {
-        LogStatus("unload: terminating plugin");
-        pi_plugin_terminate(g_plugin);
-        LogStatus("unload: releasing plugin");
-        pi_iunknown_release((IPiUnknown*)g_plugin);
-        g_plugin = NULL;
-        LogStatus("unload: plugin released");
-    }
-    if (g_pluginModule) {
-        LogStatus("unload: unloading module");
-        pi_module_unload(g_pluginModule);
-        g_pluginModule = NULL;
-        LogStatus("unload: module unloaded");
+
+        pi_host_session_unload(g_session, g_slot);   /* 七步序列，顺序由 kit 保证 */
+        g_slot = PI_HOST_SESSION_INVALID_SLOT;
+        LogStatus("unload: sequence returned after %lu ms",
+                  (unsigned long)(GetTickCount() - t0));
     }
     SetStatus("No plugin loaded");
     LogStatus("unload: done");
@@ -909,14 +840,11 @@ static void CreateEmbedContainer(HWND parent)
     RECT rect;
     GetClientRect(parent, &rect);
 
-    /* WS_CLIPCHILDREN so our own painting (the D3D frame) never claims the
-     * area the plugin's HWND lives in. */
-    g_embedContainer = CreateWindowExW(
-        0, L"STATIC", NULL,
-        WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
-        410, 0, rect.right - 410, rect.bottom,
-        parent, NULL, GetModuleHandle(NULL), NULL
-    );
+    /* 位置与大小由本宿主决定（左侧 410px 留给控制面板，其余给插件）；
+     * "以正确的方式成为 embed host"（子窗口风格 + WS_CLIPCHILDREN/WS_CLIPSIBLINGS）
+     * 由 L1 kit 固化 —— 少了它宿主自己的 D3D 帧会盖掉插件的像素。 */
+    g_embedContainer = (HWND)pi_host_dx11_create_embed_container(
+        (PiNativeWindow)parent, 410, 0, rect.right - 410, rect.bottom);
 }
 
 /* Breaks into an attached debugger if a plugin teardown step exceeds the
@@ -1052,61 +980,154 @@ static bool CaptureWindowBmp(HWND hwnd, const char* path)
 }
 
 /* --------------------------------------------------------------------------
- * Self-test driver body - called once per rendered frame.
- * -------------------------------------------------------------------------- */static void SelfTestStep()
+ * Self-test / conformance driver
+ * -------------------------------------------------------------------------- */
+
+/* 解析 --plugin 的逗号列表；未给则用默认插件。裁掉空格，忽略空项。 */
+static void SelfTestParsePlugins(const char* list)
 {
-    static int      s_state = 0;        /* 0 idle, 1 idle-after-load, 2 idle-after-unload */
+    const char* p = (list && *list) ? list : "pi_test_plugin_qt.dll";
+
+    g_selfTestPluginCount = 0;
+    g_selfTestPluginIndex = 0;
+    g_selfTestCycleIndex  = 0;
+
+    for (;;) {
+        const char* comma = strchr(p, ',');
+        size_t n = comma ? (size_t)(comma - p) : strlen(p);
+
+        while (n > 0 && (p[0] == ' ' || p[0] == '\t')) { ++p; --n; }
+        while (n > 0 && (p[n - 1] == ' ' || p[n - 1] == '\t')) --n;
+
+        if (n > 0 && g_selfTestPluginCount < PI_SELFTEST_MAX_PLUGINS) {
+            if (n >= MAX_PATH) n = MAX_PATH - 1;
+            memcpy(g_selfTestPlugins[g_selfTestPluginCount], p, n);
+            g_selfTestPlugins[g_selfTestPluginCount][n] = 0;
+            ++g_selfTestPluginCount;
+        }
+        if (!comma || !comma[1]) break;
+        p = comma + 1;
+    }
+
+    if (g_selfTestPluginCount == 0) {
+        /* 列表里全是空项：退回默认插件，保证至少有东西可测 */
+        memcpy(g_selfTestPlugins[0], "pi_test_plugin_qt.dll", sizeof("pi_test_plugin_qt.dll"));
+        g_selfTestPluginCount = 1;
+    }
+}
+
+/* 绝对路径原样使用（conformance 场景常给定完整路径），否则按可执行文件目录解析 */
+static std::string ResolvePluginPath(const char* p)
+{
+    if (p && (p[0] == '\\' || p[0] == '/' || (p[0] && p[1] == ':')))
+        return std::string(p);
+    return ExeDirPath(p);
+}
+
+/* 尺寸往返：真的改宿主窗口尺寸，从而走完整的
+ * WM_SIZE -> L1 交换链策略 -> 容器 resize -> 插件 resize 转发 链路 */
+static void SelfTestResize(int grow)
+{
+    if (!g_hostWindow) return;
+
+    if (grow) {
+        int w, h;
+        GetWindowRect(g_hostWindow, &g_selfTestRect);
+        w = g_selfTestRect.right - g_selfTestRect.left;
+        h = g_selfTestRect.bottom - g_selfTestRect.top;
+        SetWindowPos(g_hostWindow, NULL, g_selfTestRect.left, g_selfTestRect.top,
+                     (int)(w * 1.25), (int)(h * 1.25), SWP_NOZORDER | SWP_NOACTIVATE);
+        LogStatus("selftest: resize grow -> %dx%d", (int)(w * 1.25), (int)(h * 1.25));
+    } else {
+        SetWindowPos(g_hostWindow, NULL, g_selfTestRect.left, g_selfTestRect.top,
+                     g_selfTestRect.right - g_selfTestRect.left,
+                     g_selfTestRect.bottom - g_selfTestRect.top,
+                     SWP_NOZORDER | SWP_NOACTIVATE);
+        LogStatus("selftest: resize restore");
+    }
+}
+
+/* 自检主体，每渲染帧调用一次。
+ * 状态机：0 起始 -> 1 加载后 idle -> 2 拉伸 -> 3 恢复 -> 4 卸载后冷却 -> 0 */
+static void SelfTestStep()
+{
+    static int      s_state = 0;
     static unsigned s_framesLeft = 0;
 
     if (s_framesLeft > 0) {
-        --s_framesLeft;
-        if (s_framesLeft == 0 && s_state == 1) {
-            LogStatus("selftest: cycle %d/%d unload", g_selfTestCycleIndex, g_selfTestCycles);
-            UnloadPlugin();
+        if (--s_framesLeft > 0) return;
+
+        switch (s_state) {
+        case 1:   /* idle 结束 -> 拉伸窗口，验证 resize 转发 */
+            SelfTestResize(/*grow=*/1);
             s_state = 2;
+            s_framesLeft = PI_SELFTEST_RESIZE_FRAMES;
+            return;
+        case 2:   /* 拉伸结束 -> 恢复原尺寸 */
+            SelfTestResize(/*grow=*/0);
+            s_state = 3;
+            s_framesLeft = PI_SELFTEST_RESIZE_FRAMES;
+            return;
+        case 3:   /* 尺寸往返结束 -> 卸载 */
+            LogStatus("selftest: [%d/%d] cycle %d/%d unload",
+                      g_selfTestPluginIndex + 1, g_selfTestPluginCount,
+                      g_selfTestCycleIndex, g_selfTestCycles);
+            UnloadPlugin();
+            s_state = 4;
             s_framesLeft = 3;
+            return;
+        case 4:   /* 卸载冷却结束 -> 下一轮或下一个插件 */
+            s_state = 0;
+            return;
+        default:
+            s_state = 0;
+            return;
         }
+    }
+
+    if (s_state != 0) {
+        /* 防御：状态与帧数不同步时重新起跳，不要卡死 */
+        s_framesLeft = 1;
         return;
     }
 
-    switch (s_state) {
-    case 0: {
-        if (g_selfTestCycleIndex >= g_selfTestCycles) {
-            LogStatus("selftest: PASS (%d cycles)", g_selfTestCycles);
+    /* ---- idle：开新一轮、或换下一个插件、或收工 ---- */
+    if (g_selfTestCycleIndex >= g_selfTestCycles) {
+        g_selfTestPluginIndex++;
+        g_selfTestCycleIndex = 0;
+
+        if (g_selfTestAborted || g_selfTestPluginIndex >= g_selfTestPluginCount) {
+            if (g_selfTestFailed)
+                LogStatus("selftest: FAIL - aborted at plugin %d/%d",
+                          g_selfTestPluginIndex, g_selfTestPluginCount);
+            else
+                LogStatus("selftest: PASS (%d plugin(s) x %d cycles)",
+                          g_selfTestPluginCount, g_selfTestCycles);
+            g_selfTestDone = true;
             ::PostQuitMessage(0);
             return;
         }
-        ++g_selfTestCycleIndex;
-        const char* dll = g_pluginOverride ? g_pluginOverride : "pi_test_plugin_qt.dll";
-        char first[MAX_PATH];
-        const char* comma = strchr(dll, ',');
-        size_t n = comma ? (size_t)(comma - dll) : strlen(dll);
-        if (n >= sizeof(first)) n = sizeof(first) - 1;
-        memcpy(first, dll, n);
-        first[n] = 0;
 
-        LogStatus("selftest: cycle %d/%d load %s", g_selfTestCycleIndex, g_selfTestCycles, first);
-        LoadPlugin(ExeDirPath(first).c_str());
-        if (!g_pluginView) {
+        LogStatus("selftest: plugin %d/%d -> %s", g_selfTestPluginIndex + 1,
+                  g_selfTestPluginCount, g_selfTestPlugins[g_selfTestPluginIndex]);
+    }
+
+    ++g_selfTestCycleIndex;
+    {
+        const char* dll = g_selfTestPlugins[g_selfTestPluginIndex];
+        LogStatus("selftest: [%d/%d] cycle %d/%d load %s",
+                  g_selfTestPluginIndex + 1, g_selfTestPluginCount,
+                  g_selfTestCycleIndex, g_selfTestCycles, dll);
+
+        LoadPlugin(ResolvePluginPath(dll).c_str());
+        if (!CurrentView()) {
             LogStatus("selftest: FAIL - no view after load");
-            g_selfTestFailed = true;
-            g_selfTestCycles = g_selfTestCycleIndex;   /* stop after this cycle */
+            g_selfTestFailed  = true;
+            g_selfTestAborted = true;      /* 跑完本轮的卸载后收工 */
         }
-        s_state = 1;
-        s_framesLeft = g_selfTestIdleFrames;
-        break;
     }
-    case 1:
-        /* Frames ran out but the unload was skipped - defensive. */
-        s_framesLeft = 1;
-        break;
-    case 2:
-        s_state = 0;
-        break;
-    default:
-        s_state = 0;
-        break;
-    }
+    s_state = 1;
+    s_framesLeft = g_selfTestIdleFrames;
 }
 
 /* --------------------------------------------------------------------------
@@ -1128,7 +1149,7 @@ static LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
         switch (wParam) {
         case HTLEFT: case HTRIGHT: case HTTOP: case HTBOTTOM:
         case HTTOPLEFT: case HTTOPRIGHT: case HTBOTTOMLEFT: case HTBOTTOMRIGHT:
-            if (!g_sizeLoopActive && g_pSwapChain) {
+            if (!g_sizeLoopActive && g_dx) {
                 g_sizeLoopActive = true;
                 RunSizeLoop(hWnd, (UINT)wParam);
                 g_sizeLoopActive = false;
@@ -1144,20 +1165,10 @@ static LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
         g_clientH = (unsigned)HIWORD(lParam);
         if (g_sizeLoopActive)
             return 0;   /* the size loop already rendered and presented for it */
-        if (g_pd3dDevice && wParam != SIZE_MINIMIZED) {
-            if (g_scalingNone) {
-                /* Buffer only ever grows (see the comment block above
-                 * RunSizeLoop()); the next main-loop frame lays out for the
-                 * new client size and DWM clips the buffer 1:1 until then. */
-                EnsureSwapChainSizeAtLeast(g_clientW, g_clientH);
-            } else {
-                /* Pre-fix behaviour for stretch/bitblt chains: the buffer
-                 * must track the window exactly. */
-                CleanupRenderTarget();
-                g_pSwapChain->ResizeBuffers(0, g_clientW, g_clientH,
-                                            DXGI_FORMAT_UNKNOWN, g_swapChainFlags);
-                CreateRenderTarget();
-            }
+        /* 缓冲/渲染目标的调整策略在 L1 kit 里：SCALING_NONE 生效时缓冲只增不减
+         * （下一帧按新客户区布局，DWM 在缓冲覆盖之前 1:1 裁剪），否则精确跟随。 */
+        if (g_dx && wParam != SIZE_MINIMIZED) {
+            pi_host_dx11_prepare_size(g_dx, g_clientW, g_clientH);
         }
         /* Container/plugin after the D3D resize: Qt repaints its child window
          * synchronously and that costs milliseconds (the plugin is composited
@@ -1179,186 +1190,3 @@ static LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
     return ::DefWindowProcW(hWnd, msg, wParam, lParam);
 }
 
-/* --------------------------------------------------------------------------
- * D3D11 helpers
- * -------------------------------------------------------------------------- */
-static bool CreateDeviceD3D(HWND hWnd)
-{
-    /* The flip model is mandatory here: DWM composites a flip-model swap chain
-     * as the window's content, so any child HWND owned by another module (our
-     * embedded Qt plugin) is composed on top of it and stays visible. The legacy
-     * bitblt models (DISCARD/SEQUENTIAL) hand the frame to the GDI blitter
-     * instead, which paints over the child region - that is exactly the "plugin
-     * is invisible unless the host blocks its own render loop" symptom.
-     *
-     * The swap chain is created explicitly through CreateSwapChainForHwnd
-     * instead of D3D11CreateDeviceAndSwapChain for one reason: that is the only
-     * call that accepts DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT. That
-     * waitable object is what lets the host pace a border drag to the compositor
-     * BEFORE Windows applies the new size, so the Present() in the WM_SIZE that
-     * follows cannot block. A blocking Present is expensive in a way that shows:
-     * while it blocks, the window already has the new size and DWM still only
-     * has the previous (previous-sized, hence scaled) frame - the panel visibly
-     * stretches or shrinks for that whole time.
-     *
-     * DXGI_SCALING_NONE is the actual fix for the panel-squash bug: whenever
-     * buffer and window disagree in size, DWM shows the buffer 1:1 top-left
-     * aligned and fills the remainder with the background colour instead of
-     * rescaling the buffer. Together with the never-shrink buffer policy
-     * (see EnsureSwapChainSizeAtLeast) this removes the last window of time
-     * in which DWM could composite a mis-sized frame. */
-    const D3D_FEATURE_LEVEL featureLevels[] = {
-        D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_0
-    };
-    D3D_FEATURE_LEVEL featureLevel;
-    HRESULT hr = D3D11CreateDevice(
-        NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, 0,
-        featureLevels, 2, D3D11_SDK_VERSION,
-        &g_pd3dDevice, &featureLevel, &g_pd3dDeviceContext);
-    if (FAILED(hr)) {
-        hr = D3D11CreateDevice(
-            NULL, D3D_DRIVER_TYPE_WARP, NULL, 0,
-            featureLevels, 2, D3D11_SDK_VERSION,
-            &g_pd3dDevice, &featureLevel, &g_pd3dDeviceContext);
-    }
-    if (FAILED(hr)) return false;
-
-    IDXGIDevice*  dxgiDevice = NULL;
-    IDXGIAdapter* adapter    = NULL;
-    IDXGIFactory2* factory   = NULL;
-    if (SUCCEEDED(g_pd3dDevice->QueryInterface(IID_PPV_ARGS(&dxgiDevice))) &&
-        SUCCEEDED(dxgiDevice->GetAdapter(&adapter)) &&
-        SUCCEEDED(adapter->GetParent(IID_PPV_ARGS(&factory)))) {
-        DXGI_SWAP_CHAIN_DESC1 sd = {};
-        sd.Width  = 0;
-        sd.Height = 0;
-        sd.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-        sd.SampleDesc.Count = 1;
-        sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-        /* Three buffers: a drag presents once per size step and even with the
-         * waitable object below a spare buffer costs nothing. */
-        sd.BufferCount = 3;
-        sd.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
-        /* The core of the fix. Documented for CreateSwapChainForHwnd +
-         * FLIP_SEQUENTIAL/FLIP_DISCARD: the buffer is composed 1:1, top-left
-         * aligned, clipped to the target; the target area outside the buffer
-         * is filled with the background colour (set below). A stale frame
-         * can therefore only be CLIPPED, never rescaled. */
-        sd.Scaling = DXGI_SCALING_NONE;
-        sd.Flags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
-        g_swapChainFlags = sd.Flags;
-        IDXGISwapChain1* swapChain1 = NULL;
-        hr = factory->CreateSwapChainForHwnd(g_pd3dDevice, hWnd, &sd, NULL, NULL,
-                                             &swapChain1);
-        if (FAILED(hr) && sd.Scaling == DXGI_SCALING_NONE) {
-            /* Defensive: should not happen on Win8+flip, but degrade to the
-             * pre-fix stretch behaviour rather than to no swap chain. */
-            LogStatus("d3d: SCALING_NONE rejected hr=0x%08X - falling back to STRETCH",
-                      (unsigned)hr);
-            sd.Scaling = DXGI_SCALING_STRETCH;
-            hr = factory->CreateSwapChainForHwnd(g_pd3dDevice, hWnd, &sd, NULL, NULL,
-                                                 &swapChain1);
-        }
-        if (SUCCEEDED(hr) && swapChain1) {
-            /* Keep the base interface: everything else uses IDXGISwapChain. */
-            swapChain1->QueryInterface(IID_PPV_ARGS(&g_pSwapChain));
-            factory->MakeWindowAssociation(hWnd, DXGI_MWA_NO_ALT_ENTER);
-            g_flipModel    = true;
-            g_scalingNone  = (sd.Scaling == DXGI_SCALING_NONE);
-            g_presentModel = g_scalingNone ? "FLIP_DISCARD+latency+scale:none"
-                                           : "FLIP_DISCARD+latency+scale:stretch";
-            /* Fill "window larger than buffer" (possible for one composited
-             * frame while growing) with the same grey as the clear colour. */
-            const DXGI_RGBA bg = { 0.15f, 0.15f, 0.15f, 1.0f };
-            swapChain1->SetBackgroundColor(&bg);
-            /* Width/Height were 0 ("follow the window") - record what that
-             * resolved to; this is the floor of the never-shrink policy. */
-            DXGI_SWAP_CHAIN_DESC1 got = {};
-            if (SUCCEEDED(swapChain1->GetDesc1(&got))) {
-                g_swapW = got.Width;
-                g_swapH = got.Height;
-            }
-            IDXGISwapChain2* sc2 = NULL;
-            if (SUCCEEDED(swapChain1->QueryInterface(IID_PPV_ARGS(&sc2)))) {
-                sc2->SetMaximumFrameLatency(1);
-                g_frameLatencyWaitable = sc2->GetFrameLatencyWaitableObject();
-                sc2->Release();
-            }
-            LogStatus("d3d: swap chain %s buffer=%ux%u, latency-waitable=%s",
-                      g_presentModel, g_swapW, g_swapH,
-                      g_frameLatencyWaitable ? "yes" : "NO");
-            swapChain1->Release();
-        }
-    }
-    if (dxgiDevice) dxgiDevice->Release();
-    if (adapter)    adapter->Release();
-    if (factory)    factory->Release();
-
-    if (!g_pSwapChain) {
-        /* No flip model available on this system: fall back to the legacy
-         * creation path (bitblt model), where the embedded child window is only
-         * visible where the blitter does not overwrite it. The device created
-         * above is dropped because that call creates its own. */
-        if (g_pd3dDeviceContext) { g_pd3dDeviceContext->Release(); g_pd3dDeviceContext = NULL; }
-        if (g_pd3dDevice)        { g_pd3dDevice->Release();        g_pd3dDevice = NULL; }
-        DXGI_SWAP_CHAIN_DESC sd = {};
-        sd.BufferCount = 3;
-        sd.BufferDesc.Width = 0;
-        sd.BufferDesc.Height = 0;
-        sd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-        sd.BufferDesc.RefreshRate.Numerator = 60;
-        sd.BufferDesc.RefreshRate.Denominator = 1;
-        sd.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
-        g_swapChainFlags = sd.Flags;
-        sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-        sd.OutputWindow = hWnd;
-        sd.SampleDesc.Count = 1;
-        sd.SampleDesc.Quality = 0;
-        sd.Windowed = TRUE;
-        sd.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
-        hr = D3D11CreateDeviceAndSwapChain(
-            NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, 0,
-            featureLevels, 2, D3D11_SDK_VERSION,
-            &sd, &g_pSwapChain, &g_pd3dDevice,
-            &featureLevel, &g_pd3dDeviceContext);
-        if (FAILED(hr) || !g_pSwapChain) {
-            CleanupDeviceD3D();
-            return false;
-        }
-        g_flipModel    = false;
-        g_scalingNone  = false;
-        g_presentModel = "DISCARD(bitblt)";
-        DXGI_SWAP_CHAIN_DESC gotDesc = {};
-        if (SUCCEEDED(g_pSwapChain->GetDesc(&gotDesc))) {
-            g_swapW = gotDesc.BufferDesc.Width;
-            g_swapH = gotDesc.BufferDesc.Height;
-        }
-    }
-
-    CreateRenderTarget();
-    return true;
-}
-
-static void CleanupDeviceD3D()
-{
-    CleanupRenderTarget();
-    if (g_frameLatencyWaitable) { CloseHandle(g_frameLatencyWaitable); g_frameLatencyWaitable = NULL; }
-    if (g_pSwapChain)      { g_pSwapChain->Release(); g_pSwapChain = NULL; }
-    if (g_pd3dDeviceContext) { g_pd3dDeviceContext->Release(); g_pd3dDeviceContext = NULL; }
-    if (g_pd3dDevice)      { g_pd3dDevice->Release(); g_pd3dDevice = NULL; }
-}
-
-static void CreateRenderTarget()
-{
-    ID3D11Texture2D* pBackBuffer = NULL;
-    g_pSwapChain->GetBuffer(0, IID_PPV_ARGS(&pBackBuffer));
-    if (pBackBuffer) {
-        g_pd3dDevice->CreateRenderTargetView(pBackBuffer, NULL, &g_mainRenderTargetView);
-        pBackBuffer->Release();
-    }
-}
-
-static void CleanupRenderTarget()
-{
-    if (g_mainRenderTargetView) { g_mainRenderTargetView->Release(); g_mainRenderTargetView = NULL; }
-}

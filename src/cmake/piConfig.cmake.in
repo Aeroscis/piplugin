@@ -3,8 +3,27 @@
 # 包含组件 config（pipluginframework）
 include("${CMAKE_CURRENT_LIST_DIR}/pipluginframeworkConfig.cmake")
 
-# -------------- 可选组件：adapter kits（安装树里存在才包含，各自先解决第三方依赖） --------------
+# -------------- 可选组件：host kits（宿主侧机制库） --------------
 include(CMakeFindDependencyMacro)
+
+# L0 会话库（无第三方依赖）
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/pipluginframeworkHostCoreTargets.cmake")
+    include("${CMAKE_CURRENT_LIST_DIR}/pipluginframeworkHostCoreTargets.cmake")
+endif()
+
+# L1 DX11 嵌入胶水（仅 Windows，无第三方依赖）
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/pipluginframeworkHostDx11Targets.cmake")
+    include("${CMAKE_CURRENT_LIST_DIR}/pipluginframeworkHostDx11Targets.cmake")
+endif()
+
+# L1 Qt 嵌入区域（依赖 L0 + 本地安装的 Qt5，经 CMAKE_PREFIX_PATH 查找；
+# 须在 HostCore 之后 include，因为它 link 到 pi::pipluginframework_host）
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/pipluginframeworkHostQtTargets.cmake")
+    find_dependency(Qt5 COMPONENTS Widgets Core)
+    include("${CMAKE_CURRENT_LIST_DIR}/pipluginframeworkHostQtTargets.cmake")
+endif()
+
+# -------------- 可选组件：adapter kits（安装树里存在才包含，各自先解决第三方依赖） --------------
 
 # imgui adapter kit（依赖 conan imgui；未安装该 kit 时自动跳过）
 if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/pipluginframeworkImguiAdapterTargets.cmake")
