@@ -82,7 +82,51 @@ pi_test_host_qt.exe pi_test_plugin_imgui.dll
 Qt 窗口内嵌入**imgui 插件**——演示"宿主与插件 UI 工具包不同"的交叉嵌入。
 （反之，imgui 宿主加载 Qt 插件：`pi_test_host_imgui.exe pi_test_plugin_qt.dll`。）
 
-## 4. 常见问题
+## 4. 自动化验证
+
+手工点击之外，宿主自带两种无人值守的验证方式，改完代码后建议都跑一遍。
+
+### 4.1 插件生命周期自测（`--cycles`）
+
+```bash
+cd bin/Debug
+pi_test_host_imgui.exe --cycles 3 --plugin pi_test_plugin_qt.dll --idle-frames 12
+echo %errorlevel%        # 0 = PASS
+```
+
+跑真实的 load → attach → idle 帧 → detach → release → unload 循环，
+用真实渲染循环驱动（能暴露 Qt 控件析构与模块卸载竞态这类只在事件循环转起来后才出现的崩溃）。
+日志末尾会出现 `selftest: PASS (3 cycles)`。也可封装为：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\run_selftest.ps1 -Cycles 3
+```
+
+### 4.2 截图证明（`--screenshot`）
+
+```bash
+pi_test_host_imgui.exe pi_test_plugin_qt.dll --screenshot shot.bmp
+```
+
+加载插件、渲染若干帧后把**合成后的窗口**截成 bmp 并退出，
+用于自动证明"嵌入的插件确实盖在 D3D 帧之上可见"。
+
+### 4.3 缩放回归（`scripts/verify_resize_fix.ps1`）
+
+程序化 `SetWindowPos` 分步放大/缩小 + `PrintWindow` 截图 + 像素扫描，
+断言面板与插件区的几何在多轮缩放后保持不变：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\verify_resize_fix.ps1
+```
+
+它同时断言日志中出现 `scale:none`、缓冲按需增长、无 `ResizeBuffers` 失败。
+详见 `docs/design/d3d-window-resizing.md`。
+
+> **注意**：以上只能覆盖缩放路径的**稳态**正确性。
+> "拖动过程中是否还有可感知闪烁"属于**瞬态**问题，需人工快速拖动确认。
+
+## 5. 常见问题
 
 ### 4.1 `ERROR: Missing prebuilt package for 'imgui/1.92.8'`
 
@@ -108,9 +152,94 @@ conan install . --build=missing       # 重新生成单 include
 
 检查 `find_package(Qt5)` 是否能找到你的 Qt 安装（`CMAKE_PREFIX_PATH` 中的路径是否正确）。
 
-## 5. 下一步
+### 4.5 MSBuild 报 `MSB6001 ... 字典中的关键字:"HTTPS_PROXY"所添加的关键字:"https_proxy"`
+
+环境里同时存在大小写两种代理变量（如 `HTTPS_PROXY` 与 `https_proxy`），
+MSBuild 构造子进程环境时把它们当成重复键而失败。构建前清掉即可：
+
+```bash
+unset https_proxy http_proxy all_proxy HTTPS_PROXY HTTP_PROXY ALL_PROXY
+```
+
+### 4.6 只构建了某个目标时，exe 目录缺少运行时依赖
+
+`cmake --build build --config Debug --target <单个目标>` 只会产出该目标，
+`bin/<Config>` 里可能缺少核心库/Qt 运行时。两种做法：
+
+- 把产物手动复制到已部署好的 `bin/<Config>/` 再运行；
+- 或构建 `INSTALL` 目标整体部署（但 `INSTALL` 默认会失败，见 4.7）。
+
+### 4.7 构建 `INSTALL` 目标报 `Permission denied`
+
+```text
+-- Install configuration: "Debug"
+CMake Error at src/pipluginframework/cmake_install.cmake:37 (file):
+  file INSTALL cannot set permissions on
+  "C:/Program Files/pipluginframework/lib/Debug/pipluginframeworkd.lib": Permission denied.
+```
+
+**原因**：项目里从来没有设置过 `CMAKE_INSTALL_PREFIX`，CMake 在 Windows 上
+回落到默认值 `C:/Program Files/<PROJECT_NAME>`，本仓库即
+`C:/Program Files/pipluginframework`。往那里写文件（哪怕只是给已存在的文件
+重设权限）都需要管理员权限，非提权终端必然失败。
+
+**影响范围**：安装脚本是嵌套 `include()` 执行的，顺序为
+
+```text
+cmake_install.cmake
+  ├─ src/cmake_install.cmake
+  │    └─ src/pipluginframework/cmake_install.cmake   ← 在这里失败
+  ├─ adapters/cmake_install.cmake                     ← 不会执行
+  └─ tests/cmake_install.cmake                        ← 不会执行
+```
+
+`src/pipluginframework` 排在最前面且第一条 `file(INSTALL)` 就报错，所以后面的
+子目录全被跳过。**编译产物是好的**（`lib/Debug/`、`build/**/Debug/` 都在），
+但仓库里的 `bin/<Config>` **不会被刷新**——它那些 `install()` 用的是绝对目标
+`GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH = <root>/bin/$<CONFIG>`，正好排在后面
+被跳过的 `adapters/` 和 `tests/` 里。所以"报 INSTALL 失败"之后 `bin/<Config>`
+里的东西是旧的，别误以为已经更新过。
+
+**两条 `install(TARGETS)` 的关系**（`src/pipluginframework/CMakeLists.txt:141` 与 `:150`）：
+
+| | 第 141 行 | 第 150 行 |
+|---|---|---|
+| 目标路径 | `${CMAKE_INSTALL_LIBDIR}/$<CONFIG>` 等**相对**路径 | `${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}` **绝对路径** |
+| 实际落点 | `${CMAKE_INSTALL_PREFIX}` 下的 `lib/<Config>`、`bin/<Config>` | `<root>/bin/<Config>`（不受 prefix 影响） |
+| 内容 | .lib / .dll / 头文件 / CMake config | 只有 .dll |
+| 语义 | 真正意义的"安装"（给外部项目 find_package 用） | 把运行时 dll 放到 exe 同目录，本质是"本地部署" |
+
+它们是**同一个 INSTALL 目标、同一份脚本里的两条独立规则**，不是两个 target；
+按源码顺序执行，第二条不会因为你改了 `--prefix` 而改变落点。
+但只要第一条失败，脚本就整体中断，第二条和后面的 `adapters/`、`tests/` 都跑不到。
+（实测：把 prefix 指到可写目录后，两条都执行，`bin/Debug` 被正常刷新，退出码 0。）
+
+**解决办法**（任选其一）：
+
+1. 配置时显式指定仓库内的前缀：
+   `cmake --preset conan-debug -DCMAKE_INSTALL_PREFIX=<root>/install`
+2. 或安装时临时指定：`cmake --install build --config Debug --prefix <root>/install`
+3. 或在 root `CMakeLists.txt` / preset 里固定 `CMAKE_INSTALL_PREFIX`，别再依赖默认值。
+4. 只是想把本机跑起来：不装，直接把 `lib/<Config>/` 与 `build/**/Debug/` 的产物
+   拷到 `bin/<Config>/` 即可。
+
+### 4.8 构建配置必须与 Conan 变体一致
+
+`conan install` 用的是哪个 build_type，构建时就只能用对应 config。
+当前仓库的 `build/` 是 **Debug 变体**（preset `conan-debug`），
+所以必须用：
+
+```bash
+cmake --build build --config Debug --target pi_test_host_imgui
+```
+
+用 `--config Release` 会因 Conan 生成的 `imgui` 包数据不匹配而报
+`无法打开包括文件: "imgui.h"`。
+
+## 6. 下一步
 
 - 了解架构：阅读 `docs/design/architecture.md`
 - 写第一个插件：阅读 `docs/tutorial/write-plugin.md`
 - 使用 UI 适配器：阅读 `docs/tutorial/adapters.md`
+- 排查 Windows 窗口缩放/嵌入的渲染问题：阅读 `docs/design/d3d-window-resizing.md`
 - 规划路线：阅读 `docs/todo/`

@@ -19,5 +19,5 @@
 | 跨平台 | Linux/macOS UI 嵌入（XEmbed/NSView）、imgui 套件非 Windows backend、插件 DLL 非 Windows 构建 |
 | UI 适配器 | Qt 套件多插件共享（SHARED）、gtk/webview 新套件、Qt 套件在 Qt 宿主中的用法 |
 | 核心框架 | C++ 包装层、事件/信号机制、插件热重载、官方 Rust/C# FFI 示例 |
-| 构建打包 | 套件纳入 conan 包、CI、CMake presets 完善、版本号现代化 |
-| 测试质量 | 单元测试框架、自动化宿主测试、内存/线程 sanitizer、示例矩阵、**imgui 宿主拖动缩放时 IMGUI 面板瞬时被缩放（未解决，见 `tests.md` 第 7 条）** |
+| 构建打包 | 套件纳入 conan 包、CI、CMake presets 完善、版本号现代化、~~`CMAKE_INSTALL_PREFIX` 未设置导致 INSTALL 失败~~（**已修复**：`bin/<Config>` 改由 POST_BUILD 维护，前缀固定到 `build/install`，见 `install-design-review-prompt.md`） |
+| 测试质量 | 单元测试框架、自动化宿主测试、内存/线程 sanitizer、示例矩阵 ~~imgui 宿主拖动缩放时 IMGUI 面板瞬时被缩放~~（**已修复**，见 `tests.md` 第 7 条；平台机制知识见 `design/d3d-window-resizing.md`） |
