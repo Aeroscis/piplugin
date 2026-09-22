@@ -103,11 +103,25 @@ if (desc && !pi_api_version_compatible(PI_API_VERSION, desc->api_version))
 
 ```c
 typedef PiResult (*PiPluginEntryProc)(IPiPluginFactory** out_factory);
-#define PI_PLUGIN_ENTRY_NAME "pi_plugin_entry"
-#define PI_PLUGIN_ENTRY_DECL PI_EXPORT PiResult pi_plugin_entry(IPiPluginFactory** out_factory)
+#define PI_PLUGIN_ENTRY_NAME  "pi_plugin_entry"
+#define PI_PLUGIN_EXPORT      /* 插件侧：dllexport / visibility("default") */
+#define PI_PLUGIN_ENTRY_DECL  PI_PLUGIN_EXPORT PiResult pi_plugin_entry(IPiPluginFactory** out_factory)
 ```
 
-每个插件 DLL 必须导出 `pi_plugin_entry`。
+每个插件 DLL 必须导出 `pi_plugin_entry`。定义时用 `PI_PLUGIN_ENTRY_DECL`：
+
+```c
+PI_PLUGIN_ENTRY_DECL
+{
+    if (!out_factory) return PI_E_INVALIDARG;
+    *out_factory = (IPiPluginFactory*)&MyFactory;   /* 工厂引用计数需 ≥ 1 */
+    return PI_OK;
+}
+```
+
+> **不要用 `PI_EXPORT` 去定义入口**：它在插件侧展开成 `dllimport`，用在定义上会
+> 编译失败（"definition of dllimport function not allowed"）。`PI_EXPORT` 是
+> **框架侧**的导出宏；插件侧用 `PI_PLUGIN_EXPORT`。
 
 ## 2. 接口与帮助函数
 

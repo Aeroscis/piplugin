@@ -16,6 +16,18 @@
 #  include <dlfcn.h>
 #endif
 
+/* 线程身份（pi_host_ui_thread_id）的平台实现所需：
+ *   Linux 用内核线程 id（glibc 的 gettid() 到 2.30 才有，故直接走 syscall，
+ *   任何 glibc 版本都能编译且不需要额外链接 pthread）；
+ *   macOS 用 pthread_self 句柄（libSystem 必然提供，且对"是不是同一个线程"
+ *   的判断已经足够）。 */
+#if PI_PLATFORM_LINUX
+#  include <unistd.h>
+#  include <sys/syscall.h>
+#elif PI_PLATFORM_MACOS
+#  include <pthread.h>
+#endif
+
 /* --------------------------------------------------------------------------
  * Load error diagnostics
  * -------------------------------------------------------------------------- */
@@ -335,10 +347,19 @@ PI_EXPORT PiResult pi_host_services_create_default(
     host->post_message = post_message;
     host->user_data    = user_data;
     host->ui_window    = ui_parent_window;
+    /* 契约见 pi_plugin_host_services.h：非 0、UI 线程存活期间稳定、只用于
+     * "是不是同一个线程"的比较。
+     *
+     * BLK-08 修复：非 Windows 分支曾经返回 getpid() —— 那是**进程 id**，
+     * 插件拿它做线程判断必然出错。 */
 #if PI_PLATFORM_WINDOWS
     host->ui_thread_id = (uint64_t)GetCurrentThreadId();
+#elif PI_PLATFORM_LINUX
+    host->ui_thread_id = (uint64_t)syscall(SYS_gettid);
+#elif PI_PLATFORM_MACOS
+    host->ui_thread_id = (uint64_t)(uintptr_t)pthread_self();
 #else
-    host->ui_thread_id = (uint64_t)getpid();
+    host->ui_thread_id = 0;
 #endif
 
     *out_services = (IPiHostServices*)&host->base;
@@ -366,6 +387,11 @@ PI_EXPORT PiResult pi_host_create_plugin(const char* dll_path,
                                           PiPluginModule** out_module)
 {
     if (!dll_path || !class_guid || !out_plugin) return PI_E_INVALIDARG;
+
+    /* 终审约定（BLK-08）：失败时 out 参数一律为 NULL，调用方不必自带预置。
+     * 之前这里什么都不写，失败后调用方读到的会是它自己的旧值。 */
+    *out_plugin = NULL;
+    if (out_module) *out_module = NULL;
 
     PiPluginModule* module = pi_module_load(dll_path);
     if (!module) return PI_E_NOTFOUND;

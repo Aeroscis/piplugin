@@ -96,16 +96,11 @@ static const IPiPluginFactoryVtbl s_factory_vtbl = {
 /* --------------------------------------------------------------------------
  * Entry point
  *
- * 插件侧必须自己 __declspec(dllexport)：PI_EXPORT 在非 PI_BUILDING_FRAMEWORK
- * 的翻译单元里展开成 dllimport，用在定义上会编译失败。这与两个官方测试插件一致。
+ * 用公共头的 PI_PLUGIN_ENTRY_DECL 宏（它展开成 PI_PLUGIN_EXPORT，即插件侧的
+ * dllexport）——本插件同时也是这个宏的编译验证件：终审前该宏错用了 PI_EXPORT，
+ * 在插件里直接拿去定义入口会编译失败（见 interface-freeze-review.md F10）。
  * -------------------------------------------------------------------------- */
-#if defined(_WIN32) || defined(_WIN64)
-#  define BADVERSION_EXPORT __declspec(dllexport)
-#else
-#  define BADVERSION_EXPORT __attribute__((visibility("default")))
-#endif
-
-BADVERSION_EXPORT PiResult pi_plugin_entry(IPiPluginFactory** out_factory)
+PI_PLUGIN_ENTRY_DECL
 {
     if (!out_factory) return PI_E_INVALIDARG;
     *out_factory = NULL;

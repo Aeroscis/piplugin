@@ -43,6 +43,7 @@ PI_EXPORT PiResult pi_module_get_factory(PiPluginModule* module,
 /* --------------------------------------------------------------------------
  * Convenience: load, create instance, initialize in one call.
  * Returns PI_OK on success. The caller owns *out_plugin and must ->release().
+ * 失败时 *out_plugin 与 *out_module 均为 NULL（终审约定，BLK-08）。
  *
  * NOTE: the module is kept loaded for the lifetime of the plugin instance
  * (unloading the DLL while the plugin's code is on the stack anywhere is

@@ -103,7 +103,12 @@ add_subdirectory(${GLOBAL_PROJECT_TESTS_PATH})# tests/
 | Clang | `-Wall -Wextra -Wpedantic` |
 | GNU | `-Wall -Wextra --pedantic-errors` |
 
-Windows 全局：`WIN32_LEAN_AND_MEAN`、`CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON`。
+Windows 全局：`WIN32_LEAN_AND_MEAN`。
+
+> 刻意**不**用 `CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS`：它会把 CRT 内部符号一并导出
+> （实测漏出 `__local_stdio_printf_options`、`snprintf`、`vsnprintf`）。公开 API
+> 一律显式 `PI_EXPORT`，插件入口显式 `__declspec(dllexport)`，见
+> `docs/design/interface-freeze-review.md`。
 
 ### 3.3 核心库（src/pipluginframework/CMakeLists.txt）
 

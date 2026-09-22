@@ -77,8 +77,16 @@ typedef struct IPiHostUIVtbl {
      * Returns PI_INVALID_WINDOW if the host currently has no window. */
     PiNativeWindow (PI_CALL *pi_host_get_parent_window)(void* this_ptr);
 
-    /* The host's UI thread id, so the plugin knows which thread owns the
-     * event loop that drives pi_on_idle(). */
+    /* The host's UI thread identity, so the plugin knows which thread owns the
+     * event loop that drives pi_on_idle().
+     *
+     * 契约（BLK-08 终审）：
+     *   - 非 0，且在 UI 线程存活期间稳定；
+     *   - **只用于"是不是同一个线程"的比较**，不要假设它等于某个操作系统
+     *     工具（任务管理器 / ps -T / top -H）显示的线程号；
+     *   - 平台实现：Windows = GetCurrentThreadId()，Linux = gettid()（内核
+     *     线程 id），macOS = pthread_self() 句柄转 64 位。
+     *     Linux 上主线程的 tid 与进程 id 相同，这不是 bug。 */
     uint64_t (PI_CALL *pi_host_ui_thread_id)(void* this_ptr);
 } IPiHostUIVtbl;
 

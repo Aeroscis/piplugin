@@ -14,6 +14,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if defined(_WIN32) || defined(_WIN64)
+#  include <windows.h>   /* GetCurrentThreadId：线程 id 契约的精确断言用 */
+#endif
+
 /* --------------------------------------------------------------------------
  * 极简断言框架
  * -------------------------------------------------------------------------- */
@@ -345,6 +349,12 @@ static void TestHostServices(void)
         IPiHostUI* ui = (IPiHostUI*)out;
         CHECK_EQ_INT((uintptr_t)pi_host_ui_get_parent_window(ui), (uintptr_t)0x1234);
         CHECK(pi_host_ui_thread_id(ui) != 0);
+#if defined(_WIN32) || defined(_WIN64)
+        /* BLK-08：Windows 分支必须给出**真正的线程 id**。非 Windows 分支曾经
+         * 错给进程 id（getpid）；本仓库没有 Linux/macOS 构建可跑，那部分只能
+         * 靠代码审查，见 docs/design/interface-freeze-review.md 的 F2。 */
+        CHECK_EQ_INT(pi_host_ui_thread_id(ui), (uint64_t)GetCurrentThreadId());
+#endif
 
         /* 活值语义：包装持有 owner 的引用，改窗口后已发出的 UI 指针立刻反映新值
          * （曾经这里是越界读、返回垃圾 —— 见 src/pi_plugin_host.c 的说明） */

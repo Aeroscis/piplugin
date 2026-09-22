@@ -189,8 +189,26 @@ PI_EXPORT int pi_api_version_compatible(uint32_t host_version, uint32_t plugin_v
  * -------------------------------------------------------------------------- */
 typedef PiResult (*PiPluginEntryProc)(IPiPluginFactory** out_factory);
 
+/* 插件侧导出宏：插件 DLL 永远是"导出方"，与 PI_EXPORT 相反 —— PI_EXPORT 在
+ * 非 PI_BUILDING_FRAMEWORK 的翻译单元里展开成 dllimport，直接拿它去**定义**
+ * 入口会编译失败（"definition of dllimport function not allowed"）。 */
+#if PI_PLATFORM_WINDOWS
+#  define PI_PLUGIN_EXPORT __declspec(dllexport)
+#else
+#  define PI_PLUGIN_EXPORT __attribute__((visibility("default")))
+#endif
+
 #define PI_PLUGIN_ENTRY_NAME "pi_plugin_entry"
-#define PI_PLUGIN_ENTRY_DECL PI_EXPORT PiResult pi_plugin_entry(IPiPluginFactory** out_factory)
+
+/* 在插件里定义入口就用这个宏：
+ *     PI_PLUGIN_ENTRY_DECL
+ *     {
+ *         if (!out_factory) return PI_E_INVALIDARG;
+ *         ...
+ *         return PI_OK;
+ *     }
+ */
+#define PI_PLUGIN_ENTRY_DECL PI_PLUGIN_EXPORT PiResult pi_plugin_entry(IPiPluginFactory** out_factory)
 
 /* --------------------------------------------------------------------------
  * Known interface GUIDs (for IPiUnknown::pi_query_interface)

@@ -92,9 +92,12 @@ function(pi_init_glob_proj)
         add_compile_definitions(WIN32_LEAN_AND_MEAN)
     endif()
 
-    # 在Windows下需要配置的 符号位置，使得 动态库 也能同时生成 .lib 的符号表
-    set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
-    set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON PARENT_SCOPE)
+    # 刻意**不**开启 CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS：
+    # 它会把所有全局符号都导出，包括 CRT 内部符号（实测会漏出
+    # __local_stdio_printf_options / snprintf / vsnprintf）。框架的公开 API
+    # 一律显式标注 PI_EXPORT，插件入口显式 __declspec(dllexport)，
+    # 因此不需要"全导出"这条路；符号可见性由 BLK-08 终审把关
+    # （见 docs/design/interface-freeze-review.md）。
 	
     # -------------------------Build Arguments -------------------------
 
