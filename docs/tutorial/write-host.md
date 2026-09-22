@@ -286,7 +286,36 @@ if (PI_SUCCEEDED(pi_iunknown_query_interface((IPiUnknown*)host, &MY_SERVICE_IID,
   app 自定义服务，两个测试插件 QI 它并调用（`tests/common/pi_test_host_service.h`），
   ctest 用例 `app_defined_host_service_*` 断言这条链路真的跑通。
 
-## 9. 宿主清单（Checklist）
+## 9. 可选：C++ RAII 层（pi_cpp.h）
+
+C++ 宿主可以少写引用计数样板：
+
+```cpp
+#include "piplugin/pi_cpp.h"        /* C++ 糖，不包含在 pi_plugin.h 里 */
+
+static PiPtr<IPiHostServices> g_hostServices;   /* 析构即 release */
+
+/* 创建：put() 给出参地址，句柄接管 create_default 返回的那一份引用 */
+pi_host_services_create_default(&MessageProc, nullptr, window, g_hostServices.put());
+pi_host_session_create(g_hostServices.get(), &session);
+
+/* 退出路径：不再手写 release */
+g_hostServices.reset();
+```
+
+再往上，`include/piplugin/pi_cpp.h` 还提供：
+
+- `PiUniqueModule`：RAII `pi_module_load` / `pi_module_unload`（`PiUniqueModule::load(path, m)`
+  + `module.factory()`），声明顺序即加载顺序时，C++ 的逆序析构正好等于七步卸载序列；
+- `PiPtr<T>::qi_to<U>()`：按 `PiIidOf<U>` 的框架 IID 做一次 QI，失败返回空句柄；
+- `pi_cpp_destroy<T>`：`PiRefCountedBase` 需要的 C++ 析构 thunk。
+
+`PiPtr<T>` **接管**已有引用（框架返回的接口指针一律已 AddRef），借用指针
+（descriptor / native window）禁止包进去；拷贝被删除，要第二份持有就写
+`PiPtr<T>::add_ref(p)`。参照实现：`tests/test_host_qt`（宿主服务对象）、
+`tests/unit_cpp`（语义 + Debug CRT 泄漏判定）。
+
+## 10. 宿主清单（Checklist）
 
 - [ ] 创建 `IPiHostServices`（GUI 传容器窗口 / headless 传 `PI_INVALID_WINDOW`）
 - [ ] 要给插件自己的服务时用 `pi_host_services_create_ex()` 装 extra-QI 钩子（§8）
@@ -296,3 +325,4 @@ if (PI_SUCCEEDED(pi_iunknown_query_interface((IPiUnknown*)host, &MY_SERVICE_IID,
 - [ ] 主循环每帧 `pi_on_idle`
 - [ ] 尺寸变化转发 `pi_on_resize`
 - [ ] 卸载顺序：detach view → release view → terminate/release plugin → release factory → unload module → release host
+- [ ] C++ 宿主：宿主服务对象与模块用 `PiPtr` / `PiUniqueModule` 持有，省掉手写 release（§9）

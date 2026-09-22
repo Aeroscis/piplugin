@@ -79,8 +79,9 @@ const IPiPluginBaseVtbl ImGuiPlugin::s_base_vtbl = {
     &ImGuiPlugin::Init, &ImGuiPlugin::Term, &ImGuiPlugin::GetView
 };
 
-ImGuiPlugin::ImGuiPlugin() : m_host(NULL), m_hostUI(NULL)
+ImGuiPlugin::ImGuiPlugin()
 {
+    /* m_host / m_hostUI 默认构造即空句柄（PiPtr 的默认构造）。 */
     pi_refcounted_init_with_destroy(&m_base,
                                     (const IPiUnknownVtbl*)&s_base_vtbl,
                                     &ImGuiPlugin::Destroy);
@@ -88,8 +89,7 @@ ImGuiPlugin::ImGuiPlugin() : m_host(NULL), m_hostUI(NULL)
 
 ImGuiPlugin::~ImGuiPlugin()
 {
-    if (m_hostUI) { pi_iunknown_release((IPiUnknown*)m_hostUI); m_hostUI = NULL; }
-    if (m_host)   { pi_iunknown_release((IPiUnknown*)m_host);   m_host = NULL; }
+    /* PiPtr（pi_cpp.h）负责释放 m_host / m_hostUI，没有手写 release。 */
 }
 
 PiResult ImGuiPlugin::Initialize(IPiHostServices* host)
@@ -100,26 +100,19 @@ PiResult ImGuiPlugin::Initialize(IPiHostServices* host)
     if (m_host) return PI_OK;
 
     if (host) {
-        m_host = host;
-        pi_iunknown_add_ref((IPiUnknown*)host);
-        IPiHostUI* ui = NULL;
-        if (PI_SUCCEEDED(pi_iunknown_query_interface((IPiUnknown*)host,
-                                                     &PI_IID_HOST_UI, (void**)&ui))) {
-            m_hostUI = ui;
-        }
+        m_host   = PiPtr<IPiHostServices>::add_ref(host);   /* 借用 -> 自己持有 */
+        m_hostUI = m_host.qi_to<IPiHostUI>();               /* 失败 = 空句柄 = headless */
 
         /* 通道 B（roadmap APP-01），与 Qt 测试插件逐字同构：对宿主对象 QI
          * 一次，拿到了就用，拿不到照常跑（descriptor 里该能力是 OPTIONAL）。 */
-        IPiTestHostService* svc = NULL;
-        if (PI_SUCCEEDED(pi_iunknown_query_interface((IPiUnknown*)host,
-                                                     &PI_TEST_IID_HOST_SERVICE,
-                                                     (void**)&svc))) {
-            pi_host_post_message(host, PI_TEST_MSG_HOST_SERVICE, 1u, 0);
+        PiPtr<IPiTestHostService> svc =
+            m_host.qi_to<IPiTestHostService>(PI_TEST_IID_HOST_SERVICE);
+        if (svc) {
+            pi_host_post_message(m_host.get(), PI_TEST_MSG_HOST_SERVICE, 1u, 0);
             printf("[imgui plugin] host-provided service: host=%s, "
                    "the host has seen %u plugin message(s)\n",
-                   pi_test_host_service_name(svc),
-                   (unsigned)pi_test_host_service_messages_seen(svc));
-            pi_iunknown_release((IPiUnknown*)svc);
+                   pi_test_host_service_name(svc.get()),
+                   (unsigned)pi_test_host_service_messages_seen(svc.get()));
         } else {
             printf("[imgui plugin] host provides no app-defined service "
                    "(framework services only)\n");
@@ -171,7 +164,7 @@ void ImGuiPlugin::DrawUi(void* user_data)
     static int sliderValue = 50;
     if (ImGui::SliderInt("Value", &sliderValue, 0, 100)) {
         if (me->m_host)
-            pi_host_post_message(me->m_host, 0x1000, (uintptr_t)sliderValue, 0);
+            pi_host_post_message(me->m_host.get(), 0x1000, (uintptr_t)sliderValue, 0);
     }
     if (ImGui::Button("Reset"))
         sliderValue = 50;

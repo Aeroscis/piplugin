@@ -202,3 +202,33 @@ target_link_libraries(${TARGET_NAME} PRIVATE piplugin)
 
 宿主侧（如 `pi_test_host.imgui`）会在 `pi_factory_create_instance` **之前**调用
 `pi_descriptor_requires(desc, &PI_IID_HOST_UI)` 做能力门检查，请务必如实声明。
+
+## 5. 可选：C++ RAII 层（pi_cpp.h）
+
+C++ 插件可以少写一半引用计数样板：
+
+```cpp
+#include "piplugin/pi_cpp.h"           /* C++ 糖，不包含在 pi_plugin.h 里 */
+
+class MyPlugin {
+    PiPtr<IPiHostServices> m_host;     /* 借用入参 -> add_ref，析构自动 release */
+    PiPtr<IPiHostUI>       m_hostUI;   /* 宿主没有 UI 时就是空句柄 */
+    ...
+    PiResult Initialize(IPiHostServices* host) {
+        if (m_host) return PI_OK;                       /* 幂等，见 1.3 的说明 */
+        m_host   = PiPtr<IPiHostServices>::add_ref(host);  /* 借用 -> 自己持有 */
+        m_hostUI = m_host.qi_to<IPiHostUI>();            /* 失败 = 空句柄 = headless */
+        return PI_OK;
+    }
+    // 析构函数里一行 release 都不用写
+};
+```
+
+- `PiPtr<T>` **接管**一个已有引用（框架"返回接口指针"一律已 AddRef，见
+  interfaces.md 2.3），所以每个 QI 调用点不需要再补一次 release；
+  借用指针（descriptor / native window）**禁止**包进去；
+- 拷贝被删除，需要第二份持有就写 `PiPtr<T>::add_ref(p)`；
+- `qi_to<T>()` 用 `PiIidOf<T>` 里的框架 IID；自定义接口在自己的头文件里补一个
+  特化，或者 `qi_to<T>(my_iid)` 显式给 IID；
+- 宿主侧的模块加载用 `PiUniqueModule`（RAII `pi_module_unload`）；
+- 完整语义与理由见头文件注释，测试见 `tests/unit_cpp`（含 Debug CRT 泄漏判定）。

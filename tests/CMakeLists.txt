@@ -7,6 +7,7 @@ set(PI_TESTS_COMMON_DIR "${CMAKE_CURRENT_SOURCE_DIR}/common")
 
 #------------------------- build option-------------------------
 option(PI_BUILD_UNIT_TESTS "Build the core unit tests (ctest target 'unit')" ON)      # 依赖: framework core
+option(PI_BUILD_UNIT_CPP_TESTS "Build the C++ RAII layer tests (ctest target 'unit_cpp')" ON)  # 依赖: framework core
 option(PI_BUILD_TEST_PLUGIN "Build the Qt-based test plugin" ON)                   # 依赖: Qt5 framework qt adapter
 option(PI_BUILD_TEST_PLUGIN_IMGUI "Build the ImGui-based test plugin" ON)          # 依赖: imgui framework imgui adapter
 option(PI_BUILD_TEST_PLUGIN_BADVERSION "Build the bad-api_version test plugin (BLK-03 negative case)" ON)  # 依赖: framework core
@@ -17,6 +18,11 @@ option(PI_BUILD_HEADLESS_HOST "Build the headless (console) test host" ON)      
 # unit tests（核心回归；ctest 一条命令跑完）
 if(PI_BUILD_UNIT_TESTS)
     add_subdirectory(unit)
+endif()
+
+# C++ RAII 层测试（pi_cpp.h）：与上面分开，因为它是 C++ 且带 Debug CRT 泄漏判定
+if(PI_BUILD_UNIT_CPP_TESTS)
+    add_subdirectory(unit_cpp)
 endif()
 
 # ---- 插件先加：宿主里注册的 ctest 冒烟用例要引用插件目标（if(TARGET ...) 守卫）----

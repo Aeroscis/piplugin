@@ -28,6 +28,24 @@ A release is one commit on `main` that bumps the version in `CMakeLists.txt` and
 
 ### Added
 
+- **Optional C++ RAII layer (`piplugin/pi_cpp.h`).** Hand-written AddRef/Release
+  pairs are the easiest thing to get wrong in a COM-style C API, so C++ hosts
+  and plugins can now use `PiPtr<T>` (destructor releases, move-only, `qi_to<U>()`
+  with a `PiIidOf<T>` type-to-IID map, `put()`/`detach()`/`add_ref()`) and
+  `PiUniqueModule` (RAII `pi_module_unload`, `load()` + `factory()`), plus
+  `pi_cpp_destroy<T>` for the refcount destroy thunk that both test plugins used
+  to define for themselves. It adds no ABI, no exported symbol and no runtime
+  dependency, and it is deliberately **not** included by `pi_plugin.h`: the C
+  umbrella stays pure C and the C++ layer is one explicit include. `PiPtr`
+  *adopts* the reference the framework hands out (every returned interface
+  pointer is already AddRef'd) instead of adding one more, which is what keeps a
+  QI call site free of manual releases; the constructor is explicit and copying
+  is deleted.
+- Both test plugins and the Qt test host now use the layer, and the new
+  `tests/unit_cpp` target (`ctest` name `unit_cpp`) covers PiPtr/PiUniqueModule
+  semantics against a counted object and a real plugin module, with
+  `_CrtDumpMemoryLeaks()` deciding the exit code in Debug builds - so "no leaks"
+  is an assertion rather than a promise.
 - **Composable host services (`pi_host_services_create_ex`) — channel B.** The
   default host object answers the framework's three IIDs and nothing else, so an
   app could not hand its plugins a service of its own (the mirror image of the

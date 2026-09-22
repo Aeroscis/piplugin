@@ -10,13 +10,12 @@
 #define PI_QT_TEST_PLUGIN_H
 
 #include "piplugin/pi_plugin.h"
+/* C++ RAII 层（可选头，见 docs/design/interfaces.md）：PiPtr / PiUniqueModule /
+ * pi_cpp_destroy。本插件只用到 PiPtr —— 宿主指针与两个可选接口的生命周期
+ * 全部交给句柄，构造函数与析构函数里一行 release 都不用写。 */
+#include "piplugin/pi_cpp.h"
 
 class QWidget;
-
-/* Generic destroy thunk: lets PiRefCountedBase::release() run the C++
- * destructor instead of free()ing the object. */
-template <typename T>
-void pi_cpp_destroy(void* self_ptr) { delete static_cast<T*>(self_ptr); }
 
 class QtPlugin {
 public:
@@ -48,9 +47,9 @@ private:
     PiRefCountedBase m_base;          /* MUST be first data member */
     static const IPiPluginBaseVtbl s_base_vtbl;
 
-    IPiHostServices*  m_host;         /* add-ref'd */
-    IPiHostUI*        m_hostUI;       /* add-ref'd, NULL on headless host */
-    IPiPluginView*    m_view;         /* weak: owned by the host, see GetView */
+    PiPtr<IPiHostServices> m_host;    /* 借用入参 -> 自己 add-ref，析构自动 release */
+    PiPtr<IPiHostUI>       m_hostUI;  /* headless 宿主上为空句柄 */
+    IPiPluginView*         m_view;    /* weak: owned by the host, see GetView */
 };
 
 class QtPluginFactory {

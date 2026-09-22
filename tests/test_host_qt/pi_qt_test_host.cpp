@@ -19,6 +19,8 @@
  * 布局、样式与帧时钟长什么样"——容器是谁、在哪、多大、怎么美化，全归宿主。
  */
 #include "piplugin/pi_plugin.h"
+/* C++ RAII 层（可选头）：宿主服务对象用 PiPtr 持有，退出路径上不用手写 release。 */
+#include "piplugin/pi_cpp.h"
 #include "pi_host_session.h"
 #include "pi_host_embed_area.h"
 
@@ -62,9 +64,9 @@ static void LogStatus(const char* fmt, ...)
 /* --------------------------------------------------------------------------
  * Host state
  * ------------------------------------------------------------------------ */
-static IPiHostServices*     g_hostServices = NULL;
-static PiPluginHostSession* g_session      = NULL;
-static uint32_t             g_slot         = PI_HOST_SESSION_INVALID_SLOT;
+static PiPtr<IPiHostServices> g_hostServices;   /* RAII：析构即 release */
+static PiPluginHostSession*   g_session      = NULL;
+static uint32_t               g_slot         = PI_HOST_SESSION_INVALID_SLOT;
 
 static PiPluginEmbedArea* g_embedArea  = NULL;   /* 宿主创建、宿主摆位、宿主美化 */
 static QLabel*            g_statusLabel = NULL;
@@ -124,16 +126,18 @@ static void LoadPlugin(const char* dllPath)
 
     if (!g_hostServices) {
         /* Create the host services object with the embed container's
-         * native window, so IPiHostUI is exposed to plugins. */
+         * native window, so IPiHostUI is exposed to plugins.
+         * put() 给出参地址：句柄接管 create_default 返回的引用（已 add-ref），
+         * 失败时框架会把 *out 置 NULL，句柄保持为空。 */
         if (PI_FAILED(pi_host_services_create_default(&HostMessageProc, NULL,
                                                       (PiNativeWindow)g_embedArea->winId(),
-                                                      &g_hostServices))) {
+                                                      g_hostServices.put()))) {
             SetStatus(QString::fromUtf8("Host services unavailable"));
             return;
         }
     }
     if (!g_session) {
-        if (PI_FAILED(pi_host_session_create(g_hostServices, &g_session))) {
+        if (PI_FAILED(pi_host_session_create(g_hostServices.get(), &g_session))) {
             SetStatus(QString::fromUtf8("Host session unavailable"));
             return;
         }
@@ -221,10 +225,7 @@ protected:
     {
         UnloadPlugin();
         if (g_session) { pi_host_session_destroy(g_session); g_session = NULL; }
-        if (g_hostServices) {
-            pi_iunknown_release((IPiUnknown*)g_hostServices);
-            g_hostServices = NULL;
-        }
+        g_hostServices.reset();   /* 引用归零即销毁，不再手写 release */
         QWidget::closeEvent(event);
     }
 };

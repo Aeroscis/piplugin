@@ -38,7 +38,7 @@ piplugin 是一个 **跨平台、纯 C ABI 的插件框架**，采用 **COM 风�
 
 | 路径 | 内容 |
 |---|---|
-| `include/piplugin/` | 公共头文件（完整框架 API，`pi_plugin.h` 为总入口） |
+| `include/piplugin/` | 公共头文件（完整框架 API，`pi_plugin.h` 为总入口；C++ 糖在可选的 `pi_cpp.h`，**不**包含在总入口里） |
 | `src/` | 框架核心 C 实现（`pi_plugin_host.c`、`pi_plugin_unknown.c`） |
 | `src/piplugin/` | 核心库 CMake 工程 + CMake package config |
 | `adapters/` | UI 适配器套件（`qt/`、`imgui/`） |

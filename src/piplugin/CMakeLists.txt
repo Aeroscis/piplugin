@@ -47,6 +47,7 @@ set(SRC_FILE_LIST
 set(HEADER_FILE_LIST
     ../../include/piplugin/pi_plugin.h
     ../../include/piplugin/pi_plugin_base.h
+    ../../include/piplugin/pi_cpp.h
     ../../include/piplugin/pi_plugin_factory.h
     ../../include/piplugin/pi_plugin_host.h
     ../../include/piplugin/pi_plugin_host_services.h

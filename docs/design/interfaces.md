@@ -1,7 +1,8 @@
 # 接口参考（Interface Reference）
 
 > 本文档描述框架公开的全部接口、帮助函数与数据类型。
-> 完整定义见 `include/piplugin/*.h`；`pi_plugin.h` 是总入口，包含所有头文件。
+> 完整定义见 `include/piplugin/*.h`；`pi_plugin.h` 是 C 总入口，包含全部 C 头文件
+> （C++ 语法糖 `pi_cpp.h` 是可选头，见 §7，不在总入口里）。
 
 ## 1. 数据类型（pi_plugin_types.h）
 
@@ -568,3 +569,30 @@ pi_host_services_create_ex(&MessageProc, NULL, window,
 | Qt 套件 `pi_qt_view_post` | 任意线程可调，marshal 到 Qt 线程 |
 | `pi_host_post_message` | 任意插件线程可调（宿主负责 marshal） |
 | 引用计数 | 原子操作，任何线程安全 |
+
+## 7. C++ RAII 层（可选，pi_cpp.h）
+
+`pi_cpp.h` 是给 C++ 宿主/插件作者的语法糖，**不属于 C ABI**：它没有导出符号、
+没有新增调用约定，只是包装既有 inline 帮助函数的模板。它**不**被 `pi_plugin.h`
+包含（C 总入口保持纯 C），要用就显式 `#include "piplugin/pi_cpp.h"`。
+
+| 名字 | 作用 |
+|---|---|
+| `PiPtr<T>` | 持有接口指针的 RAII 句柄：析构 release、移动语义、拷贝被删除 |
+| `PiPtr<T>::add_ref(p)` | 给**借用**指针加一份引用，返回句柄 |
+| `PiPtr<T>::qi_to<U>()` | 按 `PiIidOf<U>` 的 IID 做 QI；失败返回空句柄（不抛异常） |
+| `PiPtr<T>::put()` | 交给 C API 写出的出参地址（COM 的 receive 语义） |
+| `PiPtr<T>::detach()` | 交回引用，调用方负责 release |
+| `PiIidOf<T>` | 接口类型 → 框架 IID 的映射；自定义接口在自己头文件里补特化 |
+| `PiUniqueModule` | RAII `pi_module_unload`；`load(path, m)` + `factory()` |
+| `pi_cpp_destroy<T>` | `pi_refcounted_init_with_destroy` 用的析构 thunk（跑 C++ 析构） |
+
+**所有权语义（与 2.3 的冻结约定一一对应）**：`PiPtr<T>` 的构造函数**接管**
+（adopt）一个已有引用，不额外 AddRef —— 因为框架"返回接口指针"一律已经
+AddRef 过（QI / factory / create_instance / get_view / create_default）。反过来
+（构造函数再 AddRef）会让每个调用点都要补一次手工 release，那正是这层要消灭的
+错误。借用指针（descriptor、native window）**禁止**包进 `PiPtr`。
+
+用法示例见 `docs/tutorial/write-plugin.md` §5 与 `docs/tutorial/write-host.md` §9；
+行为与泄漏断言见 `tests/unit_cpp`（MSVC Debug 下用 `_CrtDumpMemoryLeaks()` 判定
+"有没有泄漏"，因此"无泄漏"是一个可断言的退出码，而不是一句保证）。

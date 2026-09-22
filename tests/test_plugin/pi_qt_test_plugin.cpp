@@ -135,7 +135,7 @@ const IPiPluginBaseVtbl QtPlugin::s_base_vtbl = {
     &QtPlugin::Init, &QtPlugin::Term, &QtPlugin::GetView
 };
 
-QtPlugin::QtPlugin() : m_host(NULL), m_hostUI(NULL), m_view(NULL)
+QtPlugin::QtPlugin() : m_view(NULL)
 {
     pi_refcounted_init_with_destroy(&m_base,
                                     (const IPiUnknownVtbl*)&s_base_vtbl,
@@ -144,8 +144,8 @@ QtPlugin::QtPlugin() : m_host(NULL), m_hostUI(NULL), m_view(NULL)
 
 QtPlugin::~QtPlugin()
 {
-    if (m_hostUI)   { pi_iunknown_release((IPiUnknown*)m_hostUI);   m_hostUI = NULL; }
-    if (m_host)     { pi_iunknown_release((IPiUnknown*)m_host);     m_host = NULL; }
+    /* 没有一行 release：m_host / m_hostUI 是 PiPtr（C++ RAII 层，pi_cpp.h），
+     * 析构顺序自动把这两个接口引用放掉。 */
 }
 
 PiResult QtPlugin::Initialize(IPiHostServices* host)
@@ -157,33 +157,31 @@ PiResult QtPlugin::Initialize(IPiHostServices* host)
     if (m_host) return PI_OK;
 
     if (host) {
-        m_host = host;
-        pi_iunknown_add_ref((IPiUnknown*)host);
+        /* 入参 host 是**借用**（冻结约定 2.3：create_instance 不为它 add-ref），
+         * 插件要留住就必须自己加一次引用 —— PiPtr::add_ref() 表达的正是这件事。 */
+        m_host = PiPtr<IPiHostServices>::add_ref(host);
 
         /* Discover whether this is a GUI host. A headless host (task
-         * server) returns PI_E_NOINTERFACE and we simply skip UI. */
-        IPiHostUI* ui = NULL;
-        if (PI_SUCCEEDED(pi_iunknown_query_interface((IPiUnknown*)host,
-                                                     &PI_IID_HOST_UI, (void**)&ui))) {
-            m_hostUI = ui;
-        }
+         * server) returns PI_E_NOINTERFACE and we simply skip UI.
+         * qi_to<T>() 用 PiIidOf<T> 里的框架 IID；查询失败时返回空句柄，
+         * 所以"宿主是不是 GUI 宿主"这一个判断就是句柄的真假。 */
+        m_hostUI = m_host.qi_to<IPiHostUI>();
 
         /* 通道 B（roadmap APP-01）：宿主可以挂 app 自定义服务，插件侧只是对
          * 同一个宿主对象 QI 一次 —— 没有任何新 API，也没有新 vtbl。
          * 宿主没提供时 QI 失败，我们照常运行（对应 descriptor 里声明 OPTIONAL），
-         * 这正是"插件对宿主能力做运行时协商"的另一半。 */
-        IPiTestHostService* svc = NULL;
-        if (PI_SUCCEEDED(pi_iunknown_query_interface((IPiUnknown*)host,
-                                                     &PI_TEST_IID_HOST_SERVICE,
-                                                     (void**)&svc))) {
+         * 这正是"插件对宿主能力做运行时协商"的另一半。
+         * 自定义接口没有 PiIidOf 特化，所以这里显式给 IID。 */
+        PiPtr<IPiTestHostService> svc =
+            m_host.qi_to<IPiTestHostService>(PI_TEST_IID_HOST_SERVICE);
+        if (svc) {
             /* 先告诉宿主"我找到你的服务了"，再问它一共收到过几条插件消息：
              * 这个值只有宿主知道，所以打印出来就等于证明 QI + 调用都通了。 */
-            pi_host_post_message(host, PI_TEST_MSG_HOST_SERVICE, 1u, 0);
+            pi_host_post_message(m_host.get(), PI_TEST_MSG_HOST_SERVICE, 1u, 0);
             printf("[qt plugin] host-provided service: host=%s, "
                    "the host has seen %u plugin message(s)\n",
-                   pi_test_host_service_name(svc),
-                   (unsigned)pi_test_host_service_messages_seen(svc));
-            pi_iunknown_release((IPiUnknown*)svc);   /* QI 返回的是 add-ref 过的 */
+                   pi_test_host_service_name(svc.get()),
+                   (unsigned)pi_test_host_service_messages_seen(svc.get()));
         } else {
             printf("[qt plugin] host provides no app-defined service "
                    "(framework services only)\n");
@@ -235,7 +233,7 @@ QWidget* QtPlugin::CreateUi(void* user_data)
     QObject::connect(slider, &QSlider::valueChanged, [me, label](int v) {
         label->setText(QString::fromUtf8("Qt Plugin - Value: %1").arg(v));
         if (me->m_host)
-            pi_host_post_message(me->m_host, 0x1000, (uintptr_t)v, 0);
+            pi_host_post_message(me->m_host.get(), 0x1000, (uintptr_t)v, 0);
     });
     layout->addWidget(slider);
 
@@ -267,7 +265,7 @@ QWidget* QtPlugin::CreateUi(void* user_data)
      * was painted once and then froze". */
     QObject::connect(heartbeatTimer, &QTimer::timeout, [me, heartbeatTick]() {
         if (me->m_host && (*heartbeatTick % 25) == 0)
-            pi_host_post_message(me->m_host, 0x2000, (uintptr_t)*heartbeatTick, 0);
+            pi_host_post_message(me->m_host.get(), 0x2000, (uintptr_t)*heartbeatTick, 0);
     });
 
     return w;

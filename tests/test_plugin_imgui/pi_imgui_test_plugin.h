@@ -10,9 +10,10 @@
 #define PI_IMGUI_TEST_PLUGIN_H
 
 #include "piplugin/pi_plugin.h"
-
-template <typename T>
-void pi_cpp_destroy(void* self_ptr) { delete static_cast<T*>(self_ptr); }
+/* C++ RAII 层（可选头）：PiPtr 管住宿主与服务接口，pi_cpp_destroy 提供
+ * PiRefCountedBase 需要的析构 thunk。本文件此前自带一份 pi_cpp_destroy，
+ * 现在框架头里有了，就不再各写一份。 */
+#include "piplugin/pi_cpp.h"
 
 class ImGuiPlugin {
 public:
@@ -41,8 +42,8 @@ private:
     PiRefCountedBase m_base;          /* MUST be first data member */
     static const IPiPluginBaseVtbl s_base_vtbl;
 
-    IPiHostServices*  m_host;         /* add-ref'd */
-    IPiHostUI*        m_hostUI;       /* add-ref'd, NULL on headless host */
+    PiPtr<IPiHostServices> m_host;    /* 借用入参 -> 自己 add-ref，析构自动 release */
+    PiPtr<IPiHostUI>       m_hostUI;  /* headless 宿主上为空句柄 */
 };
 
 class ImGuiPluginFactory {
