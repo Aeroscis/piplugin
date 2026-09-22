@@ -50,6 +50,8 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/host_kits)
 # tests path
 option(PI_BUILD_TESTS "Build test hosts and plugins" ON)
 if(PI_BUILD_TESTS AND DEFINED GLOBAL_PROJECT_TESTS_PATH)
+    # ctest 入口（roadmap BLK-06）：必须在顶级目录调用，测试才被 ctest 收集到
+    enable_testing()
     add_subdirectory(${GLOBAL_PROJECT_TESTS_PATH})
 endif()
 

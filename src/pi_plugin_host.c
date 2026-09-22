@@ -182,8 +182,8 @@ static void* PI_CALL pi_default_host_alloc(void* self_ptr, size_t size);
 static void PI_CALL pi_default_host_free(void* self_ptr, void* ptr);
 static void PI_CALL pi_default_host_post(void* self_ptr, uint32_t msg,
                                           uintptr_t wparam, intptr_t lparam);
-static PiNativeWindow PI_CALL pi_default_host_parent_window(void* self_ptr);
-static uint64_t PI_CALL pi_default_host_thread_id(void* self_ptr);
+static PiNativeWindow PI_CALL pi_default_host_ui_parent_window(void* self_ptr);
+static uint64_t PI_CALL pi_default_host_ui_thread_id(void* self_ptr);
 
 static PiResult PI_CALL pi_default_host_ui_qi(void* self_ptr, const PiGuid* iid, void** out);
 static uint32_t PI_CALL pi_default_host_ui_add_ref(void* self_ptr);
@@ -199,8 +199,8 @@ static const IPiHostServicesVtbl s_default_host_services_vtbl = {
 
 static const IPiHostUIVtbl s_default_host_ui_vtbl = {
     { &pi_default_host_ui_qi, &pi_default_host_ui_add_ref, &pi_default_host_ui_release },
-    &pi_default_host_parent_window,
-    &pi_default_host_thread_id
+    &pi_default_host_ui_parent_window,
+    &pi_default_host_ui_thread_id
 };
 
 static PiResult PI_CALL pi_default_host_qi(void* self_ptr, const PiGuid* iid, void** out)
@@ -291,16 +291,26 @@ static void PI_CALL pi_default_host_post(void* self_ptr, uint32_t msg,
         me->post_message(me->user_data, msg, wparam, lparam);
 }
 
-static PiNativeWindow PI_CALL pi_default_host_parent_window(void* self_ptr)
+/* 这两个槽位是从 **PiDefaultHostUI 包装对象**上调用的：IPiHostUI 的接口指针
+ * 就是那个包装（它的 vtbl 是本表），所以必须先取回 owner 再读宿主状态。
+ *
+ * 历史缺陷（由 tests/unit 的单测发现）：这里曾把 self_ptr 直接当作
+ * PiDefaultHost*，于是 ui_window / ui_thread_id 会按 PiDefaultHost 的偏移
+ * (40 / 48) 去读一个只有 32 字节的 PiDefaultHostUI 分配 —— 越界读，且返回给
+ * 插件的是垃圾句柄/垃圾线程 id。修法是走 owner；因为包装持有 owner 的引用，
+ * 这里读到的是活值（pi_host_default_set_ui_window 之后立刻生效）。 */
+static PiNativeWindow PI_CALL pi_default_host_ui_parent_window(void* self_ptr)
 {
-    PiDefaultHost* me = (PiDefaultHost*)self_ptr;
-    return me->ui_window;
+    PiDefaultHostUI* me = (PiDefaultHostUI*)self_ptr;
+    if (!me->owner) return PI_INVALID_WINDOW;
+    return me->owner->ui_window;
 }
 
-static uint64_t PI_CALL pi_default_host_thread_id(void* self_ptr)
+static uint64_t PI_CALL pi_default_host_ui_thread_id(void* self_ptr)
 {
-    PiDefaultHost* me = (PiDefaultHost*)self_ptr;
-    return me->ui_thread_id;
+    PiDefaultHostUI* me = (PiDefaultHostUI*)self_ptr;
+    if (!me->owner) return 0;
+    return me->owner->ui_thread_id;
 }
 
 static void pi_default_host_destroy(void* self_ptr)

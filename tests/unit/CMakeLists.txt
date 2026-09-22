@@ -1,9 +1,11 @@
-# ./tests/test_headless_host/CMakeLists.txt
+# ./tests/unit/CMakeLists.txt
+#
+# 核心回归单测（roadmap BLK-06）：裸 C，无第三方测试框架，由 ctest 注册。
 cmake_minimum_required(VERSION 3.23)
 
 # target name
-set(TARGET_NAME pi_test_host_headless)
-pi_tar_msg(STATUS ${TARGET_NAME} "building headless (console) test host...")
+set(TARGET_NAME pi_unit_tests)
+pi_tar_msg(STATUS ${TARGET_NAME} "building unit tests...")
 
 # version infos
 set(PRODUCT_VERSION_MAJOR 1)
@@ -21,14 +23,14 @@ set(FILE_VERSION_COMMA "${FILE_VERSION_MAJOR},${FILE_VERSION_MINOR},${FILE_VERSI
 set(FILE_VERSION_STRING "${FILE_VERSION_MAJOR}.${FILE_VERSION_MINOR}.${FILE_VERSION_PATCH}.${FILE_VERSION_TWEAK}")
 
 set(COMPANY_NAME "pipluginframework")
-set(FILE_DESCRIPTION "headless console test host for pi plugin framework")
+set(FILE_DESCRIPTION "unit tests for the pi plugin framework core")
 set(LEGAL_COPY_RIGHT "Copyright (c) 2025 pipluginframework")
 set(PRODUCT_NAME "${TARGET_NAME}")
 set(ORIGIN_FILE_NAME "${TARGET_NAME}.exe")#info for windows only
 
-# source files（纯 C，链接框架核心 + 宿主 kit L0）
+# source files（纯 C，仅依赖框架核心）
 set(SRC_FILE_LIST
-    pi_headless_host.c
+    pi_unit_tests.c
     )
 set(TARGET_SRC_FILE_LIST
     ${SRC_FILE_LIST}
@@ -39,21 +41,14 @@ add_executable(${TARGET_NAME})
 target_sources(${TARGET_NAME}
     PRIVATE
         ${TARGET_SRC_FILE_LIST}
-)
-
-# 宿主 kit L0（加载/门禁/实例化/七步卸载序列）缺失则禁用本宿主
-if(NOT TARGET pipluginframework_host)
-    message(WARNING "host kit L0 (pipluginframework_host) not built -> ${TARGET_NAME} DISABLED")
-    message(WARNING "  enable -o PI_BUILD_HOST_KITS=True -o PI_BUILD_HOST_KIT_CORE=True")
-    return()
-endif()
+    )
 
 # first party
 target_link_libraries(${TARGET_NAME} PRIVATE pipluginframework)
-# 宿主侧 kit L0（宿主 kit；STATIC）
-target_link_libraries(${TARGET_NAME} PRIVATE pipluginframework_host)
 
-# ------- 部署到开发目录 bin/<CONFIG>（POST_BUILD：构建即就绪，不依赖 install 阶段） -------------
+# ------- 部署到开发目录 bin/<CONFIG>（POST_BUILD：构建即就绪） -------------
+# 核心是 SHARED，可执行文件必须与 pipluginframework*.dll 同目录才能启动；
+# ctest 运行的是部署后的副本（见下面的 add_test）。
 add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -62,13 +57,11 @@ add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
     COMMENT "Deploy ${TARGET_NAME} -> ${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
 )
 
-# ------- ctest 注册：headless 冒烟测试（严格按退出码判定） -------------
-# 用部署目录里的插件文件名（与可执行文件同目录，Qt 运行时 DLL 也在那里），
-# 所以工作目录必须是部署目录。插件关掉时该用例不注册。
-if(TARGET pi_test_plugin_qt)
-    add_test(NAME headless_host_smoke
-        COMMAND "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}/${TARGET_NAME}.exe" "pi_test_plugin_qt.dll"
-        WORKING_DIRECTORY "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
-        )
-    set_tests_properties(headless_host_smoke PROPERTIES TIMEOUT 120)
-endif()
+# ------- ctest 注册 -------------
+# 只按退出码判定（0 = 全过），刻意不加 PASS_REGULAR_EXPRESSION —— 设了它
+# ctest 就不再检查退出码，反而更松。
+add_test(NAME unit
+    COMMAND "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}/${TARGET_NAME}.exe"
+    WORKING_DIRECTORY "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
+    )
+set_tests_properties(unit PROPERTIES TIMEOUT 120)

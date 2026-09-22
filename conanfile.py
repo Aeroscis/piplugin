@@ -60,6 +60,7 @@ class PiPluginFrameworkConan(ConanFile):
         "PI_BUILD_HOST_KIT_DX11": [True, False],  # 分开关：L1 DX11 嵌入胶水（Windows）
         # tests（测试件，默认全开；conan create 打包时建议 -o PI_BUILD_TESTS=False）
         "PI_BUILD_TESTS": [True, False],          # 总开关
+        "PI_BUILD_UNIT_TESTS": [True, False],     # 核心回归单测（ctest 的 unit 用例）
         "PI_BUILD_TEST_HOST": [True, False],      # imgui 测试宿主（依赖 imgui）
         "PI_BUILD_TEST_HOST_QT": [True, False],   # qt 测试宿主（依赖 Qt5 + imgui adapter kit）
         "PI_BUILD_HEADLESS_HOST": [True, False],  # headless 测试宿主（仅依赖核心）
@@ -77,6 +78,7 @@ class PiPluginFrameworkConan(ConanFile):
         "PI_BUILD_HOST_KIT_QT": True,
         "PI_BUILD_HOST_KIT_DX11": True,
         "PI_BUILD_TESTS": True,
+        "PI_BUILD_UNIT_TESTS": True,
         "PI_BUILD_TEST_HOST": True,
         "PI_BUILD_TEST_HOST_QT": True,
         "PI_BUILD_HEADLESS_HOST": True,

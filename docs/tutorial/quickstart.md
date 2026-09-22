@@ -84,9 +84,24 @@ Qt 窗口内嵌入**imgui 插件**——演示"宿主与插件 UI 工具包不�
 
 ## 4. 自动化验证
 
-手工点击之外，宿主自带两种无人值守的验证方式，改完代码后建议都跑一遍。
+手工点击之外，仓库自带几种无人值守的验证方式，改完代码后建议都跑一遍。
 
-### 4.1 插件生命周期自测（`--cycles`）
+### 4.1 核心回归（`ctest`）
+
+一条命令跑完核心单元测试与 headless 冒烟测试：
+
+```bash
+ctest --test-dir build -C Debug --output-on-failure
+```
+
+| 用例 | 内容 |
+|---|---|
+| `unit` | `pi_guid_equal`、descriptor 帮助函数、`PiRefCountedBase` 引用计数与 destroy 回调、`pi_module_load` 失败路径、默认宿主服务的 headless / GUI 两形态 |
+| `headless_host_smoke` | headless 宿主加载真实插件跑完整个生命周期 |
+
+两个用例都**只按退出码判定**（0 = 通过），失败细节靠 `--output-on-failure` 打印。
+
+### 4.2 插件生命周期自测（`--cycles`）
 
 ```bash
 cd bin/Debug
@@ -94,15 +109,18 @@ pi_test_host_imgui.exe --cycles 3 --plugin pi_test_plugin_qt.dll --idle-frames 1
 echo %errorlevel%        # 0 = PASS
 ```
 
-跑真实的 load → attach → idle 帧 → detach → release → unload 循环，
+跑真实的 load → attach → idle 帧 → 尺寸往返 → detach → release → unload 循环，
 用真实渲染循环驱动（能暴露 Qt 控件析构与模块卸载竞态这类只在事件循环转起来后才出现的崩溃）。
-日志末尾会出现 `selftest: PASS (3 cycles)`。也可封装为：
+`--plugin` 接受逗号分隔的列表，逐个插件都跑完整轮回。日志末尾会出现
+`selftest: PASS (N plugin(s) x M cycles)`。也可封装为（默认就跑两个官方插件）：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\run_selftest.ps1 -Cycles 3
 ```
 
-### 4.2 截图证明（`--screenshot`）
+这就是 roadmap 里的 conformance harness，详见 `docs/design/conformance.md`。
+
+### 4.3 截图证明（`--screenshot`）
 
 ```bash
 pi_test_host_imgui.exe pi_test_plugin_qt.dll --screenshot shot.bmp
@@ -111,7 +129,7 @@ pi_test_host_imgui.exe pi_test_plugin_qt.dll --screenshot shot.bmp
 加载插件、渲染若干帧后把**合成后的窗口**截成 bmp 并退出，
 用于自动证明"嵌入的插件确实盖在 D3D 帧之上可见"。
 
-### 4.3 缩放回归（`scripts/verify_resize_fix.ps1`）
+### 4.4 缩放回归（`scripts/verify_resize_fix.ps1`）
 
 程序化 `SetWindowPos` 分步放大/缩小 + `PrintWindow` 截图 + 像素扫描，
 断言面板与插件区的几何在多轮缩放后保持不变：
