@@ -67,7 +67,11 @@ if(WIN32)
     target_link_libraries(${TARGET_NAME} PRIVATE d3d11 dxgi d3dcompiler)
 endif()
 
-# ------- 安装到构建目录（<root>/bin/<CONFIG>） -------------
-install(TARGETS ${TARGET_NAME}
-    RUNTIME DESTINATION ${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}
+# ------- 部署到开发目录 bin/<CONFIG>（POST_BUILD：构建即就绪，不依赖 install 阶段；详见 src/pipluginframework/CMakeLists.txt 的说明） -------------
+add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "$<TARGET_FILE:${TARGET_NAME}>"
+        "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
+    COMMENT "Deploy ${TARGET_NAME} -> ${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
 )

@@ -146,9 +146,19 @@ install(TARGETS ${TARGET_NAME}
     FILE_SET HEADERS DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 
-# ------- 安装 dll 到 bin（<root>/bin/<CONFIG>，供可执行程序同目录运行；.lib 已随构建产出在 lib/） -------------
-install(TARGETS ${TARGET_NAME}
-    RUNTIME DESTINATION ${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}
+# ------- 部署 dll 到开发目录 bin/<CONFIG>（供可执行程序同目录运行；.lib 已随构建产出在 lib/） -------------
+# 用 POST_BUILD 而非绝对安装目标：构建该 target 即刷新 bin/<CONFIG>，不依赖 install 链，
+# 也不会在 install 阶段被前面（如 ${CMAKE_INSTALL_PREFIX}/lib/...）的失败连带跳过。
+# 注意 1：$<TARGET_PDB_FILE> 在 Release/RelWithDebInfo 下为空，必须用 $<IF:> 包一层，
+#         否则 cmake -E copy 会因源文件不存在而让整个构建失败（MSB3073）。
+# 注意 2：目标目录可能尚不存在，file(INSTALL) 与 copy 都不会递归建目录，故先 make_directory。
+add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "$<TARGET_FILE:${TARGET_NAME}>"
+        "$<IF:$<CONFIG:Debug>,$<TARGET_PDB_FILE:${TARGET_NAME}>,>"
+        "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
+    COMMENT "Deploy ${TARGET_NAME} -> ${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
 )
 
 # ------- 生成并导出 CMake targets 文件 -------

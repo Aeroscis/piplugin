@@ -86,9 +86,13 @@ add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
     COMMENT "Deploying Qt runtime DLLs"
 )
 
-# ------- 安装到 bin（<root>/bin/<CONFIG>） -------------
-install(TARGETS ${TARGET_NAME}
-    RUNTIME DESTINATION ${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}
+# ------- 部署到开发目录 bin/<CONFIG>（POST_BUILD：构建即就绪，不依赖 install 阶段） -------------
+add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "$<TARGET_FILE:${TARGET_NAME}>"
+        "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
+    COMMENT "Deploy ${TARGET_NAME} -> ${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
 )
 # Qt 运行时 DLL 与平台插件一并安装，保证安装后可直接运行
 install(FILES

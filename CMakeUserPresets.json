@@ -5,5 +5,31 @@
     },
     "include": [
         "build\\generators\\CMakePresets.json"
+    ],
+    "configurePresets": [
+        {
+            "name": "conan-default-local",
+            "displayName": "'conan-default' + 仓库内安装前缀",
+            "description": "默认安装前缀是 C:/Program Files/pipluginframework（无提权必然失败），此预设把它固定到 build/install",
+            "inherits": "conan-default",
+            "cacheVariables": {
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/build/install"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "conan-debug-local",
+            "configurePreset": "conan-default-local",
+            "configuration": "Debug",
+            "jobs": 16
+        }
+    ],
+    "testPresets": [
+        {
+            "name": "conan-debug-local",
+            "configurePreset": "conan-default-local",
+            "configuration": "Debug"
+        }
     ]
 }
