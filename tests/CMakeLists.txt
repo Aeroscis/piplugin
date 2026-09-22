@@ -1,5 +1,10 @@
 # ./tests/CMakeLists.txt
 
+# 测试共用头目录：宿主与插件两侧都要用到同一份"app 自定义宿主服务"定义
+# （同一 128 位 IID + 同一 vtbl 布局），故集中放 tests/common/，由下面的
+# 子目录各自加进 include 路径。
+set(PI_TESTS_COMMON_DIR "${CMAKE_CURRENT_SOURCE_DIR}/common")
+
 #------------------------- build option-------------------------
 option(PI_BUILD_UNIT_TESTS "Build the core unit tests (ctest target 'unit')" ON)      # 依赖: framework core
 option(PI_BUILD_TEST_PLUGIN "Build the Qt-based test plugin" ON)                   # 依赖: Qt5 framework qt adapter

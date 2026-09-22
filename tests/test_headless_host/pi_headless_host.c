@@ -10,6 +10,10 @@
  *   2. A plugin running headless (its QueryInterface for IPiHostUI fails,
  *      so it creates no UI and advertises no view)
  *   3. IPiService discovery for future server-side plugins
+ *   4. 通道 B / roadmap APP-01: the host exposes a service of its OWN through
+ *      pi_host_services_create_ex()'s extra-QI hook, and a plugin that knows
+ *      about it queries the host object and calls it (tests/common/
+ *      pi_test_host_service.h). Plugins that do not know it are unaffected.
  *
  * 宿主侧机制（加载 / 双向能力门禁 / 实例化 / 七步卸载序列）全部来自宿主 kit L0
  * （piplugin_host）；本文件只剩"这一台宿主想展示什么"。
@@ -18,6 +22,7 @@
  */
 #include "piplugin/pi_plugin.h"
 #include "pi_host_session.h"
+#include "pi_test_host_service_impl.h"
 
 #include <stdio.h>
 
@@ -27,10 +32,16 @@
 #  include <time.h>   /* nanosleep 用到的 struct timespec */
 #endif
 
+/* 宿主侧状态：插件消息计数。本函数之外没人知道这个值 —— 插件要读出它，只能
+ * 走宿主自定义服务（这正是 ctest 断言"自定义服务真的被调用过"的依据）。 */
+static uint32_t              g_pluginMessages = 0;
+static PiTestHostServiceImpl g_extraService;
+
 static void HostMessageProc(void* user_data, uint32_t msg,
                             uintptr_t wparam, intptr_t lparam)
 {
     (void)user_data; (void)lparam;
+    ++g_pluginMessages;
     printf("[plugin message] msg=0x%04X wparam=%llu\n", msg, (unsigned long long)wparam);
 }
 
@@ -54,20 +65,36 @@ int main(int argc, char** argv)
     printf("== piplugin headless host ==\n");
     printf("Loading plugin: %s\n\n", dllPath);
 
+    /* 通道 B（APP-01）：宿主把自己的服务挂到宿主对象上。create_ex 的 extra_qi
+     * 钩子只负责"框架 IID 之外的 QI"；插件侧完全不新增 API，它只是对自己
+     * 拿到的那个宿主对象 QI 一次（见 tests/common/pi_test_host_service.h）。 */
+    PiTestHostServiceImpl_Init(&g_extraService, "headless-test-host", &g_pluginMessages);
+
     /* Headless host services: NO window -> IPiHostUI is not exposed. */
     IPiHostServices* host = NULL;
-    if (PI_FAILED(pi_host_services_create_default(&HostMessageProc, NULL,
-                                                  PI_INVALID_WINDOW, &host))) {
+    if (PI_FAILED(pi_host_services_create_ex(&HostMessageProc, NULL,
+                                             PI_INVALID_WINDOW,
+                                             &PiTestHostServiceImpl_ExtraQi, &g_extraService,
+                                             &host))) {
         printf("FATAL: cannot create host services\n");
         return 1;
     }
 
-    /* Prove we are headless */
-    void* probe = NULL;
-    PiResult qhr = pi_iunknown_query_interface((IPiUnknown*)host, &PI_IID_HOST_UI, &probe);
-    printf("Host exposes IPiHostUI? %s (hr=%d)\n\n",
-           PI_SUCCEEDED(qhr) ? "yes" : "no", (int)qhr);
-    if (PI_SUCCEEDED(qhr)) pi_iunknown_release((IPiUnknown*)probe);
+    /* Prove we are headless, and prove the app-defined service is there. */
+    {
+        void* probe = NULL;
+        PiResult qhr = pi_iunknown_query_interface((IPiUnknown*)host, &PI_IID_HOST_UI, &probe);
+        printf("Host exposes IPiHostUI? %s (hr=%d)\n",
+               PI_SUCCEEDED(qhr) ? "yes" : "no", (int)qhr);
+        if (PI_SUCCEEDED(qhr)) pi_iunknown_release((IPiUnknown*)probe);
+
+        probe = NULL;
+        qhr = pi_iunknown_query_interface((IPiUnknown*)host,
+                                          &PI_TEST_IID_HOST_SERVICE, &probe);
+        printf("Host exposes its own (app-defined) service? %s (hr=%d)\n\n",
+               PI_SUCCEEDED(qhr) ? "yes" : "no", (int)qhr);
+        if (PI_SUCCEEDED(qhr)) pi_iunknown_release((IPiUnknown*)probe);
+    }
 
     /* 宿主 kit L0：会话对象负责加载、门禁与卸载序列 */
     PiPluginHostSession* session = NULL;
@@ -169,6 +196,14 @@ int main(int argc, char** argv)
     pi_host_session_unload(session, slot);
     pi_host_session_destroy(session);        /* 释放 session 持有的宿主服务引用 */
     pi_iunknown_release((IPiUnknown*)host);  /* 释放宿主自己那一份引用 */
+
+    /* APP-01 的证据行：name() 只可能被插件经宿主自定义服务调到 —— 本宿主
+     * 自己的探测只做 QI（不调方法），所以这个计数非 0 就等于"插件 QI 到了
+     * 宿主自定义服务并成功调用了它"。tests/test_headless_host/CMakeLists.txt
+     * 里的 ctest 用例就断言这一行（格式刻意不含括号，便于按正则断言）。 */
+    printf("[host] app-defined host service: %u call(s) reached it from plugins\n",
+           g_extraService.name_calls);
+
     printf("Done. No leaks, no GUI, no crash.\n");
     return 0;
 }

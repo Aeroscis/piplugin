@@ -1,5 +1,6 @@
 #include "pi_qt_test_plugin.h"
 #include "pi_qt_view.h"
+#include "pi_test_host_service.h"
 
 #include <QWidget>
 #include <QSlider>
@@ -149,6 +150,12 @@ QtPlugin::~QtPlugin()
 
 PiResult QtPlugin::Initialize(IPiHostServices* host)
 {
+    /* 幂等：宿主会在 create_instance 之后再调一次 pi_initialize（框架的便捷
+     * 加载 pi_host_create_plugin 与宿主 kit L0 都是这个顺序），而本工厂的
+     * CreateInstance 里也已经初始化过。没有这道闸，同一个宿主指针会被 add-ref
+     * 两次，而 m_hostUI 会被第二次 QI 的新包装覆盖 —— 旧包装就泄漏了。 */
+    if (m_host) return PI_OK;
+
     if (host) {
         m_host = host;
         pi_iunknown_add_ref((IPiUnknown*)host);
@@ -159,6 +166,27 @@ PiResult QtPlugin::Initialize(IPiHostServices* host)
         if (PI_SUCCEEDED(pi_iunknown_query_interface((IPiUnknown*)host,
                                                      &PI_IID_HOST_UI, (void**)&ui))) {
             m_hostUI = ui;
+        }
+
+        /* 通道 B（roadmap APP-01）：宿主可以挂 app 自定义服务，插件侧只是对
+         * 同一个宿主对象 QI 一次 —— 没有任何新 API，也没有新 vtbl。
+         * 宿主没提供时 QI 失败，我们照常运行（对应 descriptor 里声明 OPTIONAL），
+         * 这正是"插件对宿主能力做运行时协商"的另一半。 */
+        IPiTestHostService* svc = NULL;
+        if (PI_SUCCEEDED(pi_iunknown_query_interface((IPiUnknown*)host,
+                                                     &PI_TEST_IID_HOST_SERVICE,
+                                                     (void**)&svc))) {
+            /* 先告诉宿主"我找到你的服务了"，再问它一共收到过几条插件消息：
+             * 这个值只有宿主知道，所以打印出来就等于证明 QI + 调用都通了。 */
+            pi_host_post_message(host, PI_TEST_MSG_HOST_SERVICE, 1u, 0);
+            printf("[qt plugin] host-provided service: host=%s, "
+                   "the host has seen %u plugin message(s)\n",
+                   pi_test_host_service_name(svc),
+                   (unsigned)pi_test_host_service_messages_seen(svc));
+            pi_iunknown_release((IPiUnknown*)svc);   /* QI 返回的是 add-ref 过的 */
+        } else {
+            printf("[qt plugin] host provides no app-defined service "
+                   "(framework services only)\n");
         }
     }
     return PI_OK;

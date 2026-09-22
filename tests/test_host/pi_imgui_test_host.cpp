@@ -12,6 +12,7 @@
 #include "piplugin/pi_plugin.h"
 #include "pi_host_session.h"
 #include "pi_host_dx11.h"
+#include "pi_test_host_service_impl.h"
 
 #include "imgui.h"
 #include "imgui_impl_win32.h"
@@ -176,6 +177,10 @@ static unsigned g_screenshotAfter    = 45;   /* frames to settle first */
 #include <mutex>
 static std::mutex g_logMutex;
 static char       g_log[2048];
+/* 宿主自己的"收到多少条插件消息"计数，经 app 自定义宿主服务暴露给插件
+ * （通道 B / roadmap APP-01，见 tests/common/pi_test_host_service.h）。 */
+static uint32_t   g_pluginMessages = 0;
+static PiTestHostServiceImpl g_extraService;
 
 /* --------------------------------------------------------------------------
  * Forward declarations
@@ -259,6 +264,7 @@ static void HostMessageProc(void* user_data, uint32_t msg,
 {
     (void)user_data; (void)lparam;
     std::lock_guard<std::mutex> lock(g_logMutex);
+    ++g_pluginMessages;
     snprintf(g_lastMessage, sizeof(g_lastMessage), "msg=0x%04X wparam=%llu",
              msg, (unsigned long long)wparam);
     size_t len = strlen(g_log);
@@ -606,10 +612,17 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPSTR, _In
 
     /* Create the host services object. Because we pass a valid embed
      * window it exposes IPiHostUI; a headless host would pass
-     * PI_INVALID_WINDOW instead. */
-    if (PI_FAILED(pi_host_services_create_default(&HostMessageProc, NULL,
-                                                  (PiNativeWindow)g_embedContainer,
-                                                  &g_hostServices))) {
+     * PI_INVALID_WINDOW instead.
+     *
+     * create_ex (roadmap APP-01) additionally installs an extra-QI hook, so
+     * this host can offer its plugins a service of its own on top of the
+     * framework's. A host that needs none calls create_default() and the
+     * behaviour is identical. */
+    PiTestHostServiceImpl_Init(&g_extraService, "imgui-test-host", &g_pluginMessages);
+    if (PI_FAILED(pi_host_services_create_ex(&HostMessageProc, NULL,
+                                             (PiNativeWindow)g_embedContainer,
+                                             &PiTestHostServiceImpl_ExtraQi, &g_extraService,
+                                             &g_hostServices))) {
         g_hostServices = NULL;
     }
 
@@ -732,6 +745,9 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPSTR, _In
     LogStatus("exit: plugins=%d cycles/plugin=%d failed=%d aborted=%d done=%d",
               g_selfTestPluginCount, g_selfTestCycles,
               g_selfTestFailed ? 1 : 0, g_selfTestAborted ? 1 : 0, g_selfTestDone ? 1 : 0);
+    /* 通道 B（APP-01）证据行：name() 只会被"知道这个自定义服务的插件"调到。 */
+    LogStatus("[host] app-defined host service: %u call(s) reached it from plugins",
+              g_extraService.name_calls);
     if (g_selfTestCycles > 0)
         return (g_selfTestFailed || !g_selfTestDone) ? 2 : 0;
     return 0;

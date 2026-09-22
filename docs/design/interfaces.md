@@ -194,6 +194,27 @@ PiResult pi_host_services_create_default(
 void pi_host_default_set_ui_window(IPiHostServices* services, PiNativeWindow window);
 ```
 
+**可组合宿主服务（APP-01，通道 B）**：默认对象只认框架的 IID，app 无法把
+自己的服务递给插件。`create_ex` 多一个 extra-QI 钩子，框架 IID 之外的
+`QueryInterface` 全部转交宿主：
+
+```c
+/* 与 IPiUnknown::pi_query_interface 同契约：认领 -> PI_OK + 已 add-ref 的指针；
+ * 不认领 -> PI_E_NOINTERFACE + *out = NULL；其它失败码原样上抛。 */
+typedef PiResult (*PiHostExtraQiProc)(void* ctx, const PiGuid* iid, void** out);
+
+PiResult pi_host_services_create_ex(
+    PiHostMessageProc post_message, void* user_data,
+    PiNativeWindow ui_parent_window,
+    PiHostExtraQiProc extra_qi, void* extra_qi_ctx,   /* 传 NULL = 等价于 create_default */
+    IPiHostServices** out_services);
+```
+
+插件侧不需要任何新 API —— 它只是对自己拿到的宿主对象做一次普通 QI；宿主没有
+该服务就返回 `PI_E_NOINTERFACE`，插件照常运行。`IPiHostServices` 与（有窗口时的）
+`IPiHostUI` 由框架先答掉，不会转给钩子；headless 的 `IPiHostUI` 算未命中，钩子
+仍可认领。示例与完整契约见 `docs/tutorial/write-host.md` §8。
+
 ### 2.3 IPiPluginFactory（pi_plugin_factory.h）
 
 ```c
@@ -483,13 +504,37 @@ if (!pi_descriptor_provides(desc, &MY_APP_PROTOCOL_IID))
     return;   /* 拒绝：本生态要求插件实现该接口 */
 ```
 
-### 5.5 目前不能做的一件事
+### 5.5 反向通道：宿主把自己的服务提供给插件
 
-**反向通道（宿主把自己的自定义服务提供给插件）**：`PiDefaultHost` 封闭，只认框架
-内建的三个 IID，插件无法 QI 到 app 自定义的宿主服务。这是 roadmap 的 APP-01
-（可组合宿主服务 `pi_host_services_create_ex`），尚未落地。
+**已落地（APP-01）**。`PiDefaultHost` 仍然只实现框架的自己三个 IID，但
+`pi_host_services_create_ex()` 允许宿主再挂一个 extra-QI 钩子：框架 IID 之外的
+`QueryInterface` 全部转交给宿主，由宿主决定认领哪些 app 自定义 IID。
 
-框架 API 的版本协商已经落地（见 1.5）；app 自定义接口的版本演进方式见 5.7。
+```c
+static const PiGuid MY_SERVICE_IID = /* 随机 128 位 UUID，见 5.1 */;
+
+/* 与 QueryInterface 同契约：认领时 *out 必须是**已 add-ref** 的接口指针 */
+static PiResult MyExtraQi(void* ctx, const PiGuid* iid, void** out)
+{
+    if (pi_guid_equal(iid, &MY_SERVICE_IID)) {
+        *out = &((MyService*)ctx)->base;
+        pi_iunknown_add_ref((IPiUnknown*)*out);
+        return PI_OK;
+    }
+    *out = NULL;
+    return PI_E_NOINTERFACE;
+}
+
+pi_host_services_create_ex(&MessageProc, NULL, window,
+                           &MyExtraQi, &myService, &host);   /* NULL = 行为同 create_default */
+```
+
+插件侧**没有新 API**：对它 `pi_initialize()` 收到的那个宿主对象做一次普通的
+`pi_query_interface(host, &MY_SERVICE_IID, &out)` 即可；宿主没提供就得到
+`PI_E_NOINTERFACE`，插件按 `PI_CAP_OPTIONAL` 的约定照常运行。于是通道 B 与通道 A
+对称：一个是"宿主消费插件定义的接口"，一个是"插件消费宿主定义的服务"。
+
+框架 API 的版本协商见 1.5；app 自定义接口的版本演进方式见 5.7。
 
 ### 5.6 三条禁令
 

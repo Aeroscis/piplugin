@@ -46,8 +46,9 @@ target_sources(${TARGET_NAME}
         ${TARGET_SRC_FILE_LIST}
 )
 
-# self include（adapters/imgui/backends 头目录）
+# self include（adapters/imgui/backends 头目录）+ 测试共用头（app 自定义宿主服务）
 target_include_directories(${TARGET_NAME} PRIVATE ${IMGUI_BACKEND_DIR})
+target_include_directories(${TARGET_NAME} PRIVATE ${PI_TESTS_COMMON_DIR})
 
 # first party
 target_link_libraries(${TARGET_NAME} PRIVATE piplugin)

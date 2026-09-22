@@ -158,6 +158,10 @@ typedef struct PiRefCountedBase {
 
 - 宿主调用 `pi_host_services_create_default(post_message, user_data, ui_parent_window, &services)`
   创建对象；传入有效窗口则同时暴露 `IPiHostUI`，传 `PI_INVALID_WINDOW` 则保持 headless。
+- `pi_host_services_create_ex()` 在此基础上多一个 **extra-QI 钩子**（APP-01）：
+  框架 IID 之外的 `QueryInterface` 全部转交宿主，于是 app 可以把自己的服务
+  递给插件（通道 B），而插件侧仍然是普通的一次 `QueryInterface`。传 `NULL`
+  钩子时两条入口共用同一条实现路径，行为完全一致。
 - `IPiHostUI` 用独立的轻量 wrapper 对象（COM 身份规则：不同接口需要独立 vtbl 槽位）返回，
   wrapper 内部 AddRef 持有 owner，避免悬垂。
 - `pi_host_default_set_ui_window()` 允许宿主在运行时切换嵌入窗口 / 切回 headless。

@@ -1,5 +1,6 @@
 #include "pi_imgui_test_plugin.h"
 #include "pi_imgui_view.h"
+#include "pi_test_host_service.h"
 
 #include "imgui.h"
 #include <stdio.h>
@@ -93,6 +94,11 @@ ImGuiPlugin::~ImGuiPlugin()
 
 PiResult ImGuiPlugin::Initialize(IPiHostServices* host)
 {
+    /* 幂等：见 Qt 测试插件里同一处的说明 —— create_instance 里已经初始化过，
+     * 宿主随后还会调 pi_initialize，不设闸就会重复 add-ref 并漏掉一份
+     * IPiHostUI 包装引用。 */
+    if (m_host) return PI_OK;
+
     if (host) {
         m_host = host;
         pi_iunknown_add_ref((IPiUnknown*)host);
@@ -100,6 +106,23 @@ PiResult ImGuiPlugin::Initialize(IPiHostServices* host)
         if (PI_SUCCEEDED(pi_iunknown_query_interface((IPiUnknown*)host,
                                                      &PI_IID_HOST_UI, (void**)&ui))) {
             m_hostUI = ui;
+        }
+
+        /* 通道 B（roadmap APP-01），与 Qt 测试插件逐字同构：对宿主对象 QI
+         * 一次，拿到了就用，拿不到照常跑（descriptor 里该能力是 OPTIONAL）。 */
+        IPiTestHostService* svc = NULL;
+        if (PI_SUCCEEDED(pi_iunknown_query_interface((IPiUnknown*)host,
+                                                     &PI_TEST_IID_HOST_SERVICE,
+                                                     (void**)&svc))) {
+            pi_host_post_message(host, PI_TEST_MSG_HOST_SERVICE, 1u, 0);
+            printf("[imgui plugin] host-provided service: host=%s, "
+                   "the host has seen %u plugin message(s)\n",
+                   pi_test_host_service_name(svc),
+                   (unsigned)pi_test_host_service_messages_seen(svc));
+            pi_iunknown_release((IPiUnknown*)svc);
+        } else {
+            printf("[imgui plugin] host provides no app-defined service "
+                   "(framework services only)\n");
         }
     }
     return PI_OK;

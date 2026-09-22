@@ -39,8 +39,9 @@ target_sources(${TARGET_NAME}
         ${TARGET_SRC_FILE_LIST}
 )
 
-# self header
+# self header + 测试共用头（app 自定义宿主服务：插件侧 QI 它）
 target_include_directories(${TARGET_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(${TARGET_NAME} PRIVATE ${PI_TESTS_COMMON_DIR})
 
 # first party
 target_link_libraries(${TARGET_NAME} PRIVATE piplugin)

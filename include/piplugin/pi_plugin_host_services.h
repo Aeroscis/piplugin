@@ -134,6 +134,56 @@ PI_EXPORT PiResult pi_host_services_create_default(
 PI_EXPORT void pi_host_default_set_ui_window(IPiHostServices* services,
                                               PiNativeWindow window);
 
+/* --------------------------------------------------------------------------
+ * Composable host services (roadmap APP-01)
+ *
+ * The default host object answers the framework's own IIDs and nothing else,
+ * so an app could not offer its plugins a service of its own: the reverse of
+ * the plugin-defined-protocol channel. create_ex adds the missing half — the
+ * app installs an "extra QI" hook, and every IID the framework object does
+ * not recognise is forwarded to it.
+ *
+ * The plugin side needs no new API at all: it is an ordinary
+ * QueryInterface() on the very same host object it was handed, so a plugin
+ * that neither knows nor needs the app's service gets PI_E_NOINTERFACE and
+ * carries on (declare the capability PI_CAP_OPTIONAL to say so in the
+ * descriptor, exactly as PI_IID_HOST_UI does).
+ *
+ * The hook has the same contract as IPiUnknown::pi_query_interface:
+ *   - found it:  return PI_OK and store an ADD-REF'd interface pointer in *out;
+ *   - not mine:  return PI_E_NOINTERFACE and set *out = NULL; any other
+ *                failure code is passed through to the plugin unchanged
+ *                (so PI_E_OUTOFMEMORY from the app survives the trip);
+ *   - *out is pre-set to NULL by the framework before the hook runs, and is
+ *     forced back to NULL if the hook reports failure;
+ *   - returning PI_OK without writing *out is treated as "not mine" rather
+ *     than handing the plugin a NULL "success".
+ * The hook may be called from whatever thread the plugin queries from, so it
+ * must be thread-safe if plugins may query concurrently. IIDs this object
+ * answers itself (IPiHostServices always, IPiHostUI while it has a window)
+ * are answered first and never forwarded. A headless object's IPiHostUI is a
+ * miss like any other, so an app may supply its own — a remote or proxied UI
+ * service, for instance; the framework would rather let the app decide than
+ * hard-code that headless means "no UI service of any kind".
+ * -------------------------------------------------------------------------- */
+typedef PiResult (*PiHostExtraQiProc)(void* ctx, const PiGuid* iid, void** out);
+
+/* Same as pi_host_services_create_default(), plus `extra_qi`.
+ *
+ * Passing extra_qi == NULL is exactly equivalent to create_default(): the two
+ * entry points share one implementation, and the object created is the very
+ * same shape (pi_host_default_set_ui_window() and the IPiHostUI capability
+ * behave identically on it).
+ *
+ * `extra_qi_ctx` is opaque; it is handed back to the hook and never touched
+ * by the framework. The framework does not take ownership of anything the
+ * hook returns beyond the reference it hands to the plugin. */
+PI_EXPORT PiResult pi_host_services_create_ex(
+    PiHostMessageProc post_message, void* user_data,
+    PiNativeWindow ui_parent_window,
+    PiHostExtraQiProc extra_qi, void* extra_qi_ctx,
+    IPiHostServices** out_services);
+
 #ifdef __cplusplus
 }
 #endif

@@ -85,6 +85,12 @@ public:
 };
 ```
 
+> **`Initialize` 必须幂等**：框架的便捷加载 `pi_host_create_plugin()` 与宿主 kit L0
+> 都在 `create_instance` 之后**再调一次** `pi_initialize()`（这是 1.2 生命周期里
+> 写着的一步）。所以像上面那样在 `CreateInstance` 里就地初始化的插件会被初始化
+> 两次 —— 第二次把同一个宿主指针再 add-ref 一遍，并且把第一次 QI 到的可选接口
+> 包装直接覆盖掉（那一份引用就泄漏了）。加一行 `if (m_host) return PI_OK;` 即可。
+
 ### 1.3 插件对象（IPiPluginBase）
 
 ```cpp
@@ -105,6 +111,7 @@ public:
     }
 
     PiResult Initialize(IPiHostServices* host) {
+        if (m_host) return PI_OK;               // 幂等：宿主会再调一次 pi_initialize
         if (!host) return PI_OK;
         m_host = host;
         pi_iunknown_add_ref((IPiUnknown*)host);

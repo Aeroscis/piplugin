@@ -9,6 +9,7 @@
  * 断言失败不中断，全部跑完后按失败数决定退出码（0 = 全过）。
  */
 #include "piplugin/pi_plugin.h"
+#include "pi_test_host_service_impl.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -412,6 +413,211 @@ static void TestHostServices(void)
 }
 
 /* --------------------------------------------------------------------------
+ * APP-01 可组合宿主服务：pi_host_services_create_ex
+ *
+ * 用的是 tests/common 里那份"app 自定义宿主服务"实现 —— 与两个测试宿主、
+ * 两个测试插件用的是同一份代码，所以这里验证的就是产品路径本身。
+ * -------------------------------------------------------------------------- */
+static uint32_t              g_unit_messages = 0;
+static PiTestHostServiceImpl g_unit_service;
+
+/* 只数调用次数、一律不认的钩子：用来证明"框架 IID 不会转给钩子"。 */
+static int g_unit_hook_calls = 0;
+
+static PiResult UnitCountingHook(void* ctx, const PiGuid* iid, void** out)
+{
+    (void)ctx; (void)iid;
+    ++g_unit_hook_calls;
+    if (out) *out = NULL;
+    return PI_E_NOINTERFACE;
+}
+
+/* 失败但**故意**往 *out 里写了脏值：框架必须把它清回 NULL（终审 2.4）。 */
+static PiResult UnitFailingHook(void* ctx, const PiGuid* iid, void** out)
+{
+    (void)ctx; (void)iid;
+    if (out) *out = (void*)&g_unit_service;
+    return PI_E_OUTOFMEMORY;
+}
+
+/* 谎报成功却不给指针：按"不是我的"处理，不能让插件拿到一个 NULL 的"成功"。 */
+static PiResult UnitSilentHook(void* ctx, const PiGuid* iid, void** out)
+{
+    (void)ctx; (void)iid; (void)out;
+    return PI_OK;
+}
+
+static const PiGuid UNIT_UNKNOWN_IID = PI_GUID(0xDEADBEEF, 0x1234, 0x5678,
+                                               0x9A, 0xBC, 0xDE, 0xF0, 0x11, 0x22, 0x33, 0x44);
+
+static void TestHostServicesCreateEx(void)
+{
+    IPiHostServices* host = NULL;
+    void* out = NULL;
+
+    Section("APP-01 create_ex：app 自定义宿主服务 + create_default 回归");
+
+    /* --- 1) 带 extra_qi：插件 QI 到 app 的服务，并成功调用它的方法 --- */
+    g_unit_messages = 0;
+    PiTestHostServiceImpl_Init(&g_unit_service, "unit-test-host", &g_unit_messages);
+    CHECK_EQ_INT(pi_host_services_create_ex(&OnInitPostMessage, NULL, PI_INVALID_WINDOW,
+                                            &PiTestHostServiceImpl_ExtraQi, &g_unit_service,
+                                            &host), PI_OK);
+    CHECK(host != NULL);
+    CHECK_EQ_INT(g_unit_service.name_calls, 0);
+
+    out = NULL;
+    CHECK_EQ_INT(pi_iunknown_query_interface((IPiUnknown*)host, &PI_TEST_IID_HOST_SERVICE, &out),
+                 PI_OK);
+    CHECK(out != NULL);
+    if (out) {
+        IPiTestHostService* svc = (IPiTestHostService*)out;
+        CHECK(strcmp(pi_test_host_service_name(svc), "unit-test-host") == 0);
+        CHECK_EQ_INT(g_unit_service.name_calls, 1);   /* 宿主侧真的被调到了 */
+        CHECK_EQ_INT(pi_test_host_service_messages_seen(svc), 0);
+        g_unit_messages = 7;
+        CHECK_EQ_INT(pi_test_host_service_messages_seen(svc), 7);  /* 读到的是宿主活值 */
+        CHECK_EQ_INT(pi_iunknown_release((IPiUnknown*)out), 1);    /* QI 返回 add-ref 过的 */
+    }
+
+    /* 消息回调（宿主 → 插件方向之外的既有行为）不受影响 */
+    g_posted_msgs = 0;
+    pi_host_post_message(host, 0x8001u, 7u, 0);
+    CHECK_EQ_INT(g_posted_msgs, 1);
+
+    /* 宿主默认实现的 UI 行为照旧：给了窗口就暴露 IPiHostUI */
+    pi_host_default_set_ui_window(host, (PiNativeWindow)(uintptr_t)0x1234);
+    out = NULL;
+    CHECK_EQ_INT(pi_iunknown_query_interface((IPiUnknown*)host, &PI_IID_HOST_UI, &out), PI_OK);
+    if (out) pi_iunknown_release((IPiUnknown*)out);
+    if (host) CHECK_EQ_INT(pi_iunknown_release((IPiUnknown*)host), 0);
+    host = NULL;
+
+    /* --- 2) 钩子不认的 IID：NOINTERFACE，且 *out 必为 NULL（2.4 约定） --- */
+    CHECK_EQ_INT(pi_host_services_create_ex(NULL, NULL, PI_INVALID_WINDOW,
+                                            &PiTestHostServiceImpl_ExtraQi, &g_unit_service,
+                                            &host), PI_OK);
+    out = (void*)(uintptr_t)0x1234;   /* 故意留脏值 */
+    CHECK_EQ_INT(pi_iunknown_query_interface((IPiUnknown*)host, &UNIT_UNKNOWN_IID, &out),
+                 PI_E_NOINTERFACE);
+    CHECK(out == NULL);
+
+    /* --- 3) 框架自己的 IID 由框架先答掉，不转给钩子 --- */
+    {
+        IPiHostServices* counted = NULL;
+        g_unit_hook_calls = 0;
+        CHECK_EQ_INT(pi_host_services_create_ex(NULL, NULL, (PiNativeWindow)(uintptr_t)0x5,
+                                                &UnitCountingHook, NULL, &counted), PI_OK);
+        out = NULL;
+        CHECK_EQ_INT(pi_iunknown_query_interface((IPiUnknown*)counted, &PI_IID_UNKNOWN, &out),
+                     PI_OK);
+        if (out) pi_iunknown_release((IPiUnknown*)out);
+        out = NULL;
+        CHECK_EQ_INT(pi_iunknown_query_interface((IPiUnknown*)counted, &PI_IID_HOST_SERVICES, &out),
+                     PI_OK);
+        if (out) pi_iunknown_release((IPiUnknown*)out);
+        out = NULL;
+        /* 有窗口时 IPiHostUI 也是框架答的 */
+        CHECK_EQ_INT(pi_iunknown_query_interface((IPiUnknown*)counted, &PI_IID_HOST_UI, &out),
+                     PI_OK);
+        if (out) pi_iunknown_release((IPiUnknown*)out);
+        CHECK_EQ_INT(g_unit_hook_calls, 0);   /* 一个框架 IID 都没转出去 */
+
+        /* 未知 IID 才转交；headless 的 IPiHostUI 也算未命中（文档写明，
+         * 这样 app 可以自己提供远端/代理式 UI 服务） */
+        out = NULL;
+        CHECK_EQ_INT(pi_iunknown_query_interface((IPiUnknown*)counted, &UNIT_UNKNOWN_IID, &out),
+                     PI_E_NOINTERFACE);
+        CHECK_EQ_INT(g_unit_hook_calls, 1);
+        pi_host_default_set_ui_window(counted, PI_INVALID_WINDOW);
+        out = NULL;
+        CHECK_EQ_INT(pi_iunknown_query_interface((IPiUnknown*)counted, &PI_IID_HOST_UI, &out),
+                     PI_E_NOINTERFACE);
+        CHECK_EQ_INT(g_unit_hook_calls, 2);
+        if (counted) CHECK_EQ_INT(pi_iunknown_release((IPiUnknown*)counted), 0);
+    }
+
+    /* --- 4) 钩子的失败语义：错误码原样上抛，*out 一定回到 NULL --- */
+    {
+        IPiHostServices* failing = NULL;
+        CHECK_EQ_INT(pi_host_services_create_ex(NULL, NULL, PI_INVALID_WINDOW,
+                                                &UnitFailingHook, NULL, &failing), PI_OK);
+        out = NULL;
+        CHECK_EQ_INT(pi_iunknown_query_interface((IPiUnknown*)failing, &UNIT_UNKNOWN_IID, &out),
+                     PI_E_OUTOFMEMORY);
+        CHECK(out == NULL);
+        if (failing) CHECK_EQ_INT(pi_iunknown_release((IPiUnknown*)failing), 0);
+    }
+    {
+        IPiHostServices* silent = NULL;
+        CHECK_EQ_INT(pi_host_services_create_ex(NULL, NULL, PI_INVALID_WINDOW,
+                                                &UnitSilentHook, NULL, &silent), PI_OK);
+        out = (void*)(uintptr_t)0x99;
+        CHECK_EQ_INT(pi_iunknown_query_interface((IPiUnknown*)silent, &UNIT_UNKNOWN_IID, &out),
+                     PI_E_NOINTERFACE);
+        CHECK(out == NULL);
+        if (silent) CHECK_EQ_INT(pi_iunknown_release((IPiUnknown*)silent), 0);
+    }
+
+    /* --- 5) 回归：extra_qi == NULL 与 create_default 完全一致 --- */
+    {
+        IPiHostServices* plain_ex = NULL;
+        IPiHostServices* plain_default = NULL;
+
+        CHECK_EQ_INT(pi_host_services_create_ex(NULL, NULL, PI_INVALID_WINDOW,
+                                                NULL, NULL, &plain_ex), PI_OK);
+        CHECK_EQ_INT(pi_host_services_create_default(NULL, NULL, PI_INVALID_WINDOW,
+                                                     &plain_default), PI_OK);
+
+        /* headless：两者都给不出 IPiHostUI，都可 QI 到框架服务 */
+        out = (void*)(uintptr_t)0x1;
+        CHECK_EQ_INT(pi_iunknown_query_interface((IPiUnknown*)plain_ex, &PI_IID_HOST_UI, &out),
+                     PI_E_NOINTERFACE);
+        CHECK(out == NULL);
+        out = NULL;
+        CHECK_EQ_INT(pi_iunknown_query_interface((IPiUnknown*)plain_default, &PI_IID_HOST_UI, &out),
+                     PI_E_NOINTERFACE);
+        CHECK(out == NULL);
+
+        /* app 自定义服务：没有钩子就是没有 */
+        out = (void*)(uintptr_t)0x1;
+        CHECK_EQ_INT(pi_iunknown_query_interface((IPiUnknown*)plain_ex,
+                                                 &PI_TEST_IID_HOST_SERVICE, &out),
+                     PI_E_NOINTERFACE);
+        CHECK(out == NULL);
+
+        /* 给了窗口后两者都暴露 IPiHostUI（且都能被 set_ui_window 切换） */
+        pi_host_default_set_ui_window(plain_ex, (PiNativeWindow)(uintptr_t)0x1234);
+        pi_host_default_set_ui_window(plain_default, (PiNativeWindow)(uintptr_t)0x1234);
+        out = NULL;
+        CHECK_EQ_INT(pi_iunknown_query_interface((IPiUnknown*)plain_ex, &PI_IID_HOST_UI, &out),
+                     PI_OK);
+        if (out) {
+            CHECK_EQ_INT((uintptr_t)pi_host_ui_get_parent_window((IPiHostUI*)out),
+                         (uintptr_t)0x1234);
+            pi_iunknown_release((IPiUnknown*)out);
+        }
+        out = NULL;
+        CHECK_EQ_INT(pi_iunknown_query_interface((IPiUnknown*)plain_default, &PI_IID_HOST_UI, &out),
+                     PI_OK);
+        if (out) {
+            CHECK_EQ_INT((uintptr_t)pi_host_ui_get_parent_window((IPiHostUI*)out),
+                         (uintptr_t)0x1234);
+            pi_iunknown_release((IPiUnknown*)out);
+        }
+
+        if (plain_ex) CHECK_EQ_INT(pi_iunknown_release((IPiUnknown*)plain_ex), 0);
+        if (plain_default) CHECK_EQ_INT(pi_iunknown_release((IPiUnknown*)plain_default), 0);
+    }
+
+    /* --- 6) 参数校验 --- */
+    CHECK_EQ_INT(pi_host_services_create_ex(NULL, NULL, PI_INVALID_WINDOW,
+                                            NULL, NULL, NULL), PI_E_INVALIDARG);
+
+    if (host) CHECK_EQ_INT(pi_iunknown_release((IPiUnknown*)host), 0);
+}
+
+/* --------------------------------------------------------------------------
  * main
  * -------------------------------------------------------------------------- */
 int main(int argc, char** argv)
@@ -425,6 +631,7 @@ int main(int argc, char** argv)
     TestModuleLoadFailure();
     TestApiVersion();
     TestHostServices();
+    TestHostServicesCreateEx();
 
     printf("== checks=%u failures=%u ==\n", g_checks, g_failures);
     if (g_failures != 0) {

@@ -25,6 +25,9 @@ target_sources(${TARGET_NAME}
 # first party
 target_link_libraries(${TARGET_NAME} PRIVATE piplugin)
 
+# 测试共用头：单测复用测试宿主/插件用的那份 app 自定义宿主服务（APP-01）
+target_include_directories(${TARGET_NAME} PRIVATE ${PI_TESTS_COMMON_DIR})
+
 # ------- 部署到开发目录 bin/<CONFIG>（POST_BUILD：构建即就绪） -------------
 # 核心是 SHARED，可执行文件必须与 piplugin*.dll 同目录才能启动；
 # ctest 运行的是部署后的副本（见下面的 add_test）。

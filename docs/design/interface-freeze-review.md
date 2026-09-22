@@ -154,6 +154,11 @@ pi_module_load, pi_module_unload, pi_module_get_factory, pi_module_get_load_erro
 pi_host_services_create_default, pi_host_default_set_ui_window, pi_host_create_plugin
 ```
 
+> **发布后追加**：`pi_host_services_create_ex`（roadmap APP-01，可组合宿主服务 /
+> 通道 B）—— 新增**函数**而非改动既有 vtbl，符合"只增不改"；导出面因此为
+> **24** 个。既有 23 个符号的签名与语义未变（`pi_host_services_create_default`
+> 现在只是转调 `create_ex`，行为逐条断言在 `tests/unit`）。
+
 ### 4.2 记录在案（不阻断发布，1.0 前需要结论）
 
 | 编号 | 事项 | 现状与建议 |

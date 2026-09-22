@@ -177,6 +177,11 @@ typedef struct PiDefaultHost {
     void*                user_data;
     volatile PiNativeWindow ui_window;   /* PI_INVALID_WINDOW = headless  */
     uint64_t             ui_thread_id;
+    /* 可组合宿主服务（APP-01）：框架 IID 之外的 QI 一律转给宿主自己的钩子。
+     * 两个都是 NULL 时行为与本钩子出现之前完全一致（create_ex(NULL) 与
+     * create_default 共用同一条实现路径，见 pi_host_services_create_ex）。 */
+    PiHostExtraQiProc    extra_qi;
+    void*                extra_qi_ctx;
 } PiDefaultHost;
 
 /* Separate IPiHostUI view over a PiDefaultHost. COM identity rules say an
@@ -237,6 +242,20 @@ static PiResult PI_CALL pi_default_host_qi(void* self_ptr, const PiGuid* iid, vo
         *out = &ui->base;
         return PI_OK;
     }
+
+    /* 框架 IID 之外的 QI 转交宿主自己的钩子（APP-01 可组合宿主服务）。
+     * 契约见 pi_plugin_host_services.h：钩子成功时必须给出**已 add-ref** 的
+     * 指针；返回失败时把错误码原样上抛（PI_E_OUTOFMEMORY 这类信息不该被
+     * 压成 NOINTERFACE），但 *out 一定回到 NULL。 */
+    if (me->extra_qi) {
+        PiResult hr;
+        *out = NULL;
+        hr = me->extra_qi(me->extra_qi_ctx, iid, out);
+        if (PI_SUCCEEDED(hr) && *out != NULL) return PI_OK;
+        *out = NULL;
+        return PI_FAILED(hr) ? hr : PI_E_NOINTERFACE;
+    }
+
     *out = NULL;
     return PI_E_NOINTERFACE;
 }
@@ -251,6 +270,8 @@ static PiResult PI_CALL pi_default_host_ui_qi(void* self_ptr, const PiGuid* iid,
         pi_iunknown_add_ref((IPiUnknown*)*out);
         return PI_OK;
     }
+    /* 本包装只代表 IPiHostUI 这一个接口；app 自定义服务挂在宿主服务对象上，
+     * 要 QI 它请用当初拿到的 IPiHostServices 指针（UI 包装不再二次转发）。 */
     *out = NULL;
     return PI_E_NOINTERFACE;
 }
@@ -330,9 +351,10 @@ static void pi_default_host_destroy(void* self_ptr)
     free(self_ptr);
 }
 
-PI_EXPORT PiResult pi_host_services_create_default(
+PI_EXPORT PiResult pi_host_services_create_ex(
     PiHostMessageProc post_message, void* user_data,
     PiNativeWindow ui_parent_window,
+    PiHostExtraQiProc extra_qi, void* extra_qi_ctx,
     IPiHostServices** out_services)
 {
     if (!out_services) return PI_E_INVALIDARG;
@@ -347,6 +369,8 @@ PI_EXPORT PiResult pi_host_services_create_default(
     host->post_message = post_message;
     host->user_data    = user_data;
     host->ui_window    = ui_parent_window;
+    host->extra_qi     = extra_qi;
+    host->extra_qi_ctx = extra_qi_ctx;
     /* 契约见 pi_plugin_host_services.h：非 0、UI 线程存活期间稳定、只用于
      * "是不是同一个线程"的比较。
      *
@@ -364,6 +388,18 @@ PI_EXPORT PiResult pi_host_services_create_default(
 
     *out_services = (IPiHostServices*)&host->base;
     return PI_OK;
+}
+
+PI_EXPORT PiResult pi_host_services_create_default(
+    PiHostMessageProc post_message, void* user_data,
+    PiNativeWindow ui_parent_window,
+    IPiHostServices** out_services)
+{
+    /* 刻意只是转调（APP-01）：这样"没有 extra_qi"就不是一条需要单独维护的
+     * 分支，而是 create_ex 在 extra_qi == NULL 时的同一条路径 —— 回归风险
+     * 归零，也是 roadmap 验收要求的"行为与 create_default 完全一致"。 */
+    return pi_host_services_create_ex(post_message, user_data, ui_parent_window,
+                                      NULL, NULL, out_services);
 }
 
 PI_EXPORT void pi_host_default_set_ui_window(IPiHostServices* services,

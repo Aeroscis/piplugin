@@ -26,8 +26,33 @@ A release is one commit on `main` that bumps the version in `CMakeLists.txt` and
 
 ## [Unreleased]
 
-Nothing yet. Add entries here as work lands; they move under the next version
-when it is cut.
+### Added
+
+- **Composable host services (`pi_host_services_create_ex`) — channel B.** The
+  default host object answers the framework's three IIDs and nothing else, so an
+  app could not hand its plugins a service of its own (the mirror image of the
+  app-defined *plugin* protocol the framework already supported). `create_ex`
+  adds an extra-QI hook (`PiHostExtraQiProc`): every IID the framework does not
+  recognise is forwarded to the app, which answers with an AddRef'd interface
+  pointer. The plugin side needs **no new API** — it is an ordinary
+  `QueryInterface()` on the host object it was already handed, and a plugin that
+  does not know the service gets `PI_E_NOINTERFACE` and keeps running.
+  `pi_host_services_create_default()` now just calls `create_ex()` with a NULL
+  hook, so no-hook hosts take the identical code path. Both test hosts expose an
+  app-defined service and both test plugins query it and call it; new `ctest`
+  cases assert that round trip, and the unit suite pins the hook contract
+  (forwarding, failure codes passed through, `*out` cleared on failure,
+  framework IIDs never forwarded, NULL hook == `create_default`).
+
+### Fixed
+
+- **The test plugins were initialized twice.** `CreateInstance()` initialized
+  the instance and the host then called `pi_initialize()` on it as well —
+  which is the documented lifecycle, and what `pi_host_create_plugin()` and the
+  host kit both do. The host pointer was therefore AddRef'd twice and the second
+  `QueryInterface(PI_IID_HOST_UI)` overwrote (and leaked) the first wrapper.
+  Both test plugins now make `Initialize()` idempotent, and
+  `docs/tutorial/write-plugin.md` states that rule for plugin authors.
 
 ## [0.2.0] - 2026-09-22
 

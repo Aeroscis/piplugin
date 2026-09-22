@@ -225,9 +225,71 @@ pi_host_dx11_present(g_dx, 1);
 "缓冲只增不减"、帧延迟等待对象、背景色、`ResizeBuffers` 必须传回创建时的 flags），
 不是"画什么"。
 
-## 8. 宿主清单（Checklist）
+## 8. 把自己的服务暴露给插件（通道 B：宿主自定义服务）
+
+框架只保证两个宿主 IID：`IPiHostServices` 与（GUI 宿主才有的）`IPiHostUI`。
+app 要给插件自己的服务（配置中心、日志、任务队列、许可证……）时，用
+`pi_host_services_create_ex()` 装一个 **extra-QI 钩子**：框架 IID 之外的
+`QueryInterface` 全部转给你，插件侧**不需要任何新 API** —— 它只是对自己拿到的
+那个宿主对象 QI 一次。
+
+```c
+#include "piplugin/pi_plugin.h"
+
+/* 你自己的接口：IID 必须是随机 128 位 UUID（见 interfaces.md 5.1），
+ * 不要用框架保留区（data1 < 0x80000000）里的小编号。 */
+static const PiGuid MY_SERVICE_IID =
+    PI_GUID(0x3B7E14C9, 0x2A5D, 0x4F31, 0x8E, 0x77, 0x51, 0xC2, 0x9A, 0x0B, 0x6D, 0x44);
+
+/* 钩子：契约与 QueryInterface 完全相同 —— 认领时返回 PI_OK 并给出
+ * **已 add-ref** 的接口指针；不认领返回 PI_E_NOINTERFACE 并把 *out 置 NULL；
+ * 其它失败码会被原样上抛给插件（例如 PI_E_OUTOFMEMORY）。 */
+static PiResult MyExtraQi(void* ctx, const PiGuid* iid, void** out)
+{
+    MyService* svc = (MyService*)ctx;
+    if (pi_guid_equal(iid, &MY_SERVICE_IID)) {
+        *out = &svc->base;                       /* 已 add-ref 的对象 */
+        pi_iunknown_add_ref((IPiUnknown*)*out);
+        return PI_OK;
+    }
+    *out = NULL;
+    return PI_E_NOINTERFACE;
+}
+
+IPiHostServices* host = NULL;
+pi_host_services_create_ex(&MessageProc, /*user_data=*/NULL,
+                           embedWindow,                  /* headless 传 PI_INVALID_WINDOW */
+                           &MyExtraQi, &myService,       /* 传 NULL 等价于 create_default */
+                           &host);
+```
+
+插件侧（它就是普通的 QI，宿主没提供就优雅降级）：
+
+```c
+IMyService* svc = NULL;
+if (PI_SUCCEEDED(pi_iunknown_query_interface((IPiUnknown*)host, &MY_SERVICE_IID, (void**)&svc))) {
+    pi_my_service_do_something(svc);
+    pi_iunknown_release((IPiUnknown*)svc);        /* QI 返回 add-ref 过的 */
+} else {
+    /* 宿主没有这个服务：照常运行。声明为 PI_CAP_OPTIONAL 就是这个意思。 */
+}
+```
+
+要点：
+
+- **插件侧零新增 API**：这正是它相对 §6 的 `pi_host_session_require()`（通道 A，
+  宿主消费插件定义的接口）的镜像；
+- 钩子可能被插件的任意线程调用（插件可以从自己的线程 QI），要线程安全；
+- 有窗口时的 `IPiHostUI`、以及 `IPiHostServices` 本身由框架先答掉，不会转到钩子；
+  **headless 的 `IPiHostUI` 算未命中**，所以 app 也可以借此提供自己的 UI 服务；
+- 参照实现：`tests/test_headless_host` 与 `tests/test_host` 都通过钩子暴露了一个
+  app 自定义服务，两个测试插件 QI 它并调用（`tests/common/pi_test_host_service.h`），
+  ctest 用例 `app_defined_host_service_*` 断言这条链路真的跑通。
+
+## 9. 宿主清单（Checklist）
 
 - [ ] 创建 `IPiHostServices`（GUI 传容器窗口 / headless 传 `PI_INVALID_WINDOW`）
+- [ ] 要给插件自己的服务时用 `pi_host_services_create_ex()` 装 extra-QI 钩子（§8）
 - [ ] `pi_module_load` 失败时检查 `pi_module_get_load_error()`
 - [ ] 实例化前做能力门检查（`pi_descriptor_requires`）
 - [ ] `pi_get_view` 成功后 attach + set_visible

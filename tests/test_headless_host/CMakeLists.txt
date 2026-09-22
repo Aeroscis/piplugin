@@ -20,6 +20,9 @@ target_sources(${TARGET_NAME}
         ${TARGET_SRC_FILE_LIST}
 )
 
+# 测试共用头：app 自定义宿主服务（通道 B / APP-01）
+target_include_directories(${TARGET_NAME} PRIVATE ${PI_TESTS_COMMON_DIR})
+
 # 宿主 kit L0（加载/门禁/实例化/七步卸载序列）缺失则禁用本宿主
 if(NOT TARGET piplugin_host)
     message(WARNING "host kit L0 (piplugin_host) not built -> ${TARGET_NAME} DISABLED")
@@ -50,6 +53,46 @@ if(TARGET pi_test_plugin_qt)
         WORKING_DIRECTORY "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
         )
     set_tests_properties(headless_host_smoke PROPERTIES TIMEOUT 120)
+endif()
+
+# 同一台 headless 宿主加载 imgui 插件：CI 上 Qt 是关掉的，这个用例保证
+# "headless + 任意插件"这条路在 CI 里也有覆盖（imgui 由 conan 提供，CI 有）。
+if(TARGET pi_test_plugin_imgui)
+    add_test(NAME headless_host_imgui_smoke
+        COMMAND "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}/${TARGET_NAME}.exe" "pi_test_plugin_imgui.dll"
+        WORKING_DIRECTORY "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
+        )
+    set_tests_properties(headless_host_imgui_smoke PROPERTIES TIMEOUT 120)
+endif()
+
+# ---- APP-01（通道 B：app 自定义宿主服务）的端到端断言 ----
+# 宿主用 pi_host_services_create_ex() 的 extra_qi 钩子暴露自己的服务；插件对
+# 宿主对象 QI 到它并调用。宿主自己只做 QI 探测（不调方法），因此那行计数里的
+# 非 0 值只可能来自插件 —— 断言它，就是断言"QI + 调用"真的跑通了。
+#
+# 格式刻意不含括号，这样这里的正则不需要转义。与版本门禁用例同理：设了
+# PASS_REGULAR_EXPRESSION 之后 ctest 不再检查退出码，本用例断言的是"这一行
+# 出现在输出里"（同一组合的退出码由上面的 smoke 用例负责）。
+set(PI_APP_DEFINED_SERVICE_REGEX "app-defined host service: [1-9]")
+
+if(TARGET pi_test_plugin_qt)
+    add_test(NAME app_defined_host_service_qt_plugin
+        COMMAND "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}/${TARGET_NAME}.exe" "pi_test_plugin_qt.dll"
+        WORKING_DIRECTORY "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
+        )
+    set_tests_properties(app_defined_host_service_qt_plugin PROPERTIES
+        PASS_REGULAR_EXPRESSION "${PI_APP_DEFINED_SERVICE_REGEX}"
+        TIMEOUT 120)
+endif()
+
+if(TARGET pi_test_plugin_imgui)
+    add_test(NAME app_defined_host_service_imgui_plugin
+        COMMAND "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}/${TARGET_NAME}.exe" "pi_test_plugin_imgui.dll"
+        WORKING_DIRECTORY "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
+        )
+    set_tests_properties(app_defined_host_service_imgui_plugin PROPERTIES
+        PASS_REGULAR_EXPRESSION "${PI_APP_DEFINED_SERVICE_REGEX}"
+        TIMEOUT 120)
 endif()
 
 # BLK-03 负向用例：声明不兼容 api_version 的插件必须在 create_instance 之前被拒绝。
