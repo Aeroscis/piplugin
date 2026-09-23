@@ -259,6 +259,14 @@ if ($asanRuntimeDir) {
 # this platform" - every test then fails before main() without a single line of
 # output. The leak half of this track therefore stays where it already was: the
 # `_CrtDumpMemoryLeaks()` assertion inside the unit_cpp case.
+#
+# Two things in the log are expected and do not mean failure: LNK4044
+# ("unrecognized option /fsanitize=address" - a compile-time switch that reaches
+# the linker too) and LNK4300 (/INCREMENTAL ignored because the inputs carry ASan
+# metadata). And a startup failure is easy to misread: with detect_leaks=1 the run
+# reports "Required regular expression not found" for every case and "0% tests
+# passed", which looks like broken assertions rather than a runtime that refused
+# to start before main().
 if (-not $isMsvc) {
     $env:ASAN_OPTIONS = Join-Flags @('detect_leaks=1', 'halt_on_error=1', $env:ASAN_OPTIONS)
 }

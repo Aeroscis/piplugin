@@ -308,4 +308,4 @@ cpack --config build/CPackConfig.cmake -C Debug -B out
   注意归档里**不含** Qt 运行时（Qt 在本项目是本地安装、不是 conan 依赖，各 kit 的使用
   约定就是"消费方自行保证 Qt 可达"），所以"宿主直接运行"这条断言覆盖的是不依赖 Qt 的那
   部分链接面；要把 Qt 宿主也做成"解压即跑"，得先把 Qt 运行时纳入分发（涉及 LGPL 再分发
-  的决策，见 `docs/todo/build.md` 第 5 条的遗留项）。
+  的决策，见 `docs/todo/build.md` #8）。

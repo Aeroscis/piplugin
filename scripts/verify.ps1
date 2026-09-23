@@ -182,7 +182,6 @@ if ($SkipDocDrift) {
         Write-Host ("FAIL - {0} is missing" -f $rulesFile) -ForegroundColor Red
     } else {
         $rules       = Get-Content -Path $rulesFile -Raw -Encoding UTF8 | ConvertFrom-Json
-        $doneMarkers = @($rules.done_markers)
         $excluded    = @($rules.exclude)
         $ignoreMark  = [string]$rules.ignore_marker
         $documents   = @(git -C $repoRoot ls-files '*.md')
@@ -193,27 +192,15 @@ if ($SkipDocDrift) {
             if ($excluded -contains $file) { continue }
             $lines = @(Get-Content -Path (Join-Path $repoRoot $file) -Encoding UTF8)
             $scanned++
-            # Excuse state per heading level. A section whose heading carries a
-            # done marker is excused - that is where the todo files keep the
-            # original wording of a finished item - and the excuse is inherited
-            # by deeper headings underneath it.
-            $excused = @($false, $false, $false, $false, $false, $false)
+            # No section is exempt. A finished todo item states a conclusion about
+            # today - what exists and where it is verified - so it is checked like
+            # any other sentence; the wording of the plan it replaced belongs to
+            # git and to CHANGELOG.md (excluded), not to a live document.
             for ($i = 0; $i -lt $lines.Count; $i++) {
                 $line     = $lines[$i]
                 $previous = if ($i -gt 0) { $lines[$i - 1] } else { "" }
 
-                if ($line -match '^(#{1,6})\s') {
-                    $level  = $Matches[1].Length
-                    $isDone = $false
-                    foreach ($marker in $doneMarkers) {
-                        if ($line.Contains($marker)) { $isDone = $true; break }
-                    }
-                    $excused[$level - 1] = $isDone
-                    for ($j = $level; $j -lt 6; $j++) { $excused[$j] = $false }
-                    continue
-                }
                 if ($ignoreMark -and ($line.Contains($ignoreMark) -or $previous.Contains($ignoreMark))) { continue }
-                if ($excused -contains $true) { continue }
 
                 foreach ($rule in @($rules.rules)) {
                     if (-not (Test-Path (Join-Path $repoRoot $rule.feature))) { continue }

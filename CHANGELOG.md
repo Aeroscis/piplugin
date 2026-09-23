@@ -580,14 +580,48 @@ own.
   triggers a nested CMake regeneration; configure explicitly once and it proceeds
   - and a note that `verify.ps1`'s documentation-drift step reports a false failure
   outside a git checkout, since it scans `git ls-files '*.md'`.
-  `docs/todo/tests.md` #3 now names the shape an ASan startup failure takes (every
-  case fails a regex, `0% tests passed`, no crash report) and lists the two
-  expected linker warnings, while #4 records the environmental degradation that
-  makes the imgui cases time out in a long session - which is why a change is
-  evidenced by one full `ctest` run taken right after it, not by re-running later.
+  `scripts/verify_asan.ps1`'s header now names the two log lines that are expected
+  noise (LNK4044 / LNK4300) and how a startup failure presents itself - every case
+  failing its regex and `0% tests passed`, which reads like broken assertions
+  rather than a runtime that never started. `docs/todo/tests.md` #4 records the
+  environmental degradation that makes the imgui cases time out in a long session
+  - which is why a change is evidenced by one full `ctest` run taken right after
+  it, not by re-running later.
   `scripts/probe_x11_native_window.sh` is the Xlib probe behind
   `docs/todo/platform.md` #5, committed so the next change to `PiNativeWindow`
   can re-run it instead of trusting a number in a document.
+
+- **The documents are a snapshot of the repository again, not an archive.** The five
+  topic todo files were 79-91% finished-item text: each entry kept the wording of the
+  plan it replaced underneath its status note. That was history living in live
+  documents, and it cost real money in the last audit - the preserved text is exactly
+  where the stale "109 assertions", "no CI configuration" and "the api_version gate has
+  not landed" statements were found. A finished entry now carries only what is true
+  today: a `> **结论**` block saying what exists and where it is verified, plus a
+  pointer at the design document that owns the mechanism. Everything else moved:
+  general knowledge into `docs/design/` (the Xlib probe behind `platform.md` #5 is
+  `scripts/probe_x11_native_window.sh` now, and the "why two distinct plugin modules"
+  rationale behind the imgui concurrency case reached `docs/design/adapter-spec.md`
+  §8), evidence into the entry point that reproduces it (the ASan log-reading notes
+  live in `scripts/verify_asan.ps1`'s header), and the rest of the plan into git and
+  into this file. Open items that were buried inside finished entries are entries of
+  their own now: `build.md` #8 (the three packaging leftovers) and #9 (the
+  unscheduled toolchain-file question). `docs/todo/README.md` is the list of open
+  items plus the calls only the maintainer can make - the four pending decisions that
+  until now existed only in an untracked dispatch board (ABI 2.0 timing, the
+  clang-tidy check set, Qt runtime redistribution, the dual-home contingency) are in
+  the tracked tree for the first time. `docs/todo/install-design-review-prompt.md` is
+  deleted: it was a spent prompt for an external model, and its own header said the
+  situation it described no longer held.
+
+- **The documentation-drift check has no hiding place left.** Its done-marker
+  exemption existed for one reason - to let the todo files keep that finished-item
+  wording - so the exemption, the `done_markers` key and the paragraph in
+  `doc_drift_rules.json` that explained it are gone. A finished entry is a statement
+  about today and is checked like any other sentence; `CHANGELOG.md` stays excluded
+  because it is the one document whose subject is the past. The check was run with
+  the exemption disabled before removing it (clean either way) and after removing it:
+  clean over 36 scanned documents.
 
 Nothing yet. Add entries here as work lands; they move under the next version
 when it is cut.

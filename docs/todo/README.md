@@ -2,7 +2,8 @@
 
 > 本文件夹按主题拆分待办：`platform.md`（跨平台）、`adapters.md`（UI 适配器）、
 > `framework.md`（核心框架）、`build.md`（构建/打包）、`tests.md`（测试与质量）。
-> 来自代码注释中已标注的 TODO 与架构推演出的下一步工作。
+> 每个文件只记**还没做**的事（标题不带完成标记的条目）与已完成项的**结论 + 复核入口**；
+> 已完成项当时的方案原文在 `git log` 与 `CHANGELOG.md` 里，通用知识在 `docs/design/`。
 
 ## 优先级图例
 
@@ -11,19 +12,29 @@
 | [P0] | 高优先级：影响正确性/安全/核心承诺 |
 | [P1] | 中优先级：明确的功能缺口 |
 | [P2] | 低优先级：打磨/增强 |
+| [P3] | 备忘：不影响使用，等一个决策或一次顺手 |
 
-## 快速一览
+## 开放项（全部待办都在这张表里）
 
-> 已在 release-roadmap（BLK/APP/ECO 系列）落地的工作不再列在这里；下表的
-> `W-xx` 指下一波改进（**W-01…W-13 已全部完成**；卡片原文在派工板里，派工板与
-> 发布路线图同为**未入库的派工件**，所以本仓库里不出现它们的文件名/链接），
-> `FUT-xx` 指路线图的未来方向（本表每条都注明了可核实的出处，不依赖那份文件）。
-
-| 主题 | 关键项 |
+| 主题 | 条目 |
 |---|---|
-| 跨平台 | Linux/macOS UI 嵌入（XEmbed/NSView）、imgui 套件非 Windows backend、插件 DLL 非 Windows 构建（W-10 实测钉死范围，见 `platform.md` #3）、~~Linux headless CI~~（**已完成 W-10**：CI `linux` job 用 gcc/clang 各跑一轮，构建核心 + 宿主 kit 并执行 `unit_cpp`（52 checks 全绿）；`PiNativeWindow` 的 `unsigned long` 定义已用真实 Xlib 头文件验证） |
-| UI 适配器 | gtk/webview 新套件（FUT-08）、~~Qt 宿主内嵌 Qt 插件一等用法~~（**已完成 W-06**：`tutorial/qt-host-direct.md` + `examples/qt_host_direct/`，含宿主直连 Qt 插件的 `--self-test`）、~~imgui 套件多宿主并发~~（**已完成 W-05**：`pi_test_plugin_imgui2.dll` + ctest `multi_plugin_imgui_in_one_process`——两个不同 imgui 插件模块各自渲染、心跳推进、一起干净卸载）、~~.rc 版本资源~~（**已完成 W-07**：`cmake/version_dll.rc.in` + `piplugin_add_version_resource()`；STATIC 目标的 `.res` 不进消费方二进制，见 `framework.md` #8） |
-| Qt 版本 | Qt 5.15 EOL 去向（FUT-09）：**评估已出（W-12）** —— 0.4.x/1.0 保持单版本 5.15.2、双版本套件否决、迁移走「一次性切 Qt6」且前置是 Qt6 编译跑道；结论与重估触发条件见 `design/qt6-assessment.md`，拍板仍在维护者 |
-| 核心框架 | 插件热重载（FUT-04）、~~`g_load_error` 线程安全~~（**已完成 W-01**：错误串改线程局部 + 新增 `pi_module_get_load_error_r(buf,size)`，ctest `unit` 有 4 线程并发回归）、~~插件发现试水~~（**已完成 W-11**：`examples/plugin_scan/` 扫目录 + descriptor 清单，版本选择为占位）、~~.rc 版本资源~~（**已完成 W-07**，同上） |
-| 构建打包 | ~~仓库内置 CMakePresets~~（**已完成 W-09**：`CMakePresets.json` 入库，`default` / `default-unix`；`CMakeUserPresets.json` 改为不入库）、~~cpack 产出~~（**已完成 W-08**：zip 归档 + `verify_package.ps1` C 段"解压即跑"；Qt 运行时仍不进分发）、~~Linux CI job~~（**已完成 W-10**：ubuntu + gcc/clang（**不用 conan**——Qt/imgui 关掉后没有第三方依赖），job 内逐条写明不覆盖什么；见 `build.md` #2）、~~`CMAKE_INSTALL_PREFIX` 未设置导致 INSTALL 失败~~（**已修复**：`bin/<Config>` 改由 POST_BUILD 维护，前缀固定到 `build/install`，见 `install-design-review-prompt.md`） |
-| 测试质量 | ~~ASan/sanitizer CI~~（**已完成 W-03**：`scripts/verify_asan.ps1` + CI `asan` job，非 GUI 子集 9/9 全绿；实测记下三条——MSVC 的 ASan 在 Windows 上**没有泄漏检测**、GUI 排除是因第三方输入法真被抓到 heap-use-after-free、探针证明跑道有牙齿）、~~线程安全专项~~（**已完成 W-04**：ctest `unit_threads` 覆盖子线程 post_message 与并发引用计数，ctest `qt_view_post_from_worker_thread` 覆盖套件跨线程 marshal——并修掉 `pi_qt_view_post` 内联执行的 bug）、~~嵌入窗口运行时切换~~（**已完成 W-02**：ctest `container_switch_runtime` / `container_switch_runtime_qt`，A→B→A + 尺寸往返 + detach 同步性）、~~clang-tidy/cppcheck 评估~~（**已完成 W-13**：文档漂移 lint 已强制；clang-format 强制与否、clang-tidy 检查集与允许表仍待维护者拍板，实测数据见 `tests.md` #8）、~~imgui 宿主拖动缩放时 IMGUI 面板瞬时被缩放~~（**已修复**，见 `tests.md` 第 7 条；平台机制知识见 `design/d3d-window-resizing.md`） |
+| 跨平台 | `platform.md` #1 Linux（X11）UI 嵌入 [P1] · #2 macOS（NSView）UI 嵌入 [P1] · #3 插件 DLL 非 Windows 构建 [P1]（W-10 实测钉死了范围）· #4 macOS 侧编译器矩阵 [P2] |
+| UI 适配器 | `adapters.md` #2 gtk 套件 [P2] · #3 webview 套件 [P2] · #5 imgui 套件非 Windows backend [P1]（与 `platform.md` #1/#2 同一件事） |
+| 核心框架 | `framework.md` #3 插件热重载（FUT-04）[P2] · #9 ABI 2.0 多视图 API 的时间窗 [P2] |
+| 构建打包 | `build.md` #6 库名/产物名一致性（约定已成文，剩下在 CI 里断言一次）[P2] · #8 安装/分发的三个遗留 [P3] · #9 toolchain file 未统一 [P3] |
+| 测试质量 | `tests.md` #4 多场景覆盖矩阵里"imgui 宿主 + Qt 插件"一格仍未纳入自动化 [P2] |
+
+## 待维护者拍板（不由贡献者或 agent 替拍）
+
+| 事项 | 输入 | 说明 |
+|---|---|---|
+| clang-format 强制与否 | `verify.ps1` 第 4 项的漂移清单 | 现状：只报告不拦截（对 BLK-05 的有意偏离）；强制的代价是一次覆盖全仓的格式化 diff |
+| clang-tidy 的检查集与允许表 | `tests.md` #8 的实测（LLVM 22：4 warning / 0 error） | 已评估"值得接入"，但先定检查集与允许表再谈强制 |
+| Qt6 方向 | `docs/design/qt6-assessment.md` | 单版本 5.15.2 维持 vs 一次性切 Qt6；拍板前置是 Qt6 编译跑道 |
+| ABI 2.0（多视图 API）的时间窗 | `docs/todo/framework.md` #9 | 与 1.0 的冻结承诺绑在一起，需要显式决策 |
+| Qt 运行时是否纳入分发 | `docs/todo/build.md` #8 | LGPL 再分发决策；现在只有构建树里有 Qt 运行时 |
+| 双仓 / CI 主机长期策略 | `docs/todo/build.md` #2 的预案 | 现状：Gitee 主 + GitHub 镜像跑 Actions |
+
+> **关于未入库的派工件**：发布路线图与并行派工板是**一次性的派工件**（描述当时的执行
+> 计划，入库就会变成需要长期维护的"第二份真相"），所以它们**有意不入库**；本仓库的
+> 文档因此不出现它们的文件名或链接。已落地的 W-01…W-13 逐条记在 `CHANGELOG.md` 里。

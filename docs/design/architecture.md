@@ -251,7 +251,7 @@ typedef struct PiRefCountedBase {
 - 测试宿主/插件 → `<root>/bin/<CONFIG>/`：由各目标的 **POST_BUILD** 维护（构建完即可跑，
   不再依赖 install）；install 只负责"干净前缀下的产品树"，默认前缀 `<build>/install`
 - Qt 运行时 DLL + `platforms/qwindows.dll` 自动复制到 `bin/<CONFIG>/`（**仅构建树**；
-  install / cpack 归档不含 Qt 运行时，见 `docs/todo/build.md` #5）
+  install / cpack 归档不含 Qt 运行时，见 `docs/todo/build.md` #8）
 - 默认安装前缀在 `CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT` 时被设为 `<build>/install`，
   于是 conan / 纯 CMake / cpack 三条流程一致
 

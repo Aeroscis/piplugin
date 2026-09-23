@@ -1,27 +1,27 @@
 # 核心框架待办（Framework）
 
+> 本文件记**还没做**的事（标题不带完成标记的条目），以及已完成项的**结论 + 复核入口**。
+> 已完成条目不再保留当时的方案原文——那是历史，在 `git log` 与 `CHANGELOG.md` 里；
+> 通用机制知识在 `docs/design/`。
+
 ## 1. IPiService 的真实实现与测试 [P1] —— 已完成（roadmap APP-07）
 
-> **状态**：已落地。`tests/test_plugin_service/` 是一个纯 C 服务插件
-> （`PROVIDES PI_IID_SERVICE`，实现 start/poll/status/stop，无任何 UI），
-> `tests/test_headless_host/` 加载它并把全生命周期逐条断言
-> （start 缺必填选项 → `PI_E_MISSINGCAPABILITY`、poll 的副作用计数、
+> **结论**：`tests/test_plugin_service/` 是纯 C 服务插件（`PROVIDES PI_IID_SERVICE`，
+> 实现 start/poll/status/stop，无任何 UI）；`tests/test_headless_host/` 加载它并把全
+> 生命周期逐条断言（start 缺必填选项 → `PI_E_MISSINGCAPABILITY`、poll 的副作用计数、
 > stop 幂等、卸载序列再 stop 一次），ctest 用例 `headless_host_service_lifecycle`
-> 按退出码判定。场景矩阵（`tests.md` #4）已补上"headless + service"格。
+> 按退出码判定。场景矩阵（`docs/todo/tests.md` #4）的"headless + service"格已覆盖。
+> **复核**：`ctest -C Debug -R headless_host_service_lifecycle`。
 
 ## 2. 事件/信号机制（框架级） [P2] —— 已完成（roadmap APP-06）
 
-> **状态**：已按 mini-RFC（`docs/design/events.md`，D1~D9 全部有结论）实现，API 0.4。
-> 现有：`IPiEventSink`（插件可选实现，宿主按地址投递）+ `IPiHostEvents`
-> （宿主可选提供：publish / subscribe(owner) / unsubscribe / drop_owner）；
-> 可选路由糖 `piplugin_events`（`host_kits/events/`）；宿主 kit L0 负责 sink 记账与
-> 卸载时的 owner 退订。验收：`tests/test_host_events`（ctest `events_two_way_loop`）。
-> **未做**（有意，写在 RFC 非目标里）：跨进程传输（FUT-05）、可靠投递、RPC、通配订阅、
-> 二进制负载。
-
-插件目前通过 `pi_host_post_message` 单向发消息给宿主。已扩展：
-- 宿主→插件的事件通道（原来只有 `pi_on_idle`/`pi_on_resize` 这类轮询/视图事件）；
-- 命名事件/信号订阅机制（类似 glib signals），让 GUI 宿主能监听插件的结构化事件。
+> **结论**：已按 mini-RFC（`docs/design/events.md`，D1~D9 全部有结论）实现，API 0.4。
+> 现有 `IPiEventSink`（插件可选实现，宿主按地址投递）+ `IPiHostEvents`（宿主可选提供：
+> publish / subscribe(owner) / unsubscribe / drop_owner），路由糖 `piplugin_events`
+> 是可选静态库（`host_kits/events/`）；宿主 kit L0 负责 sink 记账与卸载时的 owner 退订。
+> **非目标**（有意不做，写在 `events.md` §2）：跨进程传输（FUT-05）、可靠投递、RPC、
+> 通配订阅、二进制负载 —— 想扩这条通道之前先读那一节。
+> **复核**：ctest `events_two_way_loop`（`tests/test_host_events`）；设计见 `events.md`。
 
 ## 3. 插件热重载 / 动态管理 [P2]（roadmap FUT-04，保持开放）
 
@@ -31,91 +31,58 @@
 
 ## 4. 官方语言绑定示例 [P2] —— 已完成（roadmap ECO-06）
 
-> **状态**：已落地。`examples/ffi/{python,rust,csharp}/`：每种语言各自加载框架
-> DLL 与官方测试插件、QI 工厂（命中 → `PI_OK`，未命中 → `PI_E_NOINTERFACE`
-> 且 `*out == NULL`）、读 descriptor、**用该语言手搓宿主对象表**（C 回调表），
-> 完整 initialize/terminate/卸载再加载。Rust 示例零 crate（`kernel32` 经
-> `extern "system"`，可离线构建）。`scripts/verify_ffi.ps1` 跑三个语言并已是
-> `verify.ps1` 第 3 项，工具链缺失的语言报 SKIP 不算失败。
-
-头文件注释声明 ABI 面向"Rust、C#、Java FFI"。建议补充：
-- **Rust** 侧最小 FFI 示例（`#[repr(C)]` + vtbl）加载插件；
-- **C#** P/Invoke 示例；
-- **Python** ctypes 示例。
-作为 `examples/ffi/` 演示目录（不影响核心）。
+> **结论**：`examples/ffi/{python,rust,csharp}/` 三种语言各自完成：加载框架 DLL 与官方
+> 测试插件、QI 工厂（命中 → `PI_OK`，未命中 → `PI_E_NOINTERFACE` 且 `*out == NULL`）、
+> 读 descriptor、**用该语言手搓宿主对象表**（C 回调表）、完整
+> initialize/terminate/卸载再加载。Rust 示例零 crate（`kernel32` 经 `extern "system"`，
+> 可离线构建）。
+> **复核**：`scripts/verify_ffi.ps1`（`verify.ps1` 第 3 项；工具链缺失的语言报 SKIP
+> 不算失败）。
 
 ## 5. C++ RAII 包装层（可选） [P2] —— 已完成（roadmap APP-05）
 
-> **状态**：已落地。`include/piplugin/pi_cpp.h`（header-only，无 ABI、无导出
-> 符号、无运行时依赖）：`PiPtr<T>`（持有框架 AddRef 过的引用、move-only、
-> `qi_to<U>()` + `PiIidOf<T>` 映射）、`PiUniqueModule`（RAII `pi_module_unload`）、
-> `pi_cpp_destroy<T>`。刻意**不**被 `pi_plugin.h` 总入口包含——C 总入口保持
-> 纯 C。文档在 `interfaces.md` §7；两个测试插件与 Qt 测试宿主已改用；
-> `tests/unit_cpp`（ctest `unit_cpp`）用 `_CrtDumpMemoryLeaks()` 按退出码
-> 断言无泄漏。
-
-对 C++ 宿主/插件作者提供 `PiPtr<T>` / 接口包装（引用计数 RAII、
-`QueryInterface` 安全转换），减少手写 AddRef/Release 负担。保持 C ABI 不变，
-仅作为头文件内联层提供。
+> **结论**：`include/piplugin/pi_cpp.h`（header-only，无 ABI、无导出符号、无运行时依赖）：
+> `PiPtr<T>`（持有框架 AddRef 过的引用、move-only、`qi_to<U>()` + `PiIidOf<T>` 映射）、
+> `PiUniqueModule`（RAII `pi_module_unload`）、`pi_cpp_destroy<T>`。刻意**不**被
+> `pi_plugin.h` 总入口包含——C 总入口保持纯 C。
+> **复核**：文档在 `docs/design/interfaces.md` §7；ctest `unit_cpp` 用
+> `_CrtDumpMemoryLeaks()` 按退出码断言无泄漏。
 
 ## 6. 加载错误诊断增强 [P2] —— 已完成（W-01）
 
-> **状态**：已落地（W-01）。错误串改为**线程局部**（Windows `__declspec(thread)`、
-> 其余 `_Thread_local`，`src/pi_plugin_host.c`），每个线程读回**自己**那次
-> `pi_module_load` 的结果，不再互相覆盖；旧函数签名与"下次同线程 load 前有效"
-> 的语义不变（单线程行为逐字不变，`tests/unit` 有回归）。另加
-> `pi_module_get_load_error_r(char* buf, size_t size)`（调用方提供缓冲的拷贝
-> 变体：拷贝可留存、不受后续 load 影响；`PI_E_INVALIDARG` / 截断语义已文档化）。
-> 验收：`tests/unit` 新增 `W-01` 用例 —— 4 线程 × 32 轮各加载自己独有的不存在
-> 路径，断言 foreign/stale/copy_bad 全 0 且主线程槽位未被碰过（老实现下该用例
-> 约 75% 轮次失败，属有意设计）；ctest `unit` 连跑 5 次稳定通过。
-> 导出面 27 → 28（纯新增），终审 F6 结案（`interface-freeze-review.md`）。
-
-`pi_module_get_load_error()` 使用一个进程级 static buffer（`g_load_error[256]`），
-非线程安全且只保留最后一条。可改为 per-thread 或返回代码 + 描述的结构，
-便于并发宿主诊断。
+> **结论**：错误串改为**线程局部**（Windows `__declspec(thread)`、其余 `_Thread_local`），
+> 每个线程读回**自己**那次 `pi_module_load` 的结果；旧函数签名与"下次同线程 load 前
+> 有效"的语义不变。另加 `pi_module_get_load_error_r(char* buf, size_t size)`
+> （调用方提供缓冲的拷贝变体：拷贝可留存、不受后续 load 影响；`PI_E_INVALIDARG` /
+> 截断语义已文档化）。导出面 27 → 28（纯新增）。
+> **复核**：`docs/design/interfaces.md`（函数表 + §6 的线程模型总结）、
+> `interface-freeze-review.md` 的 F6；回归是 `tests/unit` 里 4 线程各加载自己独有的
+> 不存在路径的并发用例（改回进程级 buffer 时该用例稳定失败）。
 
 ## 7. 宿主服务的线程模型文档化 [P1] —— 已完成（roadmap BLK-08）
 
-> **状态**：已落地。接口终审（`78a0099`，`docs/design/interface-freeze-review.md`）
-> 把线程契约写成显式约定，总结在 `interfaces.md` §6「线程模型总结」：
-> `pi_host_post_message` / 事件 `publish` 可从任意线程调用、宿主负责 marshal
-> 到自己的主线程回调——并作为宿主实现 checklist 项。APP-06 的事件机制
-> 沿用并强化了同一模型（`pi_event_deliver`、订阅回调全部宿主主线程）。
-
-- `pi_host_alloc/free` 标称"线程安全"（内部即 `malloc/free`），但实现是每插件
-  直接 `malloc`——若未来切换 allocator 需保持线程安全契约；
-- `pi_host_post_message` 的宿主 marshal 语义（消息在**哪个线程**被回调）目前隐含
-  "宿主自行决定"，应在文档中明确约定，并作为宿主实现的 checklist 项。
+> **结论**：线程契约已成文并作为宿主实现 checklist 项：`pi_host_post_message` /
+> 事件 `publish` 可从任意线程调用，宿主负责 marshal 到自己的主线程回调；APP-06 的
+> 事件机制沿用并强化了同一模型（`pi_event_deliver`、订阅回调全在宿主主线程）。
+> **复核**：`docs/design/interfaces.md` §6「线程模型总结」、
+> `docs/design/interface-freeze-review.md`；`docs/tutorial/write-host.md` 的 checklist。
 
 ## 8. Windows .rc 版本资源 [P2] —— 已完成（W-07）
 
-> **状态**：已落地。`cmake/version_dll.rc.in` 提供模板（`PI_VERSION` / `PI_VERSION_COMMA`
-> / 文件说明 / 厂商 / 版权 / `OriginalFilename` 等经 `@VAR@` 注入），
-> `cmake/version_resource.cmake` 的 `piplugin_add_version_resource(<target> "<说明>")`
-> 负责注入 + 按配置生成 `.rc` + 挂到目标上；**核心库、两个适配器套件、四个宿主 kit
-> 全部启用**，`tests/` 与 `examples/` 按硬规则排除。
->
-> `project(VERSION)` 是唯一事实来源（`0.4.0` -> `FILEVERSION 0,4,0,0`），版本号不可能与
-> `conanfile.py` / 头文件漂移；`OriginalFilename` 走生成器表达式取目标的真实产物名，
-> 所以 Debug 下是 `piplugind.dll` 而不是 `piplugin.dll`（`$<CONFIG>` 参与的 .rc 每个配置
-> 各生成一份）。
->
-> **验证**：`piplugind.dll` 与 `piplugin_qtd.dll` 的属性页实测 `FileVersion=0.4.0`、
-> `ProductVersion=0.4.0`、`FileDescription` 分别为 "piplugin framework core library" /
-> "piplugin Qt adapter kit"、`CompanyName=Aeroscis`、
-> `OriginalFilename=piplugind.dll` / `piplugin_qtd.dll`。
->
-> **一条实测结论（已写进 helper，别误读成"所有目标都带版本信息了"）**：STATIC 库里的
-> `.res` **不会**进入消费方二进制 —— MSVC 链接器按符号需求拉取静态库成员，纯资源成员
-> 什么都解析不了，所以用一个带 `9.9.9.9` 版本资源的静态库链接出的 exe，版本信息是空的
-> （实测）。四个宿主 kit 与 imgui 套件目前都是 STATIC，因此它们的 `.rc` 是"随 .lib 备着"：
-> 真正可见的是两个 DLL（核心库、Qt 套件）。照着 APP-08 把某套件改成 SHARED 时资源会自动
-> 生效，不必回头补。派工板任务 W-07。
+> **结论**：`cmake/version_dll.rc.in` 提供模板，`cmake/version_resource.cmake` 的
+> `piplugin_add_version_resource(<target> "<说明>")` 负责注入 + 按配置生成 `.rc` +
+> 挂到目标上；核心库、两个适配器套件、四个宿主 kit 全部启用，`tests/` 与 `examples/`
+> 按硬规则排除。`project(VERSION)` 是唯一事实来源，版本号不可能与 `conanfile.py` /
+> 头文件漂移；`OriginalFilename` 走生成器表达式，所以 Debug 下写 `piplugind.dll`。
+> **一条别误读的实测结论**（细节与适用范围写在 helper 的注释里）：STATIC 库里的
+> `.res` **不会**进入消费方二进制——MSVC 链接器只按符号需求拉取静态库成员，所以四个
+> STATIC 宿主 kit 与 imgui 套件的 `.rc` 目前是"随 .lib 备着"，真正可见的是核心库与
+> Qt 套件两个 DLL；目标改成 SHARED 时资源自动生效，不必回头补。
+> **复核**：`cmake/version_resource.cmake` 的注释；`docs/todo/build.md` #6。
 
-**原始问题**（保留）：`version_dll.rc.in 模板暂未提供` 的注释一直在；核心库/套件/宿主
-kit 均无版本资源。
+## 9. ABI 2.0（多视图 API）的时间窗 [P2]（开放）
 
-核心库/套件/测试目标的 `.rc` 版本资源模板被注释（`version_dll.rc.in 暂未提供`）——
-该注释块已随本次改动删除。提供模板后，DLL/EXE 将带正确版本信息（`FILE_DESCRIPTION`、
-`PRODUCT_VERSION` 等已就绪）。
+`pi_get_view` 是**单视图**接口，"一个插件多面板"属 ABI 2.0 事项（见
+`host_kits/core/pi_host_session.h:34`）。什么时候开 2.0 是**排期决策**，与 1.0 的
+"ABI 冻结承诺"绑在一起，需要维护者显式拍板；不做也不阻断 0.x。
+（相关：`docs/design/interface-freeze-review.md` §6 的冻结结论。）
