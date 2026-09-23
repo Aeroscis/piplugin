@@ -1,0 +1,81 @@
+{
+  "version": 4,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 23,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "default",
+      "displayName": "generic (no conan) - Visual Studio 2022, x64",
+      "description": "不经过 conan 的通用配置：imgui/Qt 不存在时相关目标按 ECO-05 的缺依赖自动禁用逻辑跳过，其余目标照常构建。构建目录 build/generic，安装前缀默认为 <root>/build/install。",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "generator": "Visual Studio 17 2022",
+      "architecture": {
+        "value": "x64",
+        "strategy": "external"
+      },
+      "binaryDir": "${sourceDir}/build/generic",
+      "cacheVariables": {
+        "PI_BUILD_TESTS": "ON",
+        "PI_BUILD_EXAMPLES": "ON"
+      }
+    },
+    {
+      "name": "default-unix",
+      "displayName": "generic (no conan) - Ninja",
+      "description": "非 Windows 的通用配置（W-10 的 Linux job 之外的最小入口）：Ninja + 单配置 Debug。UI 目标依赖的 Qt/imgui 缺失时自动禁用。",
+      "condition": {
+        "type": "notEquals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/generic",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "PI_BUILD_TESTS": "ON",
+        "PI_BUILD_EXAMPLES": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "default",
+      "displayName": "build default (Debug)",
+      "configurePreset": "default",
+      "configuration": "Debug"
+    },
+    {
+      "name": "default-unix",
+      "displayName": "build default-unix (Debug)",
+      "configurePreset": "default-unix",
+      "configuration": "Debug"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "default",
+      "displayName": "ctest default (Debug)",
+      "configurePreset": "default",
+      "configuration": "Debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "default-unix",
+      "displayName": "ctest default-unix (Debug)",
+      "configurePreset": "default-unix",
+      "configuration": "Debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

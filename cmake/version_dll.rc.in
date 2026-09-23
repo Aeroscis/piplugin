@@ -1,0 +1,47 @@
+/* version_dll.rc.in - Windows 版本资源模板（W-07）
+ *
+ * 用法：由 cmake/version_resource.cmake 的 piplugin_add_version_resource() 载入，
+ * 分两步变成真正的 .rc：
+ *   1) string(CONFIGURE) 按 @VAR@ 注入本工程的事实（版本号、厂商、文件说明……，
+ *      变量清单见该函数）——等价于 configure_file 的注入语义；
+ *   2) file(GENERATE) 按配置生成到构建树，因此生成器表达式在这里可用（本模板只
+ *      用了两个：FILEFLAGS 在 Debug 下打上 VS_FF_DEBUG，以及生成器按配置把 Debug
+ *      的 "d" 后缀算进 OriginalFilename）。
+ *
+ * 注意：注释里不要出现生成器表达式的字面写法（尖括号那种）——file(GENERATE) 会
+ * 拿整份 CONTENT 去做表达式求值，注释里的假表达式同样会报 "not a known generator
+ * expression"。这是踩过的坑，不是洁癖。
+ *
+ * 本文件保持 ASCII：rc.exe 按系统 ANSI 代码页读源文件（没有 -utf-8 时），非 ASCII
+ * 注释在别的机器上可能被截断甚至吃掉下一行——与 scripts/*.ps1 的 ASCII 约定同理。
+ */
+#include <winver.h>
+
+1 VERSIONINFO
+ FILEVERSION @PI_VERSION_COMMA@
+ PRODUCTVERSION @PI_VERSION_COMMA@
+ FILEFLAGSMASK 0x3fL
+ FILEFLAGS $<IF:$<CONFIG:Debug>,VS_FF_DEBUG,0x0L>
+ FILEOS VOS_NT_WINDOWS32
+ FILETYPE @PI_VERSION_FILE_TYPE@
+ FILESUBTYPE VFT2_UNKNOWN
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040904b0"   /* 0x0409 = US English, 0x04b0 = Unicode */
+    BEGIN
+      VALUE "CompanyName",      "@PI_VERSION_VENDOR@"
+      VALUE "FileDescription",  "@PI_VERSION_FILE_DESCRIPTION@"
+      VALUE "FileVersion",      "@PI_VERSION@"
+      VALUE "InternalName",     "@PI_VERSION_INTERNAL_NAME@"
+      VALUE "LegalCopyright",   "@PI_VERSION_COPYRIGHT@"
+      VALUE "OriginalFilename", "@PI_VERSION_ORIGINAL_FILENAME@"
+      VALUE "ProductName",      "@PI_VERSION_PRODUCT_NAME@"
+      VALUE "ProductVersion",   "@PI_VERSION@"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x409, 1200
+  END
+END

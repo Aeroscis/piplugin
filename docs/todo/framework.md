@@ -88,13 +88,34 @@
 - `pi_host_post_message` 的宿主 marshal 语义（消息在**哪个线程**被回调）目前隐含
   "宿主自行决定"，应在文档中明确约定，并作为宿主实现的 checklist 项。
 
-## 8. Windows .rc 版本资源 [P2] —— 已上收（W-07）
+## 8. Windows .rc 版本资源 [P2] —— 已完成（W-07）
 
-> **状态**：仍未做：`version_dll.rc.in 暂未提供` 的注释还在，核心库/套件/宿主
-> kit 均无版本资源。roadmap §8 原判「顺带项」**不成立**——已上收为下一波工作
-> **W-07**（派工板，构建打包线）：提供 `.rc.in` 模板并给库/套件/宿主 kit 目标
-> 启用（排除 `tests/`），验收 = DLL 属性页显示 0.4.0。
+> **状态**：已落地。`cmake/version_dll.rc.in` 提供模板（`PI_VERSION` / `PI_VERSION_COMMA`
+> / 文件说明 / 厂商 / 版权 / `OriginalFilename` 等经 `@VAR@` 注入），
+> `cmake/version_resource.cmake` 的 `piplugin_add_version_resource(<target> "<说明>")`
+> 负责注入 + 按配置生成 `.rc` + 挂到目标上；**核心库、两个适配器套件、四个宿主 kit
+> 全部启用**，`tests/` 与 `examples/` 按硬规则排除。
+>
+> `project(VERSION)` 是唯一事实来源（`0.4.0` -> `FILEVERSION 0,4,0,0`），版本号不可能与
+> `conanfile.py` / 头文件漂移；`OriginalFilename` 走生成器表达式取目标的真实产物名，
+> 所以 Debug 下是 `piplugind.dll` 而不是 `piplugin.dll`（`$<CONFIG>` 参与的 .rc 每个配置
+> 各生成一份）。
+>
+> **验证**：`piplugind.dll` 与 `piplugin_qtd.dll` 的属性页实测 `FileVersion=0.4.0`、
+> `ProductVersion=0.4.0`、`FileDescription` 分别为 "piplugin framework core library" /
+> "piplugin Qt adapter kit"、`CompanyName=Aeroscis`、
+> `OriginalFilename=piplugind.dll` / `piplugin_qtd.dll`。
+>
+> **一条实测结论（已写进 helper，别误读成"所有目标都带版本信息了"）**：STATIC 库里的
+> `.res` **不会**进入消费方二进制 —— MSVC 链接器按符号需求拉取静态库成员，纯资源成员
+> 什么都解析不了，所以用一个带 `9.9.9.9` 版本资源的静态库链接出的 exe，版本信息是空的
+> （实测）。四个宿主 kit 与 imgui 套件目前都是 STATIC，因此它们的 `.rc` 是"随 .lib 备着"：
+> 真正可见的是两个 DLL（核心库、Qt 套件）。照着 APP-08 把某套件改成 SHARED 时资源会自动
+> 生效，不必回头补。派工板任务 W-07。
 
-核心库/套件/测试目标的 `.rc` 版本资源模板被注释（`version_dll.rc.in 暂未提供`）。
-提供模板后，DLL/EXE 将带正确版本信息（`FILE_DESCRIPTION`、`PRODUCT_VERSION` 等
-已就绪）。
+**原始问题**（保留）：`version_dll.rc.in 模板暂未提供` 的注释一直在；核心库/套件/宿主
+kit 均无版本资源。
+
+核心库/套件/测试目标的 `.rc` 版本资源模板被注释（`version_dll.rc.in 暂未提供`）——
+该注释块已随本次改动删除。提供模板后，DLL/EXE 将带正确版本信息（`FILE_DESCRIPTION`、
+`PRODUCT_VERSION` 等已就绪）。

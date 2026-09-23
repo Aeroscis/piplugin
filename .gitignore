@@ -24,6 +24,10 @@ conaninfo.txt
 conanbuildinfo.*
 obj/
 target/
+# conan 生成的用户预设文件：它 include 生成器目录里的 CMakePresets.json，
+# 该文件在干净检出里不存在会让"读取预设"整体失败（CMake 明确报 File not found），
+# 因此不入库 —— 通用预设请写在仓库内的 CMakePresets.json（W-09）。
+CMakeUserPresets.json
 # FFI 示例的语言侧产物（cargo / dotnet）
 __pycache__/
 *.pyc

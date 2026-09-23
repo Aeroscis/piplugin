@@ -115,7 +115,14 @@ class PiPluginConan(ConanFile):
         "PI_BUILD_TEST_PLUGIN_EVENTS": True,
     }
 
-    exports_sources = "CMakeLists.txt", "cmake/*", "include/*", "src/*", "adapters/*", "host_kits/*", "examples/*", "tests/*"
+    # 根文档（LICENSE / README.md / CHANGELOG.md）一并导出：CMake install 规则会把它们
+    # 装进分发产物（W-08），而 package() 走的就是 cmake.install()，所以这三份在 conan 的
+    # 构建目录里也必须存在 —— 漏掉时的症状是 package() 阶段直接失败：
+    #   CMake Error: file INSTALL cannot find ".../b/LICENSE": File exists.
+    # 顺带把 build.md #7 的遗留项（conan 包不随包带 LICENSE）一起解决。
+    exports_sources = ("CMakeLists.txt", "cmake/*", "include/*", "src/*", "adapters/*",
+                       "host_kits/*", "examples/*", "tests/*",
+                       "LICENSE", "README.md", "CHANGELOG.md")
     # CMakeToolchain 不在 generators 声明：需要在 generate() 手动实例化以注入自定义 cache 变量。
     # （Conan 禁止同一生成器既声明又手动实例化；CMakeDeps 的依赖查找路径经
     #   conan_cmakedeps_paths.cmake 由工具链在 configure 时包含，与生成顺序无关）

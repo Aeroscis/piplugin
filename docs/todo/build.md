@@ -41,17 +41,43 @@
 - 每次 push 跑 `conan install` + `cmake --preset` + 构建；
 - headless 测试宿主作为冒烟测试（退出码断言）。
 
-## 3. CMake presets / 工具链现代化 [P2] —— 已上收（W-09）
+## 3. CMake presets / 工具链现代化 [P2] —— 已完成（W-09）
 
-> **状态**：仓库内置 `CMakePresets.json` 仍未做（`CMakeUserPresets.json` 仍由
-> conan 生成、勿手工改）——已上收为下一波工作 **W-09**（`docs/todo/parallel-improvements.md`
-> 派工板，构建打包线）：不依赖 conan 的通用 configure/build preset（Qt 目标
-> 允许跳过），无 conan 环境可 configure。
+> **状态**：已落地。仓库内置 `CMakePresets.json`（**入库**）：`default`（VS 2022 / x64，
+> 构建目录 `build/generic`，与 conan 的 `build/` 互不干扰）与 `default-unix`（Ninja），
+> 各带同名 build / test 预设；文件里**不含**任何 conan 生成的预设，缺 Qt / imgui 时相关
+> 目标沿用 ECO-05 的"打印指引后自动禁用"，不打断 configure。
+>
+> **一处超出派工板预期的发现**（"不动 `CMakeUserPresets.json`"这一条做不到）：只加内置
+> 预设文件并不能让"无 conan 也能 configure"成立。`CMakeUserPresets.json` 是 conan 生成的
+> 本地文件却**入了库**，它 `include` 生成器目录里的 `build/generators/CMakePresets.json`，
+> 而干净检出里没有那个文件 —— CMake 对读不到的 include 是**硬失败**
+> （`CMake Error: Could not read presets ... File not found`），在它检查你要用的是哪个
+> 预设**之前**就整体报错（实测：把该 include 的目标藏起来，`cmake --list-presets` 直接
+> exit 1）。所以该文件改为**不入库**（`.gitignore`，与 CMake 官方建议一致：它是每台机器
+> 的本地文件，conan 每次 `conan install` 都会重写）。
+>
+> 原先只写在那个本地文件里的 `conan-default-local`（把安装前缀钉到 `<root>/build/install`，
+> 见第 5 条与 `docs/todo/install-design-review-prompt.md`）随之失去载体：CMake 的可见性
+> 规则不允许仓库预设继承 conan 预设（`Inherited preset ... is unreachable from preset's
+> file`，实测），故这一默认值改由根 `CMakeLists.txt` 在
+> `CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT` 时设定 —— conan / 纯 CMake / cpack 三条
+> 流程一致，用户显式给的前缀照旧优先。
+>
+> **验证**：把 `CMakePresets.json` 之外的预设文件与 conan 生成的 include 都藏起来（模拟
+> 干净检出）后，`cmake --preset default` + `cmake --build --preset default` 全绿；本机 Qt
+> 在、imgui 不在，正好覆盖"缺依赖自动禁用"那一支（imgui 套件 / imgui 示例插件 / imgui
+> 测试宿主与插件四条提示后跳过）。文档同步：README「方式二」、
+> `docs/design/build-system.md` §4。派工板任务 W-09。
+
+**原始需求**（保留）：现在 configure 必须 conan（`CMakeUserPresets.json` 由 conan 生成）；
+无 conan 环境的 CI 阶段或快速试用没有一条顺手的入口。
 
 - `CMakeUserPresets.json` 由 conan 管理，勿手工改；但可在仓库内置
   `CMakePresets.json`（不含 conan 生成的 preset）提供通用 configure/build presets，
   方便无 conan 的 CI 阶段；
-- 评估 `toolchain files` 统一（conan toolchain 已承担）。
+- 评估 `toolchain files` 统一（conan toolchain 已承担）—— 仍未做：当前是"conan 用
+  conan_toolchain.cmake、纯 CMake 流程不用 toolchain file"两条并列路径，未统一。
 
 ## 4. Qt 依赖策略 [P1] —— 已完成（roadmap ECO-05）
 
@@ -72,18 +98,49 @@
    注意许可与体积）；
 3. CI 中通过变量注入 Qt 路径。
 
-## 5. 安装/部署布局统一 [P2] —— install 验证已完成；cpack 已上收（W-08）
+## 5. 安装/部署布局统一 [P2] —— 已完成（W-08）
 
-> **状态**：前半已达成——`scripts/verify_package.ps1`（ECO-04）对
-> `cmake --install` 到干净前缀后的 install 树做「消费方可直接构建运行」验证
-> （双形态：install 树 + conan 包）。**cpack 产出**（zip，可选 NSIS）未做——
-> 已上收为下一波工作 **W-08**（派工板，构建打包线），顺带把「install 到
-> 干净前缀后宿主可直接运行」并入该验证。
+> **状态**：已落地。cpack 产出 zip（`CPACK_GENERATOR=ZIP`，`-DPI_CPACK_NSIS=ON` 可选追加
+> NSIS 安装包），归档根就是 `bin/<CONFIG>/`、`lib/<CONFIG>/`、`include/`、cmake 包配置，
+> 外加随包分发的根文档 `LICENSE` / `README.md` / `CHANGELOG.md`（此前没有任何 install
+> 规则带上它们）。`CPACK_PACKAGING_INSTALL_PREFIX` 置空是必需的：Windows 上 CPack 默认
+> 继承 `CMAKE_INSTALL_PREFIX`，否则整棵树会嵌在 `/Program Files/piplugin/` 下面。
+> 归档名带构建配置（`piplugin-0.4.0-Debug-win64.zip`），但**不是**生成器表达式算出来的
+> ——`CPACK_PACKAGE_FILE_NAME` 不支持生成器表达式，字面量里的尖括号在 Windows 上是非法
+> 路径字符，cpack 会以 `Problem creating temporary directory` 直接失败（实测）；配置后缀
+> 改由 `cmake/CPackProjectConfig.cmake` 在打包时拼上（那里 `CPACK_BUILD_CONFIG` 已就绪）。
+>
+> **验证**（`scripts/verify_package.ps1`，三形态一次跑完，`RESULT: PASS`）：
+> - A 段（原有）install 树：消费方 configure / build / run 全通过；
+> - B 段（原有）conan 包：`conan create` + 消费方全通过；
+> - C 段（本次新增）：cpack 产出 zip → 解压到干净目录 → 断言归档布局（核心 DLL /
+>   导入库 / 公共头 / `pipluginConfig.cmake` / `LICENSE` 齐全）→ **不带 conan 工具链**、
+>   **PATH 上没有任何本仓库路径**的情况下配置并构建出宿主程序并运行成功
+>   （`RESULT: PASS`）。也就是说"解压即可用"是脚本断言出来的，不是手工看的。
+>
+> **C 段第一次真跑就抓到一个回归**：新加的"根文档进 install 树"这条规则让 `conan create`
+> 在 `package()` 阶段失败（`file INSTALL cannot find .../LICENSE: File exists.`）——
+> `conanfile.py` 的 `exports_sources` 没有导出这三份文档，conan 构建目录里自然找不到。
+> 已把 `LICENSE` / `README.md` / `CHANGELOG.md` 加进导出集，于是第 7 条的遗留项
+> 「conan 包不随包带 LICENSE」**顺带解决**（见下）。
+>
+> **仍然遗留（如实记录，未做）**：
+> 1. **install 阶段并没有"统一复制 Qt 运行时"** —— 下面原始需求里那句话与实际不符：Qt
+>    运行时的部署只发生在**构建树**（测试宿主/插件的 `POST_BUILD` 把 `Qt5Core/Gui/Widgets.dll`
+>    与 `platforms/qwindows.dll` 复制到 `bin/<CONFIG>`），install / cpack 归档里一份都没有
+>    （归档 65 个条目里 `Qt5*` 为 0）。因此 C 段的"宿主直接运行"覆盖的是**不依赖 Qt** 的
+>    链接面；要让 Qt 宿主也做到"解压即跑"，得先把 Qt 运行时纳入分发 —— 那是 LGPL 再分发
+>    的决策（"Qt 是本地安装、消费方自行保证可达"是当前明示约定），不在本卡范围内。
+> 2. 归档里没有宿主可执行文件：产品本身没有宿主 EXE，`tests/` 的宿主与 `examples/` 的
+>    示例按既有约定都不进分发（见 `conanfile.py` 的 `exports_sources` 注释与 conanfile
+>    里"examples 不进包"的说明）。C 段因此用"由归档构建出的宿主程序"来做运行断言。
+> 3. NSIS 形态只做了配置，未在装了 NSIS 的机器上产出过安装包（默认关）。
+>
+> 派工板任务 W-08。
 
-- 核心库产物在 `lib/<CONFIG>/`，宿主/插件在 `bin/<CONFIG>/`，install 阶段
-  统一复制 Qt 运行时。建议文档化+测试 `cmake --install` 到干净前缀后
-  宿主可直接运行（无 Qt 环境变量依赖）。
-- 可增加 `cpack` 配置产出 zip/installer。
+**原始需求**（保留）：核心库产物在 `lib/<CONFIG>/`，宿主/插件在 `bin/<CONFIG>/`，
+install 阶段统一复制 Qt 运行时。建议文档化+测试 `cmake --install` 到干净前缀后
+宿主可直接运行（无 Qt 环境变量依赖）。可增加 `cpack` 配置产出 zip/installer。
 
 ## 6. 库名/产物名一致性 [P2]
 
@@ -99,6 +156,10 @@
 > 遗留：**conan 包不随包带 LICENSE**——`package()` 只走 `cmake.install()`，
 > CMake install 规则里也没有 LICENSE 文件；如需随包分发，在 `package()`
 > 补一行 copy 即可（剩余项，如实记录）。
+> **该遗留已由 W-08 清掉**：install 规则现在会装 `LICENSE` / `README.md` /
+> `CHANGELOG.md`，`conanfile.py` 的 `exports_sources` 也把这三份纳入了导出集，
+> 因此 conan 包与 cpack 归档都带 LICENSE（`verify_package.ps1` 的 B/C 两段都为
+> 此跑了真实验证）。
 
 - `conanfile.py` / `CMakeLists.txt` 的 `url` 目前是占位
   （`https://github.com/example/piplugin`）；HOMEPAGE_URL 亦为占位。

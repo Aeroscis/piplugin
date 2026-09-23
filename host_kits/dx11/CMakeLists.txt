@@ -63,3 +63,7 @@ install(EXPORT pipluginHostDx11Targets
     NAMESPACE ${NAMESPACE_NAME}::
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/${PI_CMAKE_PACKAGE_SUBDIR}
 )
+
+# ------- Windows 版本资源（W-07） -------
+# STATIC（同 events kit：资源随 .lib 备着，见 cmake/version_resource.cmake 的说明）
+piplugin_add_version_resource(${TARGET_NAME} "piplugin host kit L1 (D3D11 embed glue)")

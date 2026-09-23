@@ -25,19 +25,6 @@ pi_tar_msg(STATUS ${FULL_NAME} "library configuring...")
 #     ${TARGET_CONFIG_HEADER_PATH}
 #     @ONLY #只替换@强包裹的
 # )
-if(WIN32)
-    #生成 windows .rc 文件（模板 version_dll.rc.in 暂未提供，模板就绪后取消注释）
-    # set(TARGET_VERSION_RES_TEMPLATE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/src/config/version_dll.rc.in)
-    # set(TARGET_VERSION_RES_PATH ${CMAKE_CURRENT_BINARY_DIR}/src/config/version_dll.rc)
-    # configure_file(
-    #     ${TARGET_VERSION_RES_TEMPLATE_PATH}
-    #     ${TARGET_VERSION_RES_PATH}
-    #     @ONLY #只替换@强包裹的
-    # )
-    # set_source_files_properties(
-    #     ${TARGET_VERSION_RES_PATH}
-    #     PROPERTIES GENERATED TRUE)
-endif(WIN32)
 
 # source files（框架源码位于工程根 src/ 与 include/，此处以相对路径引用）
 set(SRC_FILE_LIST
@@ -163,3 +150,8 @@ install(FILES
     "${CMAKE_CURRENT_BINARY_DIR}/${FULL_NAME}CoreConfig.cmake"
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/${PI_CMAKE_PACKAGE_SUBDIR}
 )
+
+# ------- Windows 版本资源（W-07） -------
+# 核心库是 SHARED：属性页「详细信息」显示版本号、文件说明、原始文件名等；版本号来自
+# 根 CMakeLists.txt 的 project(VERSION)，不会与 conanfile.py / 头文件里的版本漂移。
+piplugin_add_version_resource(${TARGET_NAME} "piplugin framework core library")

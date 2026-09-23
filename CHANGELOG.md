@@ -40,6 +40,69 @@ own.
 
 ### Added
 
+- **Windows binaries identify themselves now (W-07).** Every product DLL's property
+  page showed empty version information: the `.rc` template had been "about to be
+  provided" since the beginning (the `version_dll.rc.in 暂未提供` comments in the
+  target CMakeLists), so a user reporting a problem could not tell which build they
+  had. `cmake/version_dll.rc.in` plus `cmake/version_resource.cmake`
+  (`piplugin_add_version_resource(<target> "<description>")`) now inject the project
+  facts, generate the resource per configuration and attach it to the core library,
+  both adapter kits and all four host kits - `tests/` and `examples/` stay out by
+  design. `piplugind.dll` and `piplugin_qtd.dll` report `FileVersion`/`ProductVersion`
+  `0.4.0`, `FileDescription` "piplugin framework core library" / "piplugin Qt adapter
+  kit", `CompanyName` and an `OriginalFilename` carrying the Debug `d` suffix, all
+  derived from `project(VERSION)`, so the numbers cannot drift from the release. Two
+  things are worth knowing before trusting "the kits have versions too": a resource
+  inside a STATIC library never reaches the consuming binary (measured - MSVC's
+  linker pulls library members by symbol need, and a resource-only member resolves
+  nothing, so an exe linked against a library carrying a `9.9.9.9` resource ends up
+  with empty version info), which is why only the two SHARED product libraries show
+  anything today; and a generator-expression-looking literal in the template's own
+  comment is evaluated by `file(GENERATE)` like any other content (`Expression did
+  not evaluate to a known generator expression`), so the template keeps such literals
+  out of its prose.
+
+- **`cpack` produces the archive somebody actually downloads, and it is verified
+  from the outside (W-08).** The distribution had two shapes - a Conan package and a
+  bare `cmake --install` tree - and no artifact. `CPack` adds the third: a ZIP whose
+  root is `bin/`, `lib/`, `include/` and the three root documents (`LICENSE`,
+  `README.md`, `CHANGELOG.md`, which no install rule had ever carried). Clearing
+  `CPACK_PACKAGING_INSTALL_PREFIX` is deliberate: on Windows CPack inherits
+  `CMAKE_INSTALL_PREFIX`, which would bury the whole tree under
+  `/Program Files/piplugin/`. The archive name carries the build configuration, but
+  not from a generator expression - `CPACK_PACKAGE_FILE_NAME` ignores those, and the
+  literal text it leaves behind contains characters Windows rejects in a path, so
+  packaging died with `Problem creating temporary directory`; the configuration is
+  appended in `cmake/CPackProjectConfig.cmake` instead, which CPack includes at
+  package time, when `CPACK_BUILD_CONFIG` is set. `PI_CPACK_NSIS=ON` adds an NSIS
+  installer for whoever has NSIS. `scripts/verify_package.ps1` grew a phase C that
+  unpacks the ZIP into a clean directory, asserts its layout, and then asserts the
+  only thing that matters: a host program configures and builds against the unpacked
+  archive with NO Conan toolchain and NO repository path on `PATH`, and runs. That
+  phase earned its keep on its first real run by catching a regression the new docs
+  install rules introduced: `conanfile.py` did not export `LICENSE` / `README.md` /
+  `CHANGELOG.md`, so `conan create` failed in `package()` with `file INSTALL cannot
+  find .../LICENSE: File exists.` The export list carries them now, which is also what
+  finally makes the Conan package ship its license file.
+
+- **A conan-free way in: `CMakePresets.json` lives in the repository now (W-09).**
+  Configuring required Conan for a mundane reason: `CMakeUserPresets.json` only
+  appears after `conan install`, yet it was committed, and it `include`s
+  `build/generators/CMakePresets.json`, which is generated. CMake does not tolerate a
+  missing include - on a fresh clone every `cmake --preset ...` invocation died with
+  `Could not read presets ... File not found` before it could even look at the preset
+  that was asked for. The repository now carries `CMakePresets.json` (`default`:
+  VS 2022 / x64 into `build/generic`; `default-unix`: Ninja; matching build and test
+  presets; no Conan-generated content) and `CMakeUserPresets.json` is no longer
+  tracked, which is what CMake's own documentation asks for a per-machine file that
+  Conan rewrites. Missing Qt and imgui keep disabling their targets with the existing
+  actionable message instead of breaking the configure, so `cmake --preset default`
+  followed by `cmake --build --preset default` builds everything that needs no
+  third-party package - verified from a simulated clean checkout (both preset files
+  hidden) with Qt present and imgui absent. The one thing that lived only in the
+  deleted local preset was the pinned install prefix, so see the entry under
+  *Changed*.
+
 - **Two imgui plugin modules in one process (W-05).** The matrix had "several Qt
   plugins in one process" and "imgui plugin in a non-imgui host", but nothing for
   the combination that shares process-level resources between two imgui plugins:
@@ -369,6 +432,17 @@ own.
   crash above; it was not that crash's cause, but it is wrong for imgui hosts.)
 
 ### Changed
+
+- **The default install prefix is the build system's job now (W-09).** It used to be
+  pinned by a hand-written `conan-default-local` preset living in the committed
+  `CMakeUserPresets.json`, which meant only somebody who kept that file got the sane
+  default (`<build>/install`) instead of `C:/Program Files/piplugin` - where an
+  unprivileged `cmake --install` fails outright (ECO-04). That file is no longer
+  tracked (see the W-09 entry under *Added*), so the pin moved into the root
+  `CMakeLists.txt`: when CMake itself initialized the prefix
+  (`CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT`), it becomes `<build>/install`, and
+  an explicit prefix from the user, Conan or a toolchain is still respected verbatim.
+  All three flows - Conan, plain CMake, cpack - now behave the same way.
 
 - **Qt is no longer hard-coded (ECO-05).** See the 0.4.0 entry for the switch
   description - it landed after that section was written, so it is recorded here:

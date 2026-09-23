@@ -14,6 +14,10 @@
 - **已修复**：`bin/<Config>` 改为完全由 `POST_BUILD` 维护（框架库 + 5 个测试
   target + Qt 运行时），安装前缀经 `conan-default-local` 预设固定到
   `<root>/build/install`。全仓库已无绝对安装目标，不再有被前面失败连带跳过的风险。
+  > 后续（W-09，2026-09-23）：这条默认值从本地预设收进了根 `CMakeLists.txt`
+  > （`CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT` 时设为 `<build>/install`），
+  > `conan-default-local` 随 `CMakeUserPresets.json` 一起不再入库 —— 于是 conan /
+  > 纯 CMake / cpack 三条流程的默认前缀一致，且干净检出就能用 `cmake --preset`。
 - 现象与排查过程见 `docs/tutorial/quickstart.md` 4.7。
 
 ---

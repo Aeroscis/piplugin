@@ -61,3 +61,9 @@ install(EXPORT pipluginEventsTargets
     NAMESPACE ${NAMESPACE_NAME}::
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/${PI_CMAKE_PACKAGE_SUBDIR}
 )
+
+# ------- Windows 版本资源（W-07） -------
+# 本 kit 是 STATIC：资源随 .lib 备着（静态库成员按符号需求拉取，纯资源成员不会进入
+# 消费方二进制 —— 详见 cmake/version_resource.cmake），声明在这里是为了目标类型变化
+# （STATIC -> SHARED）时不必回头补。
+piplugin_add_version_resource(${TARGET_NAME} "piplugin host-side event router")

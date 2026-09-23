@@ -87,3 +87,9 @@ add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
         "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
     COMMENT "Deploy ${TARGET_NAME} -> ${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
 )
+
+# ------- Windows 版本资源（W-07） -------
+# 这个套件是 SHARED（APP-08），调用即生效：DLL 属性页「详细信息」显示 0.4.0、
+# 文件说明与（带 "d" 后缀的）原始文件名。APP-08 之前它是 STATIC——STATIC 时资源
+# 不会出现在任何二进制里，详见 cmake/version_resource.cmake 的实测说明。
+piplugin_add_version_resource(${TARGET_NAME} "piplugin Qt adapter kit")

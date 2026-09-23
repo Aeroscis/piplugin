@@ -2,7 +2,7 @@
 #
 # Unit tests and the conformance harness say the framework works; neither says
 # anything about what somebody else receives. This script builds the consumer in
-# examples/conan_consumer/ against two shapes of the distribution, and runs it:
+# examples/conan_consumer/ against three shapes of the distribution, and runs it:
 #
 #   A. install tree   -- cmake --install into a temporary prefix, then
 #                        find_package(piplugin) + link pi::piplugin / _host /
@@ -11,16 +11,21 @@
 #                        then a consumer that installs piplugin/<version> as a
 #                        Conan requirement, configures with the generated
 #                        toolchain and runs.
+#   C. cpack archive  -- cpack builds the ZIP somebody actually downloads (W-08).
+#                        It is unzipped into a clean directory and has to stand on
+#                        its own: the consumer is configured there WITHOUT the
+#                        Conan toolchain (no build tree, no Qt environment on
+#                        PATH) and the resulting host program must run.
 #
 # Phase B is the slow one (it rebuilds the whole project inside Conan's cache).
-# Use -SkipConan to run only phase A.
+# Use -SkipConan to run A + C only.
 #
 # Requirements for the consumer: imgui (a real Conan dependency) and, for the Qt
 # components, a local Qt5 - the package deliberately does NOT require Qt5 (see
 # src/cmake/piConfig.cmake.in), so the consumer here links the core, the two host
 # kits and the imgui adapter.
 #
-# Usage: pwsh -NoProfile -File scripts\verify_package.ps1 [-SkipConan] [-KeepTemp]
+# Usage: pwsh -NoProfile -File scripts\verify_package.ps1 [-SkipConan] [-SkipCpack] [-KeepTemp]
 # Exit code 0 = every phase that ran passed.
 #
 # Keep this file ASCII-only: it has no BOM, and Windows PowerShell 5.1 decodes a
@@ -31,6 +36,7 @@ param(
     [string]$BuildDir = "",
     [string]$Config   = "Debug",
     [switch]$SkipConan,
+    [switch]$SkipCpack,
     [switch]$KeepTemp
 )
 
@@ -51,6 +57,9 @@ New-Item -ItemType Directory -Force -Path $work | Out-Null
 
 $failures = @()
 
+# Debug artifacts carry the global "d" suffix (GLOBAL_PROJECT_BUILD_TYPE_SUFFIX)
+$libSuffix = if ($Config -eq "Debug") { "d" } else { "" }
+
 function Write-Section([string]$text) {
     Write-Host ""
     Write-Host ("== {0} ==" -f $text) -ForegroundColor Cyan
@@ -66,7 +75,7 @@ $prefix = Join-Path $work "install"
 if ($LASTEXITCODE -ne 0) { Write-Host "FAIL - cmake --install" -ForegroundColor Red; exit 1 }
 Write-Host ("installed into {0}" -f $prefix)
 
-$hasQtKit = Test-Path (Join-Path $prefix "lib\$Config\piplugin_qtd.lib")
+$hasQtKit = Test-Path (Join-Path $prefix "lib\$Config\piplugin_qt$libSuffix.lib")
 Write-Host ("Qt adapter kit installed: {0} (the consumer does not need it)" -f $hasQtKit)
 
 $conanToolchain = Join-Path $BuildDir "generators\conan_toolchain.cmake"
@@ -205,6 +214,113 @@ CMakeToolchain
                     } else {
                         Write-Host "conan package: PASS" -ForegroundColor Green
                     }
+                }
+            }
+        }
+    }
+}
+
+# ---------------------------------------------------------------------------
+# C. cpack archive (W-08)
+#
+# The third shape of the distribution, and the one somebody actually downloads.
+# It has to stand on its own OUTSIDE this repository: unzipped into a clean
+# directory, with no build tree, no Conan toolchain and no Qt runtime on PATH, the
+# archive must still be enough to build a host against it and RUN that host.
+#
+# The consumer is configured WITHOUT -DCMAKE_TOOLCHAIN_FILE on purpose: phases A
+# and B hand it Conan's dependency paths, this one may not. Everything the build
+# needs has to come from the unpacked archive (imgui, the one external
+# dependency, is therefore absent here - the umbrella config skips a component
+# whose dependency is missing, so the consumer links core + host kits only).
+# ---------------------------------------------------------------------------
+Write-Section "C. cpack archive"
+
+if ($SkipCpack) {
+    Write-Host "SKIP - -SkipCpack was given" -ForegroundColor Yellow
+} else {
+    $cpackOut = Join-Path $work "cpack-out"
+    New-Item -ItemType Directory -Force -Path $cpackOut | Out-Null
+
+    & cpack --config (Join-Path $BuildDir "CPackConfig.cmake") -C $Config -B $cpackOut 2>&1 |
+        ForEach-Object { Write-Host "    $_" }
+    $cpackExit = $LASTEXITCODE
+
+    $archive = $null
+    if ($cpackExit -eq 0) {
+        $archive = Get-ChildItem $cpackOut -Filter *.zip -File -ErrorAction SilentlyContinue |
+                   Select-Object -First 1
+    }
+
+    if ($cpackExit -ne 0 -or -not $archive) {
+        $failures += "cpack"
+        Write-Host "FAIL - cpack produced no archive" -ForegroundColor Red
+    } else {
+        Write-Host ("archive: {0} ({1:N0} bytes)" -f $archive.Name, $archive.Length)
+
+        $extract = Join-Path $work "cpack-extract"
+        Expand-Archive -Path $archive.FullName -DestinationPath $extract -Force
+        # CPack archives carry one top-level directory (CPACK_INCLUDE_TOPLEVEL_DIRECTORY)
+        $pkgRoot = (Get-ChildItem $extract -Directory | Select-Object -First 1).FullName
+        if (-not $pkgRoot) { $pkgRoot = $extract }
+        Write-Host ("unpacked into {0}" -f $pkgRoot)
+
+        # -- the archive promises a layout: assert it, do not eyeball it -------
+        $required = @(
+            "bin\$Config\piplugin$libSuffix.dll",
+            "lib\$Config\piplugin$libSuffix.lib",
+            "include\piplugin\pi_plugin.h",
+            "lib\cmake\piplugin\pipluginConfig.cmake",
+            "LICENSE"
+        )
+        $missing = @()
+        foreach ($rel in $required) {
+            if (-not (Test-Path (Join-Path $pkgRoot $rel))) { $missing += $rel }
+        }
+        if ($missing.Count -gt 0) {
+            $failures += "cpack layout"
+            Write-Host ("FAIL - not in the archive: {0}" -f ($missing -join ', ')) -ForegroundColor Red
+        } else {
+            Write-Host "archive layout: PASS" -ForegroundColor Green
+        }
+
+        # -- the archive alone must be enough to build and RUN a host ----------
+        $zipConsumer = Join-Path $work "consumer-cpack"
+        & cmake -S $consumerSrc -B $zipConsumer -G "Visual Studio 17 2022" -A x64 `
+            "-DCMAKE_PREFIX_PATH=$pkgRoot" "-DCMAKE_BUILD_TYPE=$Config" 2>&1 |
+            ForEach-Object { Write-Host "    $_" }
+        if ($LASTEXITCODE -ne 0) {
+            $failures += "cpack consumer configure"
+            Write-Host "FAIL - configure against the unpacked archive" -ForegroundColor Red
+        } else {
+            & cmake --build $zipConsumer --config $Config --parallel 2>&1 |
+                ForEach-Object { Write-Host "    $_" }
+            if ($LASTEXITCODE -ne 0) {
+                $failures += "cpack consumer build"
+                Write-Host "FAIL - build against the unpacked archive" -ForegroundColor Red
+            } else {
+                $exe = Join-Path $zipConsumer "$Config\pi_consumer.exe"
+                $pkgBin = Join-Path $pkgRoot "bin\$Config"
+                # the host finds the SHARED core either next to itself (copy, as in
+                # phase A) or on PATH; take the copy so the run cannot silently pick
+                # up a DLL from somewhere else.
+                Copy-Item (Join-Path $pkgBin "*.dll") (Split-Path $exe) -Force
+
+                # No build tree on PATH: prove the run does not depend on this
+                # repository (phase B appended Conan deploy dirs to PATH).
+                $savedPath = $env:PATH
+                $env:PATH = ((($savedPath -split ';') |
+                              Where-Object { $_ -and ($_ -notlike "$repoRoot*") }) -join ';')
+                $env:PATH = "$pkgBin;" + $env:PATH
+                & $exe
+                $runExit = $LASTEXITCODE
+                $env:PATH = $savedPath
+
+                if ($runExit -ne 0) {
+                    $failures += "cpack consumer run"
+                    Write-Host "FAIL - running a host built from the unpacked archive" -ForegroundColor Red
+                } else {
+                    Write-Host "cpack archive: PASS" -ForegroundColor Green
                 }
             }
         }

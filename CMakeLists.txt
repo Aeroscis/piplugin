@@ -5,6 +5,10 @@ cmake_minimum_required(VERSION 3.23)
 # include pi module
 include(${CMAKE_CURRENT_LIST_DIR}/cmake/pi/pi.cmake)
 
+# Windows 版本资源（W-07）：定义 piplugin_add_version_resource()，供各产品目标的
+# CMakeLists 调用（核心库 / 适配器套件 / 宿主 kit；tests/ 与 examples/ 不挂）。
+include(${CMAKE_CURRENT_LIST_DIR}/cmake/version_resource.cmake)
+
 # ------------------------------- Project --------------------------------
 project(piplugin
         VERSION 0.4.0
@@ -13,6 +17,18 @@ project(piplugin
         LANGUAGES C CXX
     )
 pi_proj_msg(STATUS "project [${PROJECT_NAME}] declared")# project msg
+
+# ------------------------------- 安装前缀默认值 --------------------------------
+# 本仓库的安装前缀默认落在 <build>/install：Windows 上 CMAKE_INSTALL_PREFIX 的平台
+# 默认值是 "C:/Program Files/piplugin"，无提权必然失败（ECO-04 踩过这个坑）。
+# 只在 CMake 把前缀初始化成平台默认值时改写，用户/conan/工具链显式给出的前缀一律尊重
+# ——原先这条约定只写在 CMakeUserPresets.json 的 conan-default-local 预设里（那是个
+# 本地文件，见 CMakePresets.json 头部注释），现在收进工程本身，三种流程行为一致。
+if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+    set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/install" CACHE PATH
+        "install prefix (this repo defaults to <build>/install)" FORCE)
+    pi_proj_msg(STATUS "安装前缀未显式指定 -> 使用 ${CMAKE_INSTALL_PREFIX}")
+endif()
 
 # Windows路径长度
 set(CMAKE_AUTOGEN_INTERMEDIATE_DIR_STRATEGY "SHORT" CACHE STRING "")
@@ -95,5 +111,54 @@ endif()
 if(PI_BUILD_TESTS AND DEFINED GLOBAL_PROJECT_TESTS_PATH)
     add_subdirectory(${GLOBAL_PROJECT_TESTS_PATH})
 endif()
+
+#------------------------- 分发产物（W-08） -------------------------
+# 三种分发形态：conan 包（conanfile.py）、裸 install 树（cmake --install）、以及这里的
+# cpack 归档。归档内容 = install 规则装出来的东西（bin/<CONFIG>/、lib/<CONFIG>/、
+# include/、cmake 包配置 + 根文档），因此"装出来的能用"与"解压出来的能用"是同一件事：
+# scripts/verify_package.ps1 的 C 段把 zip 解到干净目录，只用它（不带 conan 工具链、
+# PATH 上没有本仓库）构建出一个宿主程序并运行来断言。
+#
+# 归档里**不含**任何宿主可执行文件：产品本身没有宿主 EXE，tests/ 的宿主与 examples/ 的
+# 示例按既有约定都不进分发（见 conanfile.py 的 exports_sources 注释）。
+
+# 根文档随包分发：LICENSE 是分发的基本义务（build.md #7 的遗留项之一），README/CHANGELOG
+# 让拿到归档的人不必回仓库就能知道这是什么、这一版改了什么。
+install(FILES
+    ${CMAKE_CURRENT_SOURCE_DIR}/LICENSE
+    ${CMAKE_CURRENT_SOURCE_DIR}/README.md
+    ${CMAKE_CURRENT_SOURCE_DIR}/CHANGELOG.md
+    DESTINATION .
+)
+
+set(CPACK_PACKAGE_NAME "piplugin")
+set(CPACK_PACKAGE_VENDOR "Aeroscis")
+set(CPACK_PACKAGE_CONTACT "Aeroscis")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "${PROJECT_DESCRIPTION}")
+set(CPACK_PACKAGE_HOMEPAGE_URL "${PROJECT_HOMEPAGE_URL}")
+set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+set(CPACK_PACKAGE_VERSION_MAJOR "${PROJECT_VERSION_MAJOR}")
+set(CPACK_PACKAGE_VERSION_MINOR "${PROJECT_VERSION_MINOR}")
+set(CPACK_PACKAGE_VERSION_PATCH "${PROJECT_VERSION_PATCH}")
+# 归档根直接是 bin/、lib/、include/：Windows 上 CPack 默认继承 CMAKE_INSTALL_PREFIX，
+# 那会把整棵树塞进 zip 里的 /Program Files/piplugin/...（解压的人要先绕过一层假路径）。
+set(CPACK_PACKAGING_INSTALL_PREFIX "")
+# 归档名带配置，但**不能**在这里算：CPACK_PACKAGE_FILE_NAME 既拿不到多配置生成器的
+# 配置，也不支持生成器表达式（写成尖括号表达式会得到一个含 '<' '>' 的字面目录名，
+# Windows 上建目录即失败 —— 实测）。改成在打包时由 CPack 引入的项目脚本里算，
+# 那里 CPACK_BUILD_CONFIG 已经就绪。
+set(CPACK_PROJECT_CONFIG_FILE "${CMAKE_CURRENT_SOURCE_DIR}/cmake/CPackProjectConfig.cmake")
+# 兜底值（本文件被 -D 覆盖或项目脚本没生效时用），同样不含配置后缀。
+set(CPACK_PACKAGE_FILE_NAME "piplugin-${PROJECT_VERSION}-${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}")
+set(CPACK_GENERATOR "ZIP")
+# NSIS 是可选形态（需要本机装 NSIS）：默认关，避免没有 NSIS 的机器上 cpack 直接失败。
+option(PI_CPACK_NSIS "Also generate an NSIS installer (requires NSIS on PATH)" OFF)
+if(PI_CPACK_NSIS)
+    list(APPEND CPACK_GENERATOR "NSIS")
+    set(CPACK_NSIS_DISPLAY_NAME "piplugin")
+    set(CPACK_NSIS_PACKAGE_NAME "piplugin")
+    set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
+endif()
+include(CPack)
 
 #------------------------- END -------------------------

@@ -231,10 +231,32 @@ Qt 运行时部署：宿主/插件构建后自动复制 `Qt5Core/Gui/Widgets.dll
 到目标目录；install 时也一并安装到 `<root>/bin/<CONFIG>`。
 SHARED 的 `piplugin_qt` 套件 DLL 同样由自身 POST_BUILD 部署到 `bin/<CONFIG>/`。
 
-## 4. `CMakeUserPresets.json` 说明
+## 4. 预设：仓库内的 `CMakePresets.json` + conan 生成的 `CMakeUserPresets.json`
 
-- 该文件由 **conan 自动生成/维护**（带 `"vendor": {"conan": {}}` 标记），**不要手工编辑**。
-- 它 `include` 生成器目录里的 `CMakePresets.json`（其中定义 `conan-default` 等预设）。
+两件事分开说，因为它们解决的是不同问题（W-09）：
+
+**仓库内置 `CMakePresets.json`**（入库）——不依赖 conan 的通用入口：
+
+- `default`：VS 2022 / x64，构建目录 `build/generic`（与 conan 的 `build/` 互不干扰）；
+- `default-unix`：Ninja + 单配置 Debug（非 Windows）；
+- 配套 build / test 预设同名；缓存变量只声明 `PI_BUILD_TESTS` / `PI_BUILD_EXAMPLES`，
+  其余交给默认值 + "找不到依赖即禁用"的既有逻辑（缺 Qt/imgui 时相关目标自己打印提示并跳过）；
+- 可追加缓存变量，例如 `cmake --preset default -DPI_QT_PREFIX="C:/Qt/5.15.2/msvc2019_64"`。
+
+**`CMakeUserPresets.json`（conan 生成，不入库）**：
+
+- 该文件由 **conan 自动生成/维护**（带 `"vendor": {"conan": {}}` 标记），**不要手工编辑**；
+- 它 `include` 生成器目录里的 `CMakePresets.json`（其中定义 `conan-default` 等预设）；
+- 它**故意不进版本库**（`.gitignore`）：那个 include 指向的文件只有在跑过 `conan install`
+  之后才存在，而 CMake 读不到 include 的文件时是**硬失败**（`Could not read presets ...
+  File not found`）——把它入库会让"干净检出 + `cmake --preset`"直接不可用，这正是 W-09
+  要修的场景；
+- 两个文件的关系受 CMake 的可见性规则约束：user presets 可以继承仓库预设，反过来不行
+  （仓库预设不能继承 conan 预设，报 `Inherited preset ... is unreachable from preset's
+  file`）。因此需要 conan 预设作为基类的便捷预设只能待在 `CMakeUserPresets.json` 里 ——
+  原先 `conan-default-local`（把安装前缀钉在 `<root>/build/install`）承担的默认值已改由
+  根 `CMakeLists.txt` 在 `CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT` 时给出，三条流程
+  （conan / 纯 CMake / cpack）一致；
 - 若因历史命令（叠加 `--output-folder`）产生重复 include，修复方式是：
   删除 `build/` 与 `CMakeUserPresets.json`，然后用标准 `conan install . --build=missing` 重新生成。
 
@@ -262,5 +284,28 @@ conan create . -pr MSVC2022-amd64-Cpp17-Debug -o PI_BUILD_TESTS=False
 包内容：核心 `bin/<CONFIG>/` + `lib/<CONFIG>/` + `include/piplugin/`、
 adapter 静态库与公共头（`include/piplugin/adapters/<kit>/`）、
 cmake 配置（伞配置 `piConfig.cmake` 按存在性挂接各 `*AdapterTargets.cmake`，
-安装了哪个套件就自动暴露哪个目标）。消费方经 CMakeDeps 使用
-`pi::piplugin` / `pi::piplugin_imgui` 等目标。
+安装了哪个套件就自动暴露哪个目标）、以及根文档（`LICENSE` / `README.md` / `CHANGELOG.md`）。
+消费方经 CMakeDeps 使用 `pi::piplugin` / `pi::piplugin_imgui` 等目标。
+
+归档打包（cpack，roadmap W-08）：
+
+```bash
+cmake --build build --config Debug            # 至少构建一次（cpack 从构建树取产物）
+cpack --config build/CPackConfig.cmake -C Debug -B out
+# -> out/piplugin-0.4.0-Debug-win64.zip
+```
+
+- `CPACK_PACKAGING_INSTALL_PREFIX` 置空，所以解压出来就是 `bin/`、`lib/`、`include/`
+  外加 `LICENSE`/`README.md`/`CHANGELOG.md`（Windows 上不清空的话整棵树会嵌在
+  `/Program Files/piplugin/` 下面）；
+- 归档名里的配置由 `cmake/CPackProjectConfig.cmake` 在**打包时**拼上：
+  `CPACK_PACKAGE_FILE_NAME` 在 configure 阶段拿不到多配置生成器的配置，也不支持生成器
+  表达式（写成尖括号表达式会得到一个含 `<` `>` 的非法目录名而直接失败）；
+- `-DPI_CPACK_NSIS=ON` 可追加 NSIS 安装包（需本机装 NSIS；默认关，免得没装 NSIS 的机器
+  上 cpack 直接失败）；
+- 归档的自洽性由 `scripts/verify_package.ps1` 的 **C 段**断言：解压到干净目录后，**不带**
+  conan 工具链、PATH 上没有任何本仓库路径，仍要能配置并构建出宿主程序并运行成功。
+  注意归档里**不含** Qt 运行时（Qt 在本项目是本地安装、不是 conan 依赖，各 kit 的使用
+  约定就是"消费方自行保证 Qt 可达"），所以"宿主直接运行"这条断言覆盖的是不依赖 Qt 的那
+  部分链接面；要把 Qt 宿主也做成"解压即跑"，得先把 Qt 运行时纳入分发（涉及 LGPL 再分发
+  的决策，见 `docs/todo/build.md` 第 5 条的遗留项）。

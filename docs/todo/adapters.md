@@ -75,7 +75,21 @@ imgui 套件渲染时切换全局 ImGui context（`with_own_context`），若同
 进程内多个插件各建 imgui view，理论上 context 保存/恢复能正确工作，
 但未被测试覆盖——补充多插件 imgui 场景的测试。
 
-## 7. 套件版本资源（.rc）[P2]
+## 7. 套件版本资源（.rc）[P2] —— 已完成（W-07）
+
+> **状态**：已落地。`cmake/version_dll.rc.in` + `cmake/version_resource.cmake` 的
+> `piplugin_add_version_resource()` 两个套件都已调用，注释里那句
+> `version_dll.rc.in 暂未提供` 已消失。
+>
+> - **`piplugin_qt`（SHARED）**：`piplugin_qtd.dll` 属性页实测 `FileVersion=0.4.0` /
+>   `ProductVersion=0.4.0` / `FileDescription="piplugin Qt adapter kit"` /
+>   `OriginalFilename=piplugin_qtd.dll`；
+> - **`piplugin_imgui`（STATIC）**：`.rc` 随 `.lib` 备着，但**不会**出现在任何二进制里 ——
+>   MSVC 链接器只按符号需求拉取静态库成员，纯资源成员解析不了任何符号（实测：把带
+>   `9.9.9.9` 资源的静态库链进 exe，exe 的版本信息为空）。它改成 SHARED 的那天资源会
+>   自动生效。
+>
+> 版本号来自 `project(VERSION)`，与本仓库其他版本声明不会漂移。派工板任务 W-07。
 
 各套件 CMakeLists 中 Windows `.rc` 资源模板被注释（`version_dll.rc.in 暂未提供`），
 提供模板后可让 DLL 带版本信息。

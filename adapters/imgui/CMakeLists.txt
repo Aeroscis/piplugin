@@ -73,3 +73,8 @@ install(EXPORT pipluginImguiAdapterTargets
     NAMESPACE ${NAMESPACE_NAME}:: # 消费方引用 ${NAMESPACE_NAME}::${TARGET_NAME}
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/${PI_CMAKE_PACKAGE_SUBDIR}
 )
+
+# ------- Windows 版本资源（W-07） -------
+# STATIC（资源随 .lib 备着；静态库里的 .res 不会进入消费方二进制，详见
+# cmake/version_resource.cmake —— 这里声明是为了将来改成 SHARED 时自动生效）
+piplugin_add_version_resource(${TARGET_NAME} "piplugin ImGui adapter kit")

@@ -65,6 +65,10 @@ cmake --build --preset conan-debug
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
+`conan install` 会在仓库根生成 `CMakeUserPresets.json`（它 `include` 生成器目录里的
+conan 预设，`conan-default` 等就在那里）。那是**本地文件、故意不入库**：干净检出里
+没有它，`cmake --preset` 才不会被一个不存在的 include 打断（见「方式二」）。
+
 **Qt 相关目标（可选）**：Qt 是本地安装、不是 Conan 依赖，仓库里**没有**写死任何路径。
 CMake 按这个顺序找它，任选一种即可：
 
@@ -81,14 +85,19 @@ cmake --preset conan-default -DPI_QT_PREFIX="C:/Qt/5.15.2/msvc2019_64"
 
 ### 方式二：纯 CMake（只要本机有 MSVC / Windows SDK）
 
-不需要 Conan：适配器与依赖 Qt / imgui 的目标会自动禁用，剩下核心库、host kit、
+不需要 Conan：仓库内置的 `CMakePresets.json` 提供通用预设（不含任何 conan 生成的
+预设），找不到 Qt / imgui 时相关目标按下面的规则自动禁用，剩下核心库、host kit、
 headless 宿主与控制台测试可用。
 
 ```powershell
-cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DPI_BUILD_ADAPTERS=OFF
-cmake --build build --config Debug
-ctest --test-dir build -C Debug --output-on-failure
+cmake --preset default              # 构建目录 build/generic，与 conan 的 build/ 互不干扰
+cmake --build --preset default      # Debug
+ctest --preset default
 ```
+
+- 追加缓存变量照常：`cmake --preset default -DPI_QT_PREFIX="C:/Qt/5.15.2/msvc2019_64"`；
+- 非 Windows 用 `cmake --preset default-unix`（Ninja）；
+- 默认安装前缀是 `<root>/build/install`（三条流程一致，见根 `CMakeLists.txt`）。
 
 ### 跑起来看看
 
