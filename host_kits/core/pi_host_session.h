@@ -1,7 +1,7 @@
 /*
  * piplugin - Host kit L0: PiPluginHostSession
  *
- * 职责（release-roadmap.md §1.1 的 L0 层）：消灭宿主侧重复的"机制"代码 ——
+ * 职责（本目录 README「三层结构」里的 L0 层）：消灭宿主侧重复的"机制"代码 ——
  * 加载 / 双向能力门禁 / 实例化 / 多插件槽位 / 七步卸载序列。
  *
  * 本层不含任何 UI 决策，也不创建任何窗口：
@@ -17,8 +17,9 @@
  * 线程：本层不加锁，所有函数必须在宿主 GUI 线程上调用（与框架核心的
  * IPiPluginView 契约一致）。
  *
- * 变更提醒（roadmap §2 BLK-03）：descriptor 的 api_version 运行时协商尚未落地
- * （pi_api_version_compatible 还不存在），load 门禁里已留好插入点。
+ * 版本门禁（roadmap BLK-03，已落地）：pi_host_session_load() 在 descriptor 到手后、
+ * 实例化之前先过 pi_api_version_compatible()（同 major 且插件不比宿主新），
+ * 不兼容直接拒绝加载；负向回归是 ctest version_gate_rejects_incompatible_plugin。
  */
 #ifndef PI_HOST_SESSION_H
 #define PI_HOST_SESSION_H

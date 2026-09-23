@@ -100,6 +100,9 @@ ctest --test-dir build -C Debug --output-on-failure
 | `headless_host_smoke` | headless 宿主加载真实插件跑完整个生命周期 |
 | `version_gate_rejects_incompatible_plugin` | 声明不兼容 `api_version` 的插件必须在实例化之前被拒（负向用例） |
 
+（当前共 **21** 个用例；单测有三个二进制：`unit`（210 项断言）、`unit_threads`（跨线程
+专项）、`unit_cpp`（C++ RAII 层，Debug 下按退出码断言无 CRT 泄漏）。）
+
 前两个用例**只按退出码判定**（0 = 通过）；第三个刻意反过来 —— "被拒绝"就是期望结果，
 所以断言的是宿主输出里出现拒绝理由。失败细节靠 `--output-on-failure` 打印。
 
@@ -157,33 +160,40 @@ powershell -ExecutionPolicy Bypass -File scripts\verify.ps1
 1. `ctest` —— 核心单测 + headless 冒烟 + 版本门禁负向用例；
 2. **一致性验收**（`scripts/run_selftest.ps1`）—— 自动发现 `bin\<CONFIG>` 里存在哪些测试插件，
    对每个跑完整生命周期 + 尺寸往返（`--cycles` 不依赖 GPU：拿不到硬件设备时宿主回退 WARP）；
-3. **clang-format 漂移报告**（不阻塞）：当前全仓 C/C++ 文件都不符合已提交的 `.clang-format`
+3. **FFI 示例**（`scripts/verify_ffi.ps1`）—— Python / Rust / C# 各加载一个官方插件并 QI；
+   工具链缺失的语言报 SKIP，不算失败，但**装了的语言必须通过**；
+4. **clang-format 漂移报告**（不阻塞）：当前全仓 C/C++ 文件都不符合已提交的 `.clang-format`
    （含 include 排序与缩进/wrap 漂移），一次性重排会产生淹没评审的巨型 diff，
-   故现在"暴露但不阻塞"；收紧方式见 `verify.ps1` 里该检查的注释。
+   故现在"暴露但不阻塞"；收紧方式见 `verify.ps1` 里该检查的注释；
+5. **文档-仓库漂移检查**（阻塞）—— 按 `scripts/doc_drift_rules.json` 的
+   「特征 → 禁用陈述」表反查文档：例如 `tests/unit/` 存在时，任何文档都不许再声称
+   本仓库没有单测覆盖。规则只在特征真的存在时生效，所以这张表不会腐烂。
 
-退出码 0 = 所有**强制**检查通过。`-SkipGui`（无桌面会话时）、`-SkipFormat` 可按需跳过。
+退出码 0 = 所有**强制**检查通过。`-SkipGui`（无桌面会话时）、`-SkipFfi`、`-SkipFormat`、
+`-SkipDocDrift` 可按需跳过。
 
 ### 4.6 持续集成（GitHub Actions）
 
-`.github/workflows/ci.yml` 在 push 到 `main` 与所有 PR 上运行（`windows-latest` + MSVC + conan）。
-**CI 只负责"装依赖 + 构建"，检查全部交给上面那个脚本** —— 这样检查项能在本地复现：
+`.github/workflows/ci.yml` 在 push 到 `main` 与所有 PR 上运行，共 **三个 job**：
 
-1. `conan install` —— **Qt 三件套显式关闭**（Qt5 是本工程的本地安装依赖，runner 上没有；去硬编码属 ECO-05）；
-2. `cmake --preset conan-default` + `cmake --build --preset conan-debug`；
-3. `pwsh scripts/verify.ps1`。
+| job | 平台 | 干什么 |
+|---|---|---|
+| `verify` | Windows | `windows-latest` + MSVC + conan：装依赖 + 构建，然后 `pwsh scripts/verify.ps1`（**检查全在脚本里**，这样本地可复现）。Qt 三件套显式关闭（Qt5 是本地安装依赖，runner 上没有；去硬编码属 ECO-05） |
+| `asan` | Windows | 同一棵树就地重配 `/fsanitize=address`，只跑非 GUI 子集（GUI 排除是刻意的：DWM 与第三方输入法会产生不属于本仓库的报告）。入口 `scripts/verify_asan.ps1 -SkipRestore` |
+| `linux` | ubuntu | gcc 与 clang 各一轮，**不用 conan**：构建核心 + 宿主 kit 并直接运行 `unit_cpp`。它证明的是"核心与宿主 kit 在 Linux 上可编译"，插件 DLL 与 headless 宿主仍不覆盖（见 `docs/todo/platform.md` #3） |
 
-失败时会把 `bin/Debug/*.log` 与 `build/selftest.txt` 作为 artifact 上传，便于定位。
+`verify` 失败时会把 `bin/Debug/*.log` 与 `build/selftest.txt` 作为 artifact 上传，便于定位。
 README 顶部挂着该工作流的 badge；依赖更新由 `.github/dependabot.yml` 每周提 PR（Conan 没有
 Dependabot 生态，所以 imgui 的 pin 仍需手工定期升级并靠 CI 验证）。
 
 ## 5. 常见问题
 
-### 4.1 `ERROR: Missing prebuilt package for 'imgui/1.92.8'`
+### 5.1 `ERROR: Missing prebuilt package for 'imgui/1.92.8'`
 
 你当前 profile（Debug / 特定 cppstd）在 Conan Center 没有现成二进制。解决：
 `conan install . --build=missing`（推荐，只编译缺失的包；或 `--build=imgui/1.92.8` 指定单个）。
 
-### 4.2 `Duplicate preset: "conan-default"`
+### 5.2 `Duplicate preset: "conan-default"`
 
 根因：`CMakeUserPresets.json` 被 conan 注入了两个 include（通常是历史命令叠加
 `--output-folder` 造成）。修复：
@@ -193,16 +203,16 @@ rm -rf build CMakeUserPresets.json   # Windows: Remove-Item -Recurse -Force buil
 conan install . --build=missing       # 重新生成单 include
 ```
 
-### 4.3 `pi_test_host_imgui` 被 DISABLED
+### 5.3 `pi_test_host_imgui` 被 DISABLED
 
 它的 Win32/DX11 backend 来自 `adapters/imgui/backends`，若找不到会以 WARNING 跳过。
 运行 `conan install . --build=missing` 提供 imgui 后重新 configure 即可。
 
-### 4.4 Qt 相关目标被 DISABLED
+### 5.4 Qt 相关目标被 DISABLED
 
 检查 `find_package(Qt5)` 是否能找到你的 Qt 安装（`CMAKE_PREFIX_PATH` 中的路径是否正确）。
 
-### 4.5 MSBuild 报 `MSB6001 ... 字典中的关键字:"HTTPS_PROXY"所添加的关键字:"https_proxy"`
+### 5.5 MSBuild 报 `MSB6001 ... 字典中的关键字:"HTTPS_PROXY"所添加的关键字:"https_proxy"`
 
 环境里同时存在大小写两种代理变量（如 `HTTPS_PROXY` 与 `https_proxy`），
 MSBuild 构造子进程环境时把它们当成重复键而失败。构建前清掉即可：
@@ -211,7 +221,7 @@ MSBuild 构造子进程环境时把它们当成重复键而失败。构建前清
 unset https_proxy http_proxy all_proxy HTTPS_PROXY HTTP_PROXY ALL_PROXY
 ```
 
-### 4.6 只构建了某个目标时，exe 目录缺少运行时依赖
+### 5.6 只构建了某个目标时，exe 目录缺少运行时依赖
 
 `cmake --build build --config Debug --target <单个目标>` 只会产出该目标，
 `bin/<Config>` 里可能缺少核心库/Qt 运行时。两种做法：
@@ -219,7 +229,7 @@ unset https_proxy http_proxy all_proxy HTTPS_PROXY HTTP_PROXY ALL_PROXY
 - 把产物手动复制到已部署好的 `bin/<Config>/` 再运行；
 - 或构建 `INSTALL` 目标整体部署（但 `INSTALL` 默认会失败，见 4.7）。
 
-### 4.7 构建 `INSTALL` 目标报 `Permission denied`
+### 5.7 构建 `INSTALL` 目标报 `Permission denied`
 
 ```text
 -- Install configuration: "Debug"
@@ -273,7 +283,7 @@ cmake_install.cmake
 4. 只是想把本机跑起来：不装，直接把 `lib/<Config>/` 与 `build/**/Debug/` 的产物
    拷到 `bin/<Config>/` 即可。
 
-### 4.8 构建配置必须与 Conan 变体一致
+### 5.8 构建配置必须与 Conan 变体一致
 
 `conan install` 用的是哪个 build_type，构建时就只能用对应 config。
 当前仓库的 `build/` 是 **Debug 变体**（preset `conan-debug`），

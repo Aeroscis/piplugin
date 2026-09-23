@@ -10,7 +10,10 @@
 > `examples/conan_consumer` + `scripts/verify_package.ps1` 对 install 树与
 > conan 包**两种形态**做构建 + 运行验证（收尾 `9e833c2` / `9be2f52` 修了查找
 > 路径、组件声明、目录继承、system_libs 四类问题，CHANGELOG `[Unreleased]`
-> 有全记录）。遗留：conan 包不随包带 LICENSE，见第 7 条。
+> 有全记录）。
+> 遗留（**已解决，W-08**）："conan 包不随包带 LICENSE" —— install 规则现在会装
+> `LICENSE` / `README.md` / `CHANGELOG.md`，`conanfile.py` 的 `exports_sources` 也把
+> 这三份纳入导出集，`verify_package.ps1` 的 B/C 两段都跑过真实验证（详见第 7 条）。
 
 **现状**：`conanfile.py` 只打包核心库（`cpp_info.libs = ["piplugin"]`，
 只 copy `include/` 与构建产物）。`piplugin_qt` / `piplugin_imgui`
@@ -153,10 +156,14 @@
 install 阶段统一复制 Qt 运行时。建议文档化+测试 `cmake --install` 到干净前缀后
 宿主可直接运行（无 Qt 环境变量依赖）。可增加 `cpack` 配置产出 zip/installer。
 
-## 6. 库名/产物名一致性 [P2]
+## 6. 库名/产物名一致性 [P2]（开放；release-roadmap §8 的映射表**漏了这一条**，本条无派工编号）
 
 - Debug 库名带 `d` 后缀（`piplugind.dll`），Release 不带——
   这是既有约定；建议在文档与 CI 中固定，避免误用。
+- **已固定下来的部分**（W-07 顺带）：`OriginalFilename` 走生成器表达式取目标真实产物名，
+  所以 Debug 的版本资源写的是 `piplugind.dll` 而不是 `piplugin.dll`；版本号取自
+  `project(VERSION)`，不可能与 conanfile / 头文件漂移。剩下的开放面是"文档与 CI 里
+  把这条约定显式写出来"。
 
 ## 7. 许可证/元数据完善 [P2] —— 已完成（roadmap BLK-01/07）
 

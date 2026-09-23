@@ -2,11 +2,13 @@
 
 ## 1. 单元测试框架 [P1] —— 已完成（roadmap BLK-06）
 
-> **状态**：已落地。`tests/unit/`（纯 C，ctest 用例 `unit`，109 项断言）与
-> `tests/unit_cpp/`（C++ RAII 层用例 `unit_cpp`，`_CrtDumpMemoryLeaks()` 在 Debug
-> 下按退出码断言无泄漏）。覆盖超出原清单：GUID、descriptor 能力查询与
+> **状态**：已落地。`tests/unit/`（纯 C，ctest 用例 `unit`，**210 项断言**）与
+> `tests/unit_cpp/`（C++ RAII 层用例 `unit_cpp`，52 项 + `_CrtDumpMemoryLeaks()` 在 Debug
+> 下按退出码断言无泄漏）；跨线程专项在 `tests/unit/pi_thread_tests.c`
+> （ctest `unit_threads`，70 项）。覆盖超出原清单：GUID、descriptor 能力查询与
 > properties 读法（含 0.3 前布局）、引用计数（含 destroy 回调）、
-> `pi_module_load` 失败路径、`pi_host_services_create_default` headless/GUI
+> `pi_module_load` 失败路径（含 W-01 的线程局部错误串与
+> `pi_module_get_load_error_r`）、`pi_host_services_create_default` headless/GUI
 > 两形态、`pi_api_version_compatible` 边界、`pi_host_services_create_ex`
 > 钩子契约；注册表见 `tests/CMakeLists.txt`。
 
@@ -183,8 +185,9 @@
 - 窗口有 520x360 客户区最小尺寸。
 - 日志：`d3d: swap chain ... scale:none buffer=WxH`（创建时）、
   `resize: swap chain grows to WxH`（按需增长时）。
-- 小尾巴：`g_frameLatencyWaitable` 现在只创建/关闭、不再被等待
-  （`SetMaximumFrameLatency(1)` 仍生效），下次清理可删。
+- 小尾巴（**位置已变**：D3D 那段现在在 L1 kit 里，不在本测试的宿主文件里）：
+  `host_kits/dx11/pi_host_dx11.cpp` 的 `frame_latency_waitable` 只创建 + 关闭、
+  不再被等待（`SetMaximumFrameLatency(1)` 仍生效），下次清理可删。
 
 **验证工具**：
 

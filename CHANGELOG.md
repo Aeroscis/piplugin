@@ -541,6 +541,31 @@ own.
   hint when nothing else is given, and a missing Qt disables the four Qt targets
   with an actionable message instead of breaking the configure.
 
+- **The documents were audited against the repository, and the eleven places where
+  they disagreed were fixed.** A full pass compared every statement that can be
+  checked against what is actually in the tree. The unit suite is **210** assertions
+  now (plus `unit_threads` 70 and `unit_cpp` 52), not the 109 that `README.md`,
+  `docs/README.en.md` and `docs/todo/tests.md` still claimed; `ctest` is 21 cases.
+  `host_kits/core/pi_host_session.h` still said the `api_version` gate had not landed
+  and that `pi_api_version_compatible` did not exist - it is in `pi_host_session_load`
+  with a ctest case; `docs/design/architecture.md` still quoted the hard-coded Qt
+  path that ECO-05 removed, still said "three hosts and two plugins", and still
+  labelled three IIDs "1.1.0 additions" (a version this project never had, and one
+  `src/pi_plugin_unknown.c` comment repeated). `docs/todo/README.md`'s summary still
+  listed W-07/W-08/W-09 as open work that the topic files had already closed.
+  Tracked files - including four comments in `host_kits/` - pointed at the release
+  roadmap and the dispatch board, both of which are untracked working documents, so
+  a fresh clone got a dead link; those references now point at `host_kits/README.md`
+  and the equivalent design notes instead. (Both files stay untracked on purpose.) `docs/tutorial/quickstart.md`'s FAQ numbered its entries 4.1-4.8 under a
+  "5. Common problems" heading, and its CI section described one job where there are
+  three. The English README had neither the preset-based configure nor the
+  `examples/` row. `docs/todo/tests.md` #7 pointed at a `g_frameLatencyWaitable` in
+  the test host; it lives in `host_kits/dx11` now. Two gaps in the roadmap's mapping
+  table were closed: `build.md` #6 (library naming) had no mapping at all, and
+  `build.md` #1's "Conan package ships no LICENSE" leftover was silently resolved by
+  W-08. Freeze-review finding F6 is fixed, so it moved from "open before 1.0" to
+  "fixed". Nothing in the code changed except two comments.
+
 Nothing yet. Add entries here as work lands; they move under the next version
 when it is cut.
 

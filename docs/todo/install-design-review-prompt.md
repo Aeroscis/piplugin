@@ -18,7 +18,7 @@
   > （`CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT` 时设为 `<build>/install`），
   > `conan-default-local` 随 `CMakeUserPresets.json` 一起不再入库 —— 于是 conan /
   > 纯 CMake / cpack 三条流程的默认前缀一致，且干净检出就能用 `cmake --preset`。
-- 现象与排查过程见 `docs/tutorial/quickstart.md` 4.7。
+- 现象与排查过程见 `docs/tutorial/quickstart.md` 5.7。
 
 ---
 

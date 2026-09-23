@@ -6,7 +6,10 @@
 （`tests/test_host`、`tests/test_host_qt`、`tests/test_headless_host`）——顺序抄错一次就是卸载崩溃。
 kit 把这段顺序收拢成一份实现，把「窗口长什么样」完整留给宿主。
 
-## 三层结构（release-roadmap.md §1.1）
+## 三层结构
+
+> 这三层是宿主侧 kit 的纪律（与 `docs/design/architecture.md` §7 同源）：
+> 机制收进 kit，UI 决策全归宿主。
 
 | 层 | 形态 | 内容 | 决策权归属 |
 |---|---|---|---|

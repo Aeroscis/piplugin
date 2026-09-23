@@ -22,7 +22,7 @@ PI_EXPORT const PiGuid PI_IID_PLUGIN_BASE = PI_GUID(0x00000002, 0x0000, 0x0000,
                                           0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46);
 PI_EXPORT const PiGuid PI_IID_PLUGIN_VIEW = PI_GUID(0x00000003, 0x0000, 0x0000,
                                           0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46);
-/* 1.1.0 additions: host services / UI capability / headless service */
+/* 0.2 additions: host services / UI capability / headless service */
 PI_EXPORT const PiGuid PI_IID_HOST_SERVICES = PI_GUID(0x00000010, 0x0000, 0x0000,
                                             0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46);
 PI_EXPORT const PiGuid PI_IID_HOST_UI = PI_GUID(0x00000011, 0x0000, 0x0000,

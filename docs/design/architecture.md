@@ -41,9 +41,13 @@ piplugin 是一个 **跨平台、纯 C ABI 的插件框架**，采用 **COM 风�
 | `include/piplugin/` | 公共头文件（完整框架 API，`pi_plugin.h` 为总入口；C++ 糖在可选的 `pi_cpp.h`，**不**包含在总入口里） |
 | `src/` | 框架核心 C 实现（`pi_plugin_host.c`、`pi_plugin_unknown.c`） |
 | `src/piplugin/` | 核心库 CMake 工程 + CMake package config |
-| `adapters/` | UI 适配器套件（`qt/`、`imgui/`） |
-| `cmake/pi/` | 项目自用的 CMake 模块（消息、文件分类、工程初始化） |
-| `tests/` | 测试宿主与测试插件 |
+| `adapters/` | 插件侧 UI 适配器套件（`qt/` SHARED、`imgui/` STATIC） |
+| `host_kits/` | 宿主侧 kit（`core/` 会话、`events/` 事件路由、`qt/` 与 `dx11/` 嵌入胶水） |
+| `examples/` | 可构建运行的最小示范（宿主 / 插件 / FFI / 特化 app / 插件发现…） |
+| `cmake/` | 项目自用的 CMake 模块（工程初始化、文件分类、消息、版本资源、cpack） |
+| `cmake/pi/` | 同上，语言标准 / 路径常量 / 编译选项一类 |
+| `tests/` | 测试宿主、测试插件与单元测试（`unit` / `unit_cpp` / `unit_threads`） |
+| `scripts/` | 一条命令的验收入口（`verify.ps1` 等） |
 | `conanfile.py` | Conan 2 配方（依赖管理 + 打包） |
 
 ## 3. 核心接口族
@@ -75,9 +79,9 @@ piplugin 是一个 **跨平台、纯 C ABI 的插件框架**，采用 **COM 风�
 | `0x00000001` | `PI_IID_PLUGIN_FACTORY` |
 | `0x00000002` | `PI_IID_PLUGIN_BASE` |
 | `0x00000003` | `PI_IID_PLUGIN_VIEW` |
-| `0x00000010` | `PI_IID_HOST_SERVICES`（1.1.0 新增） |
-| `0x00000011` | `PI_IID_HOST_UI`（1.1.0 新增） |
-| `0x00000020` | `PI_IID_SERVICE`（1.1.0 新增） |
+| `0x00000010` | `PI_IID_HOST_SERVICES`（0.2 新增） |
+| `0x00000011` | `PI_IID_HOST_UI`（0.2 新增） |
+| `0x00000020` | `PI_IID_SERVICE`（0.2 新增） |
 | `0x00000030` | `PI_IID_EVENT_SINK`（0.4 新增，APP-06） |
 | `0x00000031` | `PI_IID_HOST_EVENTS`（0.4 新增，APP-06） |
 
@@ -228,7 +232,8 @@ typedef struct PiRefCountedBase {
 - 依赖：`imgui/1.92.8`（imgui adapter 或 imgui 测试宿主任一有效开启时自动拉取）。
 - 选项：`shared` / `fPIC` + `PI_BUILD_*` 开关树（adapter kits 与 tests 各有
   总开关 + 分开关，与 CMake 缓存选项同名，整批转发）。
-- Qt 为**本地安装**（`C:/Qt/5.15.2/msvc2019_64`），非 conan 依赖。
+- Qt 为**本地安装**，非 conan 依赖；仓库里**不写死任何路径**，查找顺序
+  `PI_QT_PREFIX` → `Qt5_DIR` / `CMAKE_PREFIX_PATH`（ECO-05，见 `docs/todo/build.md` #4）。
 
 ### 8.2 CMake 层级
 
@@ -238,20 +243,24 @@ typedef struct PiRefCountedBase {
 | `cmake/pi/` | 项目自定义模块：语言标准、路径常量、编译选项、消息、文件分类 |
 | `src/piplugin/` | 核心 SHARED 库 + export/config 安装 |
 | `adapters/` | 两个 UI 套件（`imgui` STATIC / `qt` SHARED；依赖不满足时自检禁用） |
-| `tests/` | 三个宿主 + 两个插件，依赖不满足时优雅 DISABLED |
+| `tests/` | 5 个测试宿主 + 6 个插件目录（8 个插件 DLL）+ `unit` / `unit_cpp` / `unit_threads`，依赖不满足时优雅 DISABLED |
 
 ### 8.3 产物布局
 
 - 核心库 → `<root>/lib/<CONFIG>/`（`.dll` + `.lib`，Debug 带 `d` 后缀）
-- 测试宿主/插件 → `<root>/bin/<CONFIG>/`（install 阶段），构建树内也能直接运行
-- Qt 运行时 DLL + `platforms/qwindows.dll` 自动复制到宿主/插件目录
+- 测试宿主/插件 → `<root>/bin/<CONFIG>/`：由各目标的 **POST_BUILD** 维护（构建完即可跑，
+  不再依赖 install）；install 只负责"干净前缀下的产品树"，默认前缀 `<build>/install`
+- Qt 运行时 DLL + `platforms/qwindows.dll` 自动复制到 `bin/<CONFIG>/`（**仅构建树**；
+  install / cpack 归档不含 Qt 运行时，见 `docs/todo/build.md` #5）
+- 默认安装前缀在 `CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT` 时被设为 `<build>/install`，
+  于是 conan / 纯 CMake / cpack 三条流程一致
 
 ## 9. 平台与移植
 
 | 平台 | 支持 | 说明 |
 |---|---|---|
 | Windows | ✅ 完整 | msvc + Win32 + D3D11；`__stdcall` ABI |
-| Linux | ◐ 框架层 | 编译路径就绪（dlopen），UI 嵌入未实现（X11 XEmbed TODO） |
-| macOS | ◐ 框架层 | 编译路径就绪（dlopen/NSView 类型已定义），嵌入未实现 |
+| Linux | ◐ 框架层 | **CI 证明可编译**（核心 + 宿主 kit，gcc/clang）；UI 嵌入未实现（X11 XEmbed，FUT-01） |
+| macOS | ◐ 框架层 | 编译路径就绪（dlopen/NSView 类型已定义），嵌入未实现（FUT-02） |
 
 `PI_CALL` 在 Windows 定义为 `__stdcall`（最大 FFI 兼容），其他平台为空。

@@ -1,7 +1,7 @@
 # ./host_kits/CMakeLists.txt
 #
 # 宿主侧 kit：消灭宿主程序里重复的「机制」代码，不占有任何 UI 决策权。
-# 三层纪律（release-roadmap.md §1.1）：
+# 三层纪律（见 host_kits/README.md「三层结构」，与 docs/design/architecture.md §7 同源）：
 #   L0 core/    纯逻辑库，零 GUI 依赖 —— 加载 / 门禁 / 实例化 / 卸载序列
 #   L1 qt/      Qt 嵌入区域（容器包装 + resize 转发 + idle 驱动）
 #   L1 dx11/    D3D11 设备 + flip-model 交换链的正确创建参数与 resize 策略（仅 Windows）

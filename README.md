@@ -151,7 +151,7 @@ cd bin\Debug
 | `src/` | 框架核心 C 实现 |
 | `adapters/` | 插件侧 UI 适配器套件（`qt/`、`imgui/`） |
 | `host_kits/` | 宿主侧 kit（`core/` 会话、`events/` 事件路由、`qt/` 与 `dx11/` 嵌入胶水） |
-| `examples/` | 可直接构建运行的最小示范（宿主 / imgui 插件 / Qt 插件 / 服务插件 / 特化 app） |
+| `examples/` | 可直接构建运行的最小示范（宿主 / imgui 插件 / Qt 插件 / 服务插件 / 特化 app / FFI / 插件发现…，见 [`examples/README.md`](examples/README.md)） |
 | `tests/` | 测试宿主、测试插件与单元测试 |
 | `docs/` | 设计文档与教程 |
 
@@ -170,8 +170,8 @@ cd bin\Debug
 
 | 入口 | 内容 |
 |---|---|
-| `scripts/verify.ps1` | **一条命令跑完全部检查**（CI 调用的就是它）：`ctest` + 一致性验收 + clang-format 漂移报告 |
-| `ctest -C Debug` | 核心单元测试（109 项断言）、headless 冒烟、版本门禁负向用例 |
+| `scripts/verify.ps1` | **一条命令跑完全部检查**（CI 调用的就是它，共 5 项）：`ctest` + 一致性验收 + FFI 示例（Python/Rust/C#）+ clang-format 漂移报告（只报告）+ **文档-仓库漂移检查**（强制） |
+| `ctest -C Debug` | 21 个用例：核心单测 `unit`（210 项断言）、`unit_threads`（70）、`unit_cpp`（52，含 CRT 泄漏断言）、headless 冒烟、版本门禁负向用例 |
 | `scripts/run_selftest.ps1` | **一致性验收**：对每个给定的插件 DLL 跑 `load → attach → idle → 尺寸往返 → unload`，退出码裁决 |
 | `scripts/verify_resize_fix.ps1` | 缩放修复的**像素级**回归（截图量测面板与插件边缘是否恒定） |
 

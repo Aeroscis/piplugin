@@ -1,7 +1,7 @@
 /*
  * piplugin - Host kit L1: Qt 嵌入区域 (piplugin_host_qt)
  *
- * L1 的职责（release-roadmap.md §1.1）：把**宿主自己创建的**容器变成 embed host。
+ * L1 的职责（见 host_kits/README.md「三层结构」）：把**宿主自己创建的**容器变成 embed host。
  * 本类只做三件机制：
  *   1. attach    —— 把宿主指定的插件 view 嵌进本控件的原生窗口；
  *   2. resize 转发 —— 本控件尺寸变化时转给 view（尺寸本身仍由宿主的布局决定）；

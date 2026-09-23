@@ -7,7 +7,8 @@
 > `host_kits/core/pi_host_session.{h,c}`（sink 记账 + 卸载退订）、
 > `tests/test_plugin_events/` 与 `tests/test_host_events/`（验收）。
 > 相关文档：`docs/design/interfaces.md` §2.7/§2.8、`docs/design/architecture.md`、
-> `docs/tutorial/write-{host,plugin}.md`、`docs/todo/framework.md` #2、`docs/release-roadmap.md` APP-06 / FUT-05
+> `docs/tutorial/write-{host,plugin}.md`、`docs/todo/framework.md` #2
+> （跨进程投递不在本文范围，属未来方向 FUT-05，见 §3 非目标）
 
 ## 1. 问题
 

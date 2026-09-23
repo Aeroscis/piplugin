@@ -74,14 +74,22 @@ ctest --test-dir build -C Debug --output-on-failure
 
 ### With plain CMake (only MSVC / the Windows SDK needed)
 
-No Conan: targets that need Qt or imgui disable themselves and you are left with the core library,
-the host kit, the headless host and the console tests.
+No Conan: the repository ships `CMakePresets.json` with generic presets (no Conan-generated ones),
+and targets that need Qt or imgui disable themselves with a hint, leaving the core library, the host
+kits, the headless host and the console tests.
 
 ```powershell
-cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DPI_BUILD_ADAPTERS=OFF
-cmake --build build --config Debug
-ctest --test-dir build -C Debug --output-on-failure
+cmake --preset default              # build tree build/generic, clear of Conan's build/
+cmake --build --preset default      # Debug
+ctest --preset default
 ```
+
+- `-DPI_QT_PREFIX=<path>` (or `-DQt5_DIR=<path>/lib/cmake/Qt5`) still works, as it does with Conan;
+- on a non-Windows machine use `cmake --preset default-unix` (Ninja);
+- the default install prefix is `<root>/build/install`, the same in all three flows (Conan, plain
+  CMake, cpack);
+- without a preset, the equivalent configure is
+  `cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DPI_BUILD_ADAPTERS=OFF`.
 
 ### See it run
 
@@ -90,6 +98,15 @@ cd bin\Debug
 .\pi_test_host_headless.exe pi_test_plugin_qt.dll     # headless: negotiation + full lifecycle
 .\pi_test_host_imgui.exe  pi_test_plugin_qt.dll       # imgui host embedding a Qt plugin
 .\pi_test_host_qt.exe     pi_test_plugin_imgui.dll    # Qt host embedding an imgui plugin
+```
+
+Want to write one yourself? [`../examples`](../examples/README.md) has runnable minimal demos
+(host, imgui plugin, Qt plugin, service plugin, specialised app), each a standalone "three steps"
+project:
+
+```powershell
+.\pi_example_minimal_host.exe pi_example_plugin_imgui.dll
+.\pi_example_specialized_app.exe pi_example_specialized_plugin.dll pi_example_service.dll
 ```
 
 Writing a host: [`tutorial/write-host.md`](tutorial/write-host.md) (the host kits are documented
@@ -123,8 +140,10 @@ The full architecture, interface family and threading model are in
 |---|---|
 | `include/piplugin/` | public headers (`pi_plugin.h` is the master include) |
 | `src/` | the core, in C |
-| `adapters/` | plugin-side UI adapter kits (`qt/`, `imgui/`) |
-| `host_kits/` | host-side kits (`core/` session, `qt/` and `dx11/` embedding glue) |
+| `adapters/` | plugin-side UI adapter kits (`qt/` SHARED, `imgui/` STATIC) |
+| `host_kits/` | host-side kits (`core/` session, `events/` event routing, `qt/` and `dx11/` embedding glue) |
+| `examples/` | minimal runnable demos (host / imgui plugin / Qt plugin / service plugin / specialised app / FFI / plugin discovery — see [`examples/README.md`](../examples/README.md)) |
+| `scripts/` | one-command acceptance entry points (`verify.ps1` and friends) |
 | `tests/` | test hosts, test plugins and the unit suite |
 | `docs/` | design notes and tutorials |
 
@@ -143,8 +162,8 @@ The full architecture, interface family and threading model are in
 
 | Entry point | What it covers |
 |---|---|
-| `scripts/verify.ps1` | **every check in one command** (this is what CI calls): `ctest` + the conformance harness + the clang-format drift report |
-| `ctest -C Debug` | core unit suite (109 assertions), headless smoke test, negative version-gate case |
+| `scripts/verify.ps1` | **every check in one command** (this is what CI calls, five of them): `ctest` + the conformance harness + the FFI examples (Python / Rust / C#) + the clang-format drift report (report-only) + the **documentation drift check** (enforced) |
+| `ctest -C Debug` | 21 cases: the core unit suite `unit` (210 assertions), `unit_threads` (70), `unit_cpp` (52, with a CRT leak assertion), headless smoke test, negative version-gate case |
 | `scripts/run_selftest.ps1` | **conformance harness**: runs every given plugin DLL through `load → attach → idle → resize round trip → unload` and decides by exit code |
 | `scripts/verify_resize_fix.ps1` | pixel-level regression for the resize fix (measures panel and plugin edges in screenshots) |
 
