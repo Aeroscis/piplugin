@@ -11,6 +11,7 @@ roadmap **ECO-03**：把 `docs/tutorial/` 里的代码段变成能跑的工程�
 | `minimal_plugin_imgui/` | 最小 imgui 插件（一个 draw 回调） | conan imgui + imgui 套件 | `minimal_host` |
 | `minimal_plugin_qt/` | 最小 Qt 插件（一个 widget 工厂） | 本地 Qt5 + Qt 套件（SHARED） | `minimal_host` |
 | `minimal_kit_win32/` | **一个最小适配器套件**（纯 C + GDI，零工具包）+ 用它的插件 | 无（Windows） | `minimal_host` / 官方一致性宿主 |
+| `ffi/` | 用 **Python / Rust / C#** 各写一遍宿主（含本语言实现的宿主对象） | 对应语言的工具链 | 自己（`scripts/verify_ffi.ps1`） |
 | `specialized_app/` | app 自定义协议（通道 A）+ 宿主自定义服务（通道 B）+ 能力门禁 | 宿主 kit L0 | 自己（一个 exe + 一个插件） |
 
 ## 一起构建

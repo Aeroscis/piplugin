@@ -28,6 +28,21 @@ A release is one commit on `main` that bumps the version in `CMakeLists.txt` and
 
 ### Added
 
+- **FFI examples: the C ABI consumed from Python, Rust and C# (ECO-06).** "Pure C
+  ABI" is a claim about *other* languages, so each example does the whole thing in
+  its own language with no binding generator and no glue: load the framework DLL
+  and an official test plugin, QueryInterface the factory (hit -> `PI_OK`, miss ->
+  `PI_E_NOINTERFACE` with `*out == NULL`), read the descriptor (name, version,
+  `api_version`, capabilities, properties), BUILD A HOST OBJECT IN THAT LANGUAGE (a
+  table of C callbacks) and create/initialize/terminate an instance with it, then
+  unload and load again - the clean-unload step hosts get wrong most often.
+  `examples/ffi/python/` (ctypes), `examples/ffi/rust/` (no crates at all: the
+  loader is `kernel32` through `extern "system"`, so it builds offline) and
+  `examples/ffi/csharp/` (P/Invoke, vtbl built in unmanaged memory; the delegates
+  live in static fields so the GC cannot collect the thunks).
+  `scripts/verify_ffi.ps1` runs all three and is now check 3 of
+  `scripts/verify.ps1`; a language whose toolchain is missing is reported as SKIP
+  rather than failed, so a machine without cargo still verifies the other two.
 - **The negative test set (ECO-08).** The four ways a plugin can be wrong now have
   automated assertions instead of a checklist. Three live in `tests/unit`: a
   missing DLL (`pi_module_load` returns NULL with the path in the message), a DLL

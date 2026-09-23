@@ -170,6 +170,9 @@ roadmap ECO-03：每个例子一个目录、一个 `CMakeLists.txt`、一份 REA
 其中两个无 GUI 工具包依赖的例子同时注册为 ctest（`example_minimal_host_service`、
 `example_specialized_app`）；GUI 例子留给 README 的人工三步。
 
+`examples/ffi/`（ECO-06）不在 CMake 里：它是 Python / Rust / C# 三个独立工程，
+由 `scripts/verify_ffi.ps1` 驱动（`scripts/verify.ps1` 的第 3 项检查，缺工具链则 SKIP）。
+
 ### 3.6 测试（tests/）
 
 可选目标，各自做依赖自检，不满足即 `return()` 禁用（不影响整体构建）：

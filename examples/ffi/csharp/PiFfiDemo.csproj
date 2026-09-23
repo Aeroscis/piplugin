@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- piplugin FFI example (C#) - roadmap ECO-06.
+       Plain console app, no NuGet packages: P/Invoke plus a vtbl built in
+       unmanaged memory. See Program.cs. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>piplugin-ffi-demo</AssemblyName>
+    <RootNamespace>PiPluginFfiDemo</RootNamespace>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+  </PropertyGroup>
+
+</Project>

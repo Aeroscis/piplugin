@@ -1,0 +1,13 @@
+# piplugin FFI example (Rust) - roadmap ECO-06
+#
+# No dependencies on purpose: the loader is kernel32 through extern "system", so
+# this builds offline and stays a pure FFI demonstration. See src/main.rs.
+[package]
+name = "piplugin-ffi-demo"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "piplugin-ffi-demo"
+path = "src/main.rs"

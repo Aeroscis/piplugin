@@ -22,6 +22,9 @@ CMakeFiles/
 conan_imports_manifest.txt
 conaninfo.txt
 conanbuildinfo.*
+obj/
+target/
+# FFI 示例的语言侧产物（cargo / dotnet）
 __pycache__/
 *.pyc
 .vs/

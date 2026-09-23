@@ -5,9 +5,10 @@
 # is reviewed like code. The workflow only installs dependencies and builds.
 #
 # Checks:
-#   1. ctest                -- core unit suite, headless smoke, negative version case
+#   1. ctest                -- core unit suite, headless smoke, negative cases
 #   2. conformance harness  -- real plugin lifecycle + resize round trip (needs a GUI session)
-#   3. clang-format drift   -- reported, NOT enforced (see the note at check 3)
+#   3. FFI examples         -- the C ABI consumed from Python / Rust / C# (skips missing toolchains)
+#   4. clang-format drift   -- reported, NOT enforced (see the note at check 4)
 #
 # Exit code 0 = every enforced check passed.
 #
@@ -21,6 +22,7 @@ param(
     [string]$BinDir   = "",
     [int]$Cycles      = 2,
     [switch]$SkipGui,
+    [switch]$SkipFfi,
     [switch]$SkipFormat
 )
 
@@ -46,7 +48,7 @@ function Write-Section([string]$text) {
 # ---------------------------------------------------------------------------
 # 1. ctest: the non-GUI regression (unit suite + headless smoke + version gate)
 # ---------------------------------------------------------------------------
-Write-Section "1/3  ctest (-C $Config)"
+Write-Section "1/4  ctest (-C $Config)"
 & ctest --test-dir $BuildDir -C $Config --output-on-failure
 if ($LASTEXITCODE -ne 0) {
     $failures += "ctest"
@@ -66,7 +68,7 @@ if ($LASTEXITCODE -ne 0) {
 #    docs/design/adapter-spec.md works with an official host" (ECO-01), and it
 #    costs one more cycle per plugin.
 # ---------------------------------------------------------------------------
-Write-Section "2/3  conformance harness"
+Write-Section "2/4  conformance harness"
 $available = @()
 foreach ($name in 'pi_test_plugin_qt.dll', 'pi_test_plugin_imgui.dll',
                   'pi_example_plugin_imgui.dll', 'pi_example_plugin_qt.dll',
@@ -91,14 +93,33 @@ if ($SkipGui) {
 }
 
 # ---------------------------------------------------------------------------
-# 3. clang-format drift -- REPORTED, NOT ENFORCED.
+# 3. FFI examples: the C ABI consumed from other languages (roadmap ECO-06).
+#    "Pure C ABI" is a claim about Python / Rust / C#; verify_ffi.ps1 executes it
+#    and skips a language whose toolchain is missing, so a machine without cargo
+#    still checks the other two. A toolchain that IS present must pass.
+# ---------------------------------------------------------------------------
+Write-Section "3/4  FFI examples (python / rust / c#)"
+if ($SkipFfi) {
+    Write-Host "SKIP - -SkipFfi was given" -ForegroundColor Yellow
+} else {
+    & (Join-Path $PSScriptRoot "verify_ffi.ps1") -BinDir $BinDir
+    if ($LASTEXITCODE -ne 0) {
+        $failures += "FFI examples"
+        Write-Host "FFI examples: FAIL" -ForegroundColor Red
+    } else {
+        Write-Host "FFI examples: PASS" -ForegroundColor Green
+    }
+}
+
+# ---------------------------------------------------------------------------
+# 4. clang-format drift -- REPORTED, NOT ENFORCED.
 #    Every C/C++ file currently differs from the committed .clang-format
 #    (include ordering plus indentation and wrapping drift). Reformatting them in
 #    one go would produce a diff that buries every other change, so this check
 #    only reports and never fails the run. To enforce it: add the drifted files
 #    to $failures, reformat first.
 # ---------------------------------------------------------------------------
-Write-Section "3/3  clang-format drift (informational)"
+Write-Section "4/4  clang-format drift (informational)"
 if ($SkipFormat) {
     Write-Host "SKIP - -SkipFormat was given" -ForegroundColor Yellow
 } elseif (-not (Get-Command clang-format -ErrorAction SilentlyContinue)) {
