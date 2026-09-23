@@ -286,6 +286,9 @@ class PiPluginConan(ConanFile):
             comp.libs = [f"piplugin_host_dx11{suffix}"]
             comp.requires = ["piplugin"]
             comp.set_property("cmake_target_name", "pi::piplugin_host_dx11")
+            # 同 imgui 套件：静态库 PUBLIC 链接的平台库，CMakeDeps 需要显式 system_libs
+            if self.settings.get_safe("os") == "Windows":
+                comp.system_libs = ["d3d11", "dxgi"]
 
         if self._adapter_enabled("IMGUI") and self._packaged("piplugin_imgui"):
             comp = self.cpp_info.components["piplugin_imgui"]
@@ -293,6 +296,12 @@ class PiPluginConan(ConanFile):
             # 外部包引用必须写 包名::组件名；无组件的包用 包名::包名 兜底到根 cpp_info
             comp.requires = ["piplugin", "imgui::imgui"]
             comp.set_property("cmake_target_name", "pi::piplugin_imgui")
+            # 静态套件把平台库以 PRIVATE 链接（user32/d3d11/dxgi/d3dcompiler），但**静态库的
+            # 消费方在链接期仍然需要它们**：CMake 的导出 target 会自动带上，CMakeDeps 只能靠
+            # cpp_info.system_libs —— 漏了就在消费方报
+            # "unresolved external symbol D3D11CreateDeviceAndSwapChain"（实测）。
+            if self.settings.get_safe("os") == "Windows":
+                comp.system_libs = ["user32", "d3d11", "dxgi", "d3dcompiler"]
         elif self._test_enabled("PI_BUILD_TEST_HOST"):
             # imgui 仅为测试宿主拉取（adapter kit 未开启）：测试件不进包，但其依赖须在
             # 包信息中可见，否则 Conan 组件一致性检查会拒绝该变体

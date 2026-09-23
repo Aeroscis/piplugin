@@ -30,18 +30,19 @@ else()
 endif()
 
 # ---------------------------------------------------------------------------
-# imgui 适配器套件：两种分发形态的差别（实测结论，脚本两种形态都跑）
+# imgui 适配器套件：两种分发形态都需要什么（都是实测结论）
 #
-#   裸 CMake 安装树（cmake --install）：导出 target 自带 imgui::imgui，
-#   消费方直接 link pi::piplugin_imgui 即可，什么都不用补。
+#   裸 CMake 安装树（cmake --install）：导出 target 自带 imgui::imgui 与平台库，
+#   消费方直接 link pi::piplugin_imgui 即可。
 #
-#   conan 包（Conan 2.10.1 + CMakeDeps）：CMakeDeps 给 pi::piplugin_imgui 生成的
-#   target 只带了 pi::piplugin 一个依赖 —— piplugin-debug-x86_64-data.cmake 里
-#   piplugin_pi_piplugin_imgui_DEPENDENCIES_DEBUG 只有 pi::piplugin，
-#   piplugin_FIND_DEPENDENCY_NAMES 为空 —— 于是 imgui.lib 不在链接行上，
-#   静态套件里对 imgui 核心的引用变成 29 个 unresolved external。
-#   这就是 verify_package.ps1 在 conan 形态下传 -DPI_CONSUMER_LINK_IMGUI=OFF 的原因：
-#   那是**待修的打包问题**，不是消费方写错了。
+#   conan 包（Conan 2.10.1 + CMakeDeps）：两件事
+#     1) 消费方的 conanfile 里**同时**声明 imgui —— 组件级"外部 require"只有在消费方
+#        自己也依赖该包时才会被 CMakeDeps 传播（否则静默丢弃：不生成 imgui-config.cmake、
+#        piplugin_FIND_DEPENDENCY_NAMES 为空、链接期 29 个 imgui 未解析符号）；
+#        见 scripts/verify_package.ps1 的 conanfile.txt 与 README 的"依赖传播"一节。
+#     2) 套件链接的 Windows 平台库（user32/d3d11/dxgi/d3dcompiler）由包信息
+#        cpp_info.system_libs 提供（已修：漏掉时报 unresolved external
+#        D3D11CreateDeviceAndSwapChain）。
 # ---------------------------------------------------------------------------
 if(PI_CONSUMER_LINK_IMGUI AND TARGET pi::piplugin_imgui)
     target_link_libraries(pi_consumer PRIVATE pi::piplugin_imgui)

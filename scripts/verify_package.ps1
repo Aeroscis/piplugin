@@ -122,9 +122,26 @@ if ($SkipConan) {
 
         # A consumer declares the requirement the normal way: a conanfile.txt with
         # [requires]. (Conan 2 rejects --requires together with a path argument.)
+        #
+        # imgui is declared HERE, and that is not a workaround for laziness: under
+        # Conan 2.10 + CMakeDeps a component-level EXTERNAL require is only
+        # propagated when the consumer itself also requires that package. Without
+        # it CMakeDeps silently drops it (conan/tools/cmake/cmakedeps/templates/
+        # target_configuration.py::get_deps_targets_names resolves component
+        # requires against the consumer's requirements and just `pass`es on
+        # KeyError): no imgui-config.cmake is generated at all, the component's
+        # DEPENDENCIES list keeps only pi::piplugin, and the consumer fails to link
+        # with 29 unresolved imgui symbols. Declaring it makes CMakeDeps emit
+        # "piplugin_FIND_DEPENDENCY_NAMES imgui" and
+        # "piplugin_pi_piplugin_imgui_DEPENDENCIES_DEBUG pi::piplugin imgui::imgui".
+        # Version is taken from the recipe so the two can never drift.
+        $imguiVersion = (Select-String -Path (Join-Path $repoRoot "conanfile.py") `
+                            -Pattern 'self\.requires\("imgui/([^"]+)"\)' |
+                         Select-Object -First 1).Matches[0].Groups[1].Value
         Set-Content -Path (Join-Path $conanWork "conanfile.txt") -Encoding Ascii -Value @"
 [requires]
 piplugin/$version
+imgui/$imguiVersion
 
 [generators]
 CMakeDeps
@@ -151,7 +168,7 @@ CMakeToolchain
             $conanConsumer = Join-Path $work "consumer-conan"
             & cmake -S $consumerSrc -B $conanConsumer -G "Visual Studio 17 2022" -A x64 `
                 "-DCMAKE_TOOLCHAIN_FILE=$conanWork\conan_toolchain.cmake" -DCMAKE_BUILD_TYPE=$Config `
-                -DPI_CONSUMER_LINK_IMGUI=OFF 2>&1 |
+                -DPI_CONSUMER_LINK_IMGUI=ON 2>&1 |
                 ForEach-Object { Write-Host "    $_" }
             if ($LASTEXITCODE -ne 0) {
                 $failures += "conan consumer configure"

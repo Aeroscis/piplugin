@@ -31,7 +31,7 @@ B. Conan package
    == piplugin packaged consumer ==
    PI_PLUGIN_API_VERSION = 0.4 (0x00000004)
    core + host kit L0 + event router: OK
-   imgui adapter kit: not linked in this configuration
+   imgui adapter kit linked: pi_imgui_view_create = 00007FF60E941B3B
    RESULT: PASS
 ```
 
@@ -43,7 +43,7 @@ target_link_libraries(app PRIVATE
     pi::piplugin            # 核心（SHARED）
     pi::piplugin_host       # 宿主 kit L0 会话
     pi::piplugin_events     # 宿主侧事件路由
-    pi::piplugin_imgui      # imgui 适配器套件（静态；把 conan imgui 带过来）
+    pi::piplugin_imgui      # imgui 适配器套件（静态；imgui 依赖见下一节）
 )
 ```
 
@@ -51,36 +51,41 @@ target_link_libraries(app PRIVATE
 `#include "pi_imgui_view.h"` —— 各 kit 的安装接口目录（`include/piplugin/host_kits/core` 等）
 已经在包信息里，组件清单见下。
 
-## 已知问题：conan 形态下 imgui 套件链接不上（待修）
+## Conan 形态下的依赖传播（实测结论，含一处 Conan 2.10 的限制）
 
-**现象**：B 形态里如果直接 `target_link_libraries(app PRIVATE pi::piplugin_imgui)`，
-链接阶段报 29 个 `unresolved external symbol`（全是 imgui 核心符号，如
-`ImGuiIO::AddKeyCharacter`），因为 `imgui.lib` 不在链接行上。
+**用 conan 包时，消费方必须在自己 conanfile 里把 `imgui` 也声明为依赖**：
 
-**证据**（Conan 2.10.1 + CMakeDeps，`piplugin-debug-x86_64-data.cmake`）：
-
-```cmake
-set(piplugin_FIND_DEPENDENCY_NAMES )                                  # 空
-set(piplugin_pi_piplugin_imgui_DEPENDENCIES_DEBUG pi::piplugin)       # 只有核心，没有 imgui::imgui
+```
+[requires]
+piplugin/0.4.0
+imgui/1.92.8        # <- 必须；版本与本仓库 conanfile.py 保持一致
 ```
 
-即 `cpp_info.components["piplugin_imgui"].requires = [..., "imgui::imgui"]` 里的外部引用
-没有传播到消费方。**A 形态没有这个问题**（导出 target 自带 `imgui::imgui`），
-所以这是 conan 打包侧待修项，而不是消费方写错。
+这不是"图省事"，而是 Conan 2.10.1 + CMakeDeps 的行为：**组件级的外部 require，只有在
+消费方自己也依赖那个包时才会被传播**。否则它被**静默丢弃** —— 不报错、不警告：
 
-**在修好之前的绕法**：消费方自己把 imgui 拉进来（conan 生成的 `imgui-config.cmake`
-已在 `CMAKE_PREFIX_PATH` 上）：
+| | 消费方只声明 piplugin | 消费方同时声明 imgui |
+|---|---|---|
+| 生成的配置 | 只有 `piplugin-config.cmake` | `piplugin-config.cmake` + `imgui-config.cmake` |
+| `piplugin_FIND_DEPENDENCY_NAMES` | 空 | `imgui` |
+| `piplugin_pi_piplugin_imgui_DEPENDENCIES_DEBUG` | `pi::piplugin` | `pi::piplugin imgui::imgui` |
+| 链接 `pi::piplugin_imgui` | 29 个 imgui 未解析符号 | 通过 |
 
-```cmake
-if(TARGET pi::piplugin_imgui AND NOT TARGET imgui::imgui)
-    find_package(imgui CONFIG QUIET)
-endif()
-target_link_libraries(app PRIVATE pi::piplugin_imgui imgui::imgui)
-```
+代码位置在 Conan 自己身上：`conan/tools/cmake/cmakedeps/templates/target_configuration.py`
+的 `get_deps_targets_names()` 把"声明的组件 requires"拿去和**消费方的**依赖集合求交，
+取不到就 `except KeyError: pass` —— 于是依赖静静地消失，而不是报"找不到 imgui"。
+（对照：`cpp_info.components["piplugin_imgui"].requires` 里确实写着 `imgui::imgui`，
+用探针打印可见 —— 声明是对的，丢的是传播。）
 
-这就是 `verify_package.ps1` 在 B 形态下传 `-DPI_CONSUMER_LINK_IMGUI=OFF` 的原因：
-它验证的是**确实能工作**的部分（核心 + 两个宿主 kit + 事件路由 + 运行），
-把待修项显式记录在这里而不是假装通过。
+**裸 CMake 安装树没有这个限制**：导出 target 里就带着 `imgui::imgui`，消费方 link
+`pi::piplugin_imgui` 即可。所以 `verify_package.ps1` 的 A 形态不需要写 imgui，
+B 形态的 `conanfile.txt` 里有（脚本从 `conanfile.py` 解析版本，不会漂移）。
+
+**另一个坑是我们自己的，已修**：imgui / dx11 这些静态 kit 以 `PRIVATE`/`PUBLIC` 链接
+Windows 平台库（`user32 d3d11 dxgi d3dcompiler`），静态库的消费方在链接期仍然需要它们。
+CMake 导出 target 会自动带上，CMakeDeps 只能靠 `cpp_info.system_libs` —— 缺了就在消费方报
+`unresolved external symbol D3D11CreateDeviceAndSwapChain`。现在两个组件都声明了
+（`conanfile.py` 的 `package_info()`，按 `settings.os` 限定 Windows）。
 
 ## 包布局（随 install 规则）
 

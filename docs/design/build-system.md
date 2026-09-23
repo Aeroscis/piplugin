@@ -198,11 +198,18 @@ roadmap ECO-03：每个例子一个目录、一个 `CMakeLists.txt`、一份 REA
    生成 `<pkg>/lib`（库里在 `<pkg>/lib/Debug`）、且 kit 头文件目录缺失；
 5. **Qt5 是本地安装依赖**，不进 conan `requires`（否则等于强迫所有人用 conan 版 Qt）；
    包只在组件被明确要求时才硬依赖它。
+6. **静态 kit 的平台库要写进 `cpp_info.system_libs`**：imgui/dx11 套件以 PRIVATE/PUBLIC 链接
+   `user32 d3d11 dxgi d3dcompiler`，静态库的消费方链接期仍然需要它们 —— CMake 导出 target
+   自带，CMakeDeps 只能靠包信息（漏了报 `unresolved external D3D11CreateDeviceAndSwapChain`）；
+7. **组件级"外部 require"在 Conan 2.10 + CMakeDeps 下需要消费方也声明该依赖**才会被传播，
+   否则被静默丢弃（Conan 侧 `get_deps_targets_names()` 取不到就 `except KeyError: pass`）：
+   消费方 conanfile 里要有 `imgui/<版本>`，`pi::piplugin_imgui` 才会带上 `imgui::imgui`。
+   裸 CMake 安装树没有这个限制。
 
 验收脚本：`scripts/verify_package.ps1`（A 安装树 + B conan 包，各自 `find_package` → 构建 →
-**运行** `examples/conan_consumer/`）。已知待修项见
-[`examples/conan_consumer/README.md`](../../examples/conan_consumer/README.md)：
-conan 形态下 CMakeDeps 不传播 imgui 套件的外部 imgui 依赖（安装树形态没有这个问题）。
+**运行** `examples/conan_consumer/`，两种形态都链接 imgui 套件）。
+实测细节、证据表与 Conan 侧代码位置见
+[`examples/conan_consumer/README.md`](../../examples/conan_consumer/README.md)。
 
 ### 3.7 测试（tests/）
 

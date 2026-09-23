@@ -64,14 +64,29 @@ A release is one commit on `main` that bumps the version in `CMakeLists.txt` and
      keeps working for consumers exactly as it does in the build tree).
 
   Result: install-tree consumer links core + host kit L0 + event router + imgui
-  adapter and runs; Conan consumer links core + host kits + event router and runs.
-  One honest gap is recorded rather than hidden: under Conan 2.10.1, CMakeDeps does
-  not propagate the imgui component's external `imgui::imgui` requirement
-  (`piplugin_FIND_DEPENDENCY_NAMES` is empty, the component's DEPENDENCIES list
-  contains only `pi::piplugin`), so `pi::piplugin_imgui` fails to LINK there - while
-  the install tree, whose exported target carries it, links fine. The evidence, the
-  workaround for consumers, and the reason the Conan phase passes
-  `-DPI_CONSUMER_LINK_IMGUI=OFF` are in `examples/conan_consumer/README.md`.
+  adapter and runs; Conan consumer links core + host kits + event router + imgui
+  adapter and runs. Two things the imgui kit needs under Conan are now recorded
+  rather than hidden:
+
+  - **The consumer must require the external package too.** Under Conan 2.10.1 +
+    CMakeDeps a component-level *external* require is only propagated when the
+    consumer itself also requires that package; otherwise it is dropped SILENTLY -
+    no imgui-config.cmake is generated, `piplugin_FIND_DEPENDENCY_NAMES` stays
+    empty, the component's DEPENDENCIES list keeps only `pi::piplugin`, and linking
+    `pi::piplugin_imgui` fails with 29 unresolved imgui symbols. The Conan code
+    responsible is `get_deps_targets_names()` in
+    `conan/tools/cmake/cmakedeps/templates/target_configuration.py`, which resolves
+    the declared component requires against the consumer's requirements and does
+    `except KeyError: pass`. `scripts/verify_package.ps1` therefore declares
+    `imgui/<version>` (parsed from this recipe, so they cannot drift) in the
+    consumer's conanfile.txt, and `examples/conan_consumer/README.md` has the
+    before/after table. The CMake install tree has no such limitation.
+  - **Static kits must declare their platform libraries** (our bug, fixed):
+    `piplugin_imgui` links `user32 d3d11 dxgi d3dcompiler` and `piplugin_host_dx11`
+    links `d3d11 dxgi`. CMake's exported targets carry those automatically, but
+    CMakeDeps only knows `cpp_info.system_libs`, so a Conan consumer hit
+    `unresolved external symbol D3D11CreateDeviceAndSwapChain`. Both components now
+    declare them on Windows.
 - **FFI examples: the C ABI consumed from Python, Rust and C# (ECO-06).** "Pure C
   ABI" is a claim about *other* languages, so each example does the whole thing in
   its own language with no binding generator and no glue: load the framework DLL
