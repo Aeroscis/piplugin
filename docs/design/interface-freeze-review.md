@@ -187,7 +187,7 @@ pi_host_services_create_default, pi_host_default_set_ui_window, pi_host_create_p
 | 编号 | 事项 | 现状与建议 |
 |---|---|---|
 | **F5** | `IPiHostUI` 的 QI 每次调用都**新建一个包装对象** | 不符合 COM 标识规则的严格解读（同一对象同一 IID 应返回同一指针）。当前无实际危害（每个包装都读宿主活值、都能独立 release）。1.0 前决定：缓存一个包装，或把"不保证指针唯一"写进契约 |
-| **F6** | `pi_module_get_load_error()` 返回**进程级静态缓冲** | 非线程安全，且多个模块互相覆盖（A 模块加载失败的原因会被 B 的覆盖）。建议改为调用方提供缓冲，或返回线程局部值 |
+| **F6** | `pi_module_get_load_error()` 返回**进程级静态缓冲** | **已修（W-01）**：错误串改为**线程局部**（Windows `__declspec(thread)` / 其余 `_Thread_local`），每个线程读回自己那次 load 的结果；另加 `pi_module_get_load_error_r(buf, size)` 走"调用方提供缓冲"（拷贝可留存，不受后续 load 影响）。旧函数签名与语义不变（"下次同线程 load 前有效"）。导出面 **27 → 28**，`tests/unit` 的并发用例是回归（4 线程各加载**自己独有的**不存在路径，断言谁都不会读到别人的串；把实现改回进程级 buffer 时该用例稳定失败） |
 | **F7** | `pi_get_preferred_size` 两个官方套件都**硬编码 400×300 并返回 `PI_OK`** | 宿主无法区分"插件真的想要这么大"和"套件不知道"。建议 Qt 套件返回 `sizeHint()`、imgui 套件返回 `PI_E_NOTIMPL` |
 | **F8** | `pi_descriptor_provides/requires` 返回的是**掩码值**（`4` / `1`），不是 `1` | **必须按"非零"判断**，不能当布尔用。已写入 `interfaces.md` 1.4 与单测 |
 | **F9** | `PI_LOCAL` 宏有定义但**全库未使用** | 内部函数一律 `static`（比 `PI_LOCAL` 更严格），已覆盖其作用。保留宏以备将来需要非 static 的内部全局 |

@@ -149,8 +149,20 @@ PI_QT_API void pi_qt_view_shutdown(void);
  * Created on the host GUI thread; only touch it from there. */
 PI_QT_API QWidget* pi_qt_view_widget(IPiPluginView* view);
 
-/* Run fn(user) on the host GUI thread. The kit is single-threaded, so this
- * simply runs it inline. */
+/* Run fn(user) on the host GUI thread (W-04).
+ *
+ * Callable from ANY thread: called on the host GUI thread itself the callback
+ * runs inline (same order, no latency); called from any other thread the call
+ * is queued and run by the host's next pi_on_idle() -> processEvents() slice,
+ * WITHOUT blocking the caller. There is still no second Qt thread anywhere -
+ * the callback always runs on the one thread that owns the widgets, which is
+ * what makes it safe to touch Qt inside it.
+ *
+ * The queue is best effort by design: a call that has not run yet is dropped
+ * when the view is detached or destroyed (the plugin must not be called back
+ * after its widget is gone), and before the first attach there is no host GUI
+ * thread to marshal to, so it is dropped too. Both cases leave a line in the
+ * PI_QT_VIEW_TRACE=1 log. */
 PI_QT_API void pi_qt_view_post(IPiPluginView* view, void (*fn)(void* user), void* user);
 
 #ifdef __cplusplus

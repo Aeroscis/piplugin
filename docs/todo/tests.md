@@ -62,13 +62,29 @@
 | imgui 宿主 + Qt 插件 | ✅ 可跑（`pi_test_host_imgui.exe pi_test_plugin_qt.dll`），未纳入自动化（已核实 `tests/test_host_multi` 是纯 Win32 宿主、无 D3D，APP-08 的用例不覆盖此格） |
 | headless 宿主 + GUI 插件 | ✅ 已演示（插件无头运行、不建 UI） |
 | headless 宿主 + service 插件 | ✅ 已有示例并纳入自动化（APP-07：`pi_test_plugin_service.dll` + ctest `headless_host_service_lifecycle`，断言 start/poll/status/stop 全生命周期） |
-| 多插件同进程 | ✅ 已覆盖（APP-08：`tests/test_host_multi` / ctest `multi_plugin_qt_in_one_process`，两个不同的 Qt 插件 DLL 同时加载、各自有 UI、各自跑定时器、一起卸载） |
-| 嵌入窗口动态切换 | ❌ 未覆盖（`pi_host_default_set_ui_window` 运行时切换）——已上收 **W-02**（派工板，测试线） |
+| 多插件同进程 | ✅ 已覆盖（APP-08：`tests/test_host_multi` / ctest `multi_plugin_qt_in_one_process`，两个不同的 Qt 插件 DLL 同时加载、各自有 UI、各自跑定时器、一起卸载；W-05 补上 imgui 变体：ctest `multi_plugin_imgui_in_one_process`，两个不同的 **imgui** 插件模块各自渲染若干帧、各自心跳推进、一起干净卸载） |
+| 嵌入窗口动态切换 | ✅ 已覆盖（W-02：`tests/test_host_multi --container-switch`，ctest `container_switch_runtime`（imgui 插件）/ `container_switch_runtime_qt`（Qt 插件）—— attach A → 切到 B → 切回 A → 尺寸往返 → 卸载，每步断言"插件窗口是**指定容器**的子窗口、可见、尺寸与容器客户区一致"，并断言 `pi_view_detach()` 后旧窗口确实已销毁） |
 
-## 5. 线程安全专项 [P2] —— 已上收（W-04）
+## 5. 线程安全专项 [P2] —— 已完成（W-04）
 
-> **状态**：仍开放。已上收为下一波工作 **W-04**（派工板，测试线第 2 位）：
-> 下述三项全部做成 ctest 注册的压测用例。
+> **状态**：已落地（W-04）。三个跨线程场景各有用例，全部按退出码判定：
+>
+> | 场景 | 用例 | 断言要点 |
+> |---|---|---|
+> | 插件子线程调 `pi_host_post_message` | `unit_threads`（框架层，3 线程 × 200 条）+ `qt_view_post_from_worker_thread`（真插件子线程） | 宿主回调**真的在子线程上**被调到（否则场景没被覆盖到）、不丢不重、宿主自己排队后**在主线程上**恰好投递一次 |
+> | Qt 套件 `pi_qt_view_post` 跨线程 marshal | `qt_view_post_from_worker_thread`（插件子线程调用） | 回调必须跑在**宿主 GUI 线程**上（`wparam==1` 的回报 + 回报本身也在主线程到达） |
+> | 并发 AddRef/Release | `unit_threads`（4 线程；帮助函数与 vtbl 槽位各一遍） | 成对操作后计数回到基数且不得销毁；N 线程并发释放到零时 `destroy` **恰好一次**；只加不减的紧循环计数分毫不差 |
+>
+> 顺带修掉一个真 bug：`pi_qt_view_post()` 的文档写"任意线程可调、marshal 到
+> Qt 线程"，实现却是**内联执行**（回调在调用线程上跑）—— 照文档写的插件会从
+> 后台线程碰 QWidget。现在同线程内联、跨线程异步排队由宿主 `pi_on_idle()` 执行
+> （不引入第二条线程、不阻塞），detach / 析构后未执行的调用被丢弃。改回内联时
+> 新用例稳定失败（已做反证）。套件头文件 / `adapters/qt/README.md` /
+> `interfaces.md` §6（那张表还写着"私有后台线程"）/ `tutorial/adapters.md` 已同步。
+>
+> 用例文件：`tests/unit/pi_thread_tests.c`（+ `tests/common/pi_test_thread.h`）、
+> `tests/test_plugin/pi_qt_test_plugin.cpp`（探针由 `PI_QT_TEST_POST_THREAD=1`
+> 打开，其余用例行为不变）、`tests/test_host_multi`（`--post-thread` 模式）。
 
 - `pi_host_post_message` 从插件子线程调用宿主的场景（测试插件目前只在 UI 回调里发消息）；
 - Qt 套件 `pi_qt_view_post` 跨线程 marshal；

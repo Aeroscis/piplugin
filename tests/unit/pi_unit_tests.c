@@ -10,6 +10,7 @@
  */
 #include "piplugin/pi_plugin.h"
 #include "pi_test_host_service_impl.h"
+#include "pi_test_thread.h"   /* W-01/W-04 的并发用例：起线程 / 让出时间片 */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -305,6 +306,8 @@ static void TestRefCounted(void)
  * pi_module_load 失败路径
  * -------------------------------------------------------------------------- */
 static const char* g_argv0 = NULL;
+/* ctest 传进来的真实插件名（argv[1]）：加载的成功/失败两条路径都要用它 */
+static const char* g_plugin_path = NULL;
 
 static void TestModuleLoadFailure(void)
 {
@@ -329,6 +332,141 @@ static void TestModuleLoadFailure(void)
     /* 卸载 NULL 是安全的（卸载序列会走到这里） */
     pi_module_unload(NULL);
     CHECK_EQ_INT(pi_module_get_factory(NULL, NULL), PI_E_INVALIDARG);
+}
+
+/* --------------------------------------------------------------------------
+ * W-01：加载错误串的线程隔离 + _r 变体
+ *
+ * 旧实现是一个进程级 static buffer：并发加载失败时各线程读到的都是"最后写
+ * 入的那一条"。下面让 4 个线程各自反复加载**自己独有的**不存在路径，并在
+ * 读写之间让出时间片，然后断言每个线程读回的串始终含自己的标记。
+ * （进程级实现下这个断言会大量失败 —— 这正是它要抓的回归。）
+ * -------------------------------------------------------------------------- */
+#define PI_LOAD_ERROR_RACE_THREADS 4
+#define PI_LOAD_ERROR_RACE_ROUNDS  32
+
+/* 与 src/pi_plugin_host.c 的 PI_LOAD_ERROR_MAX 一致（那是内部宏，测试只借用
+ * 它表示"错误串最长就这么长"）。 */
+#define PI_LOAD_ERROR_MAX          256
+
+typedef struct LoadErrorRaceWorker {
+    int  index;
+    int  rounds;     /* 真正跑完的轮数 */
+    int  foreign;    /* 读到的错误串不含自己标记的次数（>0 = 被别的线程覆盖） */
+    int  stale;      /* 让出时间片后再读，串变了或丢了标记的次数 */
+    int  copy_bad;   /* _r 拷贝与旧 API 当次读到的不一致 */
+    int  bad_load;   /* 本该失败却成功的加载（测试前提被破坏） */
+} LoadErrorRaceWorker;
+
+static volatile int g_load_error_go = 0;
+
+static void LoadErrorRaceThread(void* user_data)
+{
+    LoadErrorRaceWorker* w = (LoadErrorRaceWorker*)user_data;
+    int round;
+
+    while (!g_load_error_go) PiTestThreadYield();   /* 一起出发 */
+
+    for (round = 0; round < PI_LOAD_ERROR_RACE_ROUNDS; ++round) {
+        char path[128];
+        char copy[PI_LOAD_ERROR_MAX + 32];
+        const char* msg;
+
+        /* 每个线程、每一轮都用不同的路径：错误串里只应出现自己的那一条 */
+        snprintf(path, sizeof(path),
+                 "Z:\\no\\such\\dir\\pi_race_w%d_r%d.dll", w->index, round);
+
+        if (pi_module_load(path) != NULL) { ++w->bad_load; continue; }
+        ++w->rounds;
+
+        /* 把"写入 → 读取"的窗口拉开 1ms：进程级 buffer 下这 1ms 里足够别的
+         * 线程各自写一遍，于是本线程必然读到别人的串。只让出时间片不够 ——
+         * 加载路径本身带 loader 锁，天然串行，光靠 Sleep(0) 撞不上。 */
+        PiTestThreadSleepMs(1);
+
+        msg = pi_module_get_load_error();
+        if (!msg || strstr(msg, path) == NULL) ++w->foreign;
+
+        /* _r 是"当次"的拷贝：必须与刚才那条一致，且自带 NUL */
+        if (pi_module_get_load_error_r(copy, sizeof(copy)) != PI_OK ||
+            msg == NULL || strcmp(copy, msg) != 0)
+            ++w->copy_bad;
+
+        /* 再让一轮，本线程的串必须还在（TLS 的全部意义） */
+        PiTestThreadSleepMs(1);
+        msg = pi_module_get_load_error();
+        if (!msg || strstr(msg, path) == NULL) ++w->stale;
+    }
+}
+
+static void TestLoadErrorThreadSafety(void)
+{
+    LoadErrorRaceWorker workers[PI_LOAD_ERROR_RACE_THREADS];
+    PiTestThread        threads[PI_LOAD_ERROR_RACE_THREADS];
+    char                buf[PI_LOAD_ERROR_MAX + 32];
+    int                 i;
+
+    Section("W-01 加载错误串线程隔离 + pi_module_get_load_error_r");
+
+    /* --- 1) 单线程：旧 API 语义不变（"null path"，与上面那条用例同源） --- */
+    CHECK(pi_module_load(NULL) == NULL);
+    CHECK(strcmp(pi_module_get_load_error(), "null path") == 0);
+
+    /* _r 拷贝的是"当次"内容，且与旧 API 一致 */
+    memset(buf, 0x7F, sizeof(buf));
+    CHECK_EQ_INT(pi_module_get_load_error_r(buf, sizeof(buf)), PI_OK);
+    CHECK(strcmp(buf, "null path") == 0);
+
+    /* 参数非法：返回错误码，不崩 */
+    CHECK_EQ_INT(pi_module_get_load_error_r(NULL, sizeof(buf)), PI_E_INVALIDARG);
+    CHECK_EQ_INT(pi_module_get_load_error_r(buf, 0), PI_E_INVALIDARG);
+    CHECK_EQ_INT(pi_module_get_load_error_r(NULL, 0), PI_E_INVALIDARG);
+
+    /* 缓冲太小：截断且仍然 NUL 结尾（内容非空） */
+    memset(buf, 0x7F, sizeof(buf));
+    CHECK_EQ_INT(pi_module_get_load_error_r(buf, 5), PI_OK);
+    CHECK_EQ_INT((unsigned char)buf[4], 0);
+    CHECK(strncmp(buf, "null", 4) == 0);
+
+    /* --- 2) 成功加载后回到 "no error"（拿真实插件验，没有就跳过） --- */
+    if (g_plugin_path && g_plugin_path[0]) {
+        PiPluginModule* module = pi_module_load(g_plugin_path);
+        CHECK(module != NULL);
+        if (module) {
+            CHECK(strcmp(pi_module_get_load_error(), "no error") == 0);
+            CHECK_EQ_INT(pi_module_get_load_error_r(buf, sizeof(buf)), PI_OK);
+            CHECK(strcmp(buf, "no error") == 0);
+            pi_module_unload(module);
+        }
+    }
+
+    /* --- 3) 并发：4 个线程各读各的，谁都不能读到别人的失败原因 --- */
+    g_load_error_go = 0;
+    memset(workers, 0, sizeof(workers));
+    memset(threads, 0, sizeof(threads));
+
+    for (i = 0; i < PI_LOAD_ERROR_RACE_THREADS; ++i) {
+        workers[i].index = i;
+        CHECK_EQ_INT(PiTestThreadStart(&threads[i], &LoadErrorRaceThread, &workers[i]), 0);
+    }
+    PiTestThreadYield();
+    g_load_error_go = 1;                 /* 放行：4 个线程开始互相踩 */
+
+    for (i = 0; i < PI_LOAD_ERROR_RACE_THREADS; ++i) {
+        PiTestThreadJoin(&threads[i]);
+        printf("  thread[%d]: rounds=%d foreign=%d stale=%d copy_bad=%d\n",
+               i, workers[i].rounds, workers[i].foreign,
+               workers[i].stale, workers[i].copy_bad);
+        CHECK_EQ_INT(workers[i].bad_load, 0);
+        CHECK_EQ_INT(workers[i].rounds, PI_LOAD_ERROR_RACE_ROUNDS);
+        CHECK_EQ_INT(workers[i].foreign, 0);    /* 读到的永远是自己的 */
+        CHECK_EQ_INT(workers[i].stale, 0);      /* 让出后还是自己的 */
+        CHECK_EQ_INT(workers[i].copy_bad, 0);   /* _r 与旧 API 同步 */
+    }
+
+    /* 主线程自己的槽位也没被那 4 个线程碰过：TLS 是"每线程一份"，不是"最后
+     * 一条" —— 进程级实现下这句会失败（主线程读到某个 pi_race_wN 路径）。 */
+    CHECK(strstr(pi_module_get_load_error(), "pi_race_w") == NULL);
 }
 
 /* --------------------------------------------------------------------------
@@ -773,7 +911,8 @@ static void TestFactoryNegative(const char* plugin_path)
  * -------------------------------------------------------------------------- */
 int main(int argc, char** argv)
 {
-    g_argv0 = (argc > 0) ? argv[0] : NULL;
+    g_argv0       = (argc > 0) ? argv[0] : NULL;
+    g_plugin_path = (argc > 1) ? argv[1] : NULL;
 
     printf("== piplugin unit tests ==\n");
     TestGuidEqual();
@@ -781,10 +920,11 @@ int main(int argc, char** argv)
     TestDescriptorProperties();
     TestRefCounted();
     TestModuleLoadFailure();
+    TestLoadErrorThreadSafety();
     TestApiVersion();
     TestHostServices();
     TestHostServicesCreateEx();
-    TestFactoryNegative((argc > 1) ? argv[1] : NULL);
+    TestFactoryNegative(g_plugin_path);
 
     printf("== checks=%u failures=%u ==\n", g_checks, g_failures);
     if (g_failures != 0) {

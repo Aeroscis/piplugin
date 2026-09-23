@@ -5,9 +5,32 @@
 #include "imgui.h"
 #include <stdio.h>
 
+/* 同一份源码编出两个**不同的** imgui 插件 DLL（W-05 的多插件同进程验收）。
+ *
+ * 必须是两个不同的模块：imgui 套件是 STATIC 库（每个插件各带一份 imgui 与
+ * 套件状态），而"第二个模块的窗口类注册 / 各自的 ImGui context 与 D3D 设备"
+ * 这类进程级问题，只有加载两个不同模块才测得出来 —— 同一个 DLL 加载两次会
+ * 共享同一份静态数据，什么都看不见（这条路曾经真的崩过，见 CHANGELOG 里
+ * "imgui adapter kit used ONE process-wide window class name"）。
+ *
+ * 变体之间只差：显示名、class GUID、心跳消息码（宿主据此分别确认两个插件都在
+ * 渲染）。变体 A = pi_test_plugin_imgui.dll，变体 B 由 CMake 传
+ * PI_TEST_IMGUI_VARIANT_B 编出 pi_test_plugin_imgui2.dll。 */
+#if defined(PI_TEST_IMGUI_VARIANT_B)
+static const PiGuid IMGUI_PLUGIN_CLASS_GUID =
+    PI_GUID(0x7F83B201, 0x5C4D, 0x4E2A,
+            0x91, 0xD3, 0x8A, 0xFC, 0x2E, 0xB1, 0x44, 0x00);
+#  define PI_IMGUI_PLUGIN_NAME      "ImGui Test Plugin B"
+#  define PI_IMGUI_PLUGIN_HEARTBEAT ((uint32_t)0x2003u)
+#  define PI_IMGUI_PLUGIN_VARIANT   "B"
+#else
 static const PiGuid IMGUI_PLUGIN_CLASS_GUID =
     PI_GUID(0x7F83B200, 0x5C4D, 0x4E2A,
             0x91, 0xD3, 0x8A, 0xFC, 0x2E, 0xB1, 0x44, 0x00);
+#  define PI_IMGUI_PLUGIN_NAME      "ImGui Test Plugin"
+#  define PI_IMGUI_PLUGIN_HEARTBEAT ((uint32_t)0x2002u)
+#  define PI_IMGUI_PLUGIN_VARIANT   "A"
+#endif
 
 /* ==========================================================================
  * Factory
@@ -26,7 +49,7 @@ ImGuiPluginFactory::ImGuiPluginFactory()
                                     (const IPiUnknownVtbl*)&s_factory_vtbl,
                                     &pi_cpp_destroy<ImGuiPluginFactory>);
 
-    m_descriptor.name = "ImGui Test Plugin";
+    m_descriptor.name = PI_IMGUI_PLUGIN_NAME;
     m_descriptor.vendor = "piplugin";
     m_descriptor.version = "1.0.0";
     m_descriptor.category = "UI/Test";
@@ -46,9 +69,12 @@ ImGuiPluginFactory::ImGuiPluginFactory()
     m_properties[0].value = "imgui-plugin";
     m_properties[1].key   = "com.example.ui.toolkit";
     m_properties[1].value = "imgui";
+    /* W-05：同进程两个 imgui 插件时，用它区分谁是谁（与 Qt 变体同构） */
+    m_properties[2].key   = "com.example.variant";
+    m_properties[2].value = PI_IMGUI_PLUGIN_VARIANT;
 
     m_descriptor.properties = m_properties;
-    m_descriptor.property_count = 2;
+    m_descriptor.property_count = 3;
 }
 
 uint32_t PI_CALL ImGuiPluginFactory::AddRef(void* self_ptr) { return pi_refcounted_add_ref(self_ptr); }
@@ -201,6 +227,14 @@ void ImGuiPlugin::DrawUi(void* user_data)
     ImGui::Text("ImGui frame: tick %d", tick);
     ImGui::End();
     ImGui::PopStyleColor();
+
+    /* W-05：把"这一帧真的画过了"报给宿主（变体 A 用 0x2002、变体 B 用 0x2003）。
+     * 宿主据此分别确认**两个** imgui 插件都在被驱动 —— 只看窗口存在是不够的
+     * （控件可以是建好之后冻住的）。第一帧就报一次，否则短跑的自检看不到证据；
+     * 之后每 25 帧一条，别把宿主日志刷爆。 */
+    if (me->m_host && (tick == 1 || (tick % 25) == 0))
+        pi_host_post_message(me->m_host.get(), PI_IMGUI_PLUGIN_HEARTBEAT,
+                             (uintptr_t)tick, 0);
 }
 
 void ImGuiPlugin::Retain(void* user_data)

@@ -18,6 +18,7 @@
 | Qt 事件循环 | 进程（进程内所有 Qt 插件共有的一份套件）唯一的 `QApplication`，**创建在宿主的 GUI 线程上**；宿主每帧调 `pi_on_idle()`，套件在其中调 `processEvents()` 给 Qt 分一小片时间 |
 | 嵌入宿主窗口 | `pi_attach()` 时先用 Qt 的 `_q_embedded_native_parent_handle` 属性把宿主容器 HWND 告知 Qt，**让 Qt 自己**把控件窗口创建成容器的 `WS_CHILD`（不做"顶层窗口 SetParent"、不叠加标题栏/边框、不按屏幕坐标算位置）；Linux/macOS 的 XEmbed/NSView 为 TODO |
 | 尺寸/可见性 | `pi_on_resize()` / `pi_set_visible()` 直接同步执行——本来就在同一个线程，无需 marshal |
+| 跨线程回调 | `pi_qt_view_post(view, fn, user)` **任意线程可调**：在宿主 GUI 线程上调用就是内联执行，从别的线程调用则异步排队，由宿主下一次 `pi_on_idle()` 取出并在 GUI 线程上执行（不阻塞、不引入第二条线程） |
 | 生命周期 | 控件销毁、`QApplication` 析构、`user_data` 的 retain/release 全部在宿主线程**同步**完成；`pi_detach()` 返回时控件已经没了，`pi_release()`（引用归零）返回时 `QApplication` 也已经析构完——此后宿主 `FreeLibrary` 绝对安全 |
 
 ## 线程模型（重要，不要改回去）
@@ -38,6 +39,13 @@
 
 早期版本正是"后台 QThread 跑 `QApplication::exec()` + queued invocation +
 等控件销毁的信号量"，结果就是**卸载崩溃**和**detach 卡死**。不要改回去。
+
+`pi_qt_view_post()` 的跨线程投递**不是**上面那个模型：它没有第二条线程、没有
+任何等待，只是把调用排进队列并往宿主 GUI 线程投一个 posted event，由宿主本来
+就要调的 `pi_on_idle()` 执行（见下表"跨线程回调"）。队列里的调用在视图 detach /
+析构后被丢弃——插件不该在控件已经没了之后再被回调。回归用例：ctest
+`qt_view_post_from_worker_thread`（tests/test_host_multi，插件子线程调用，断言
+回调落在宿主 GUI 线程上）。
 
 正确的（当前）做法：
 

@@ -10,7 +10,42 @@
 #include <QTimer>
 #include <QPainter>
 #include <QSizePolicy>
+#include <QThread>
+#include <chrono>
 #include <stdio.h>
+
+#if PI_PLATFORM_WINDOWS
+#  include <windows.h>   /* GetEnvironmentVariableA：只给下面的 W-04 开关用 */
+#endif
+
+/* --------------------------------------------------------------------------
+ * W-04：跨线程 pi_qt_view_post 的验收辅助开关
+ *
+ * 默认**关闭** —— 这个插件被一致性验收（run_selftest.ps1）、多插件宿主
+ * （APP-08）、headless 冒烟等一堆用例共用，不能因为一个专项用例就改变它的
+ * 正常行为。ctest `qt_view_post_from_worker_thread` 通过 ENVIRONMENT 打开它。
+ * ------------------------------------------------------------------------ */
+#define PI_QT_POST_REPORT_MSG  ((uint32_t)0x2010u)   /* wparam: 1 = 回调跑在宿主 GUI 线程 */
+#define PI_QT_WORKER_ALIVE_MSG ((uint32_t)0x2011u)   /* wparam: 子线程发出的第几条 */
+
+static bool PostThreadProbeEnabled()
+{
+    static const bool enabled = []() {
+        char buf[8] = { 0 };
+#if PI_PLATFORM_WINDOWS
+        size_t n = GetEnvironmentVariableA("PI_QT_TEST_POST_THREAD", buf, sizeof(buf));
+        return n > 0 && buf[0] != '0';
+#else
+        const char* env = getenv("PI_QT_TEST_POST_THREAD");
+        if (!env) return false;
+        size_t n = strlen(env);
+        if (n >= sizeof(buf)) n = sizeof(buf) - 1;
+        memcpy(buf, env, n);
+        return n > 0 && buf[0] != '0';
+#endif
+    }();
+    return enabled;
+}
 
 /* 同一份源码编出两个**不同的** Qt 插件 DLL（roadmap APP-08 的多插件同进程验收）。
  *
@@ -171,7 +206,9 @@ const IPiPluginBaseVtbl QtPlugin::s_base_vtbl = {
     &QtPlugin::Init, &QtPlugin::Term, &QtPlugin::GetView
 };
 
-QtPlugin::QtPlugin() : m_view(NULL)
+QtPlugin::QtPlugin() : m_view(NULL), m_uiThread(nullptr),
+                       m_postWorkerStop(false), m_postProbeDone(false),
+                       m_postProbeRuns(0)
 {
     pi_refcounted_init_with_destroy(&m_base,
                                     (const IPiUnknownVtbl*)&s_base_vtbl,
@@ -181,7 +218,10 @@ QtPlugin::QtPlugin() : m_view(NULL)
 QtPlugin::~QtPlugin()
 {
     /* 没有一行 release：m_host / m_hostUI 是 PiPtr（C++ RAII 层，pi_cpp.h），
-     * 析构顺序自动把这两个接口引用放掉。 */
+     * 析构顺序自动把这两个接口引用放掉。
+     * 但后台线程必须显式收掉：它还会调用套件与宿主服务，跑在模块卸载之后就是
+     * 调到已卸载的内存。 */
+    StopPostWorker();
 }
 
 PiResult QtPlugin::Initialize(IPiHostServices* host)
@@ -228,6 +268,10 @@ PiResult QtPlugin::Initialize(IPiHostServices* host)
 
 PiResult QtPlugin::Terminate()
 {
+    /* 先把后台线程收掉（W-04 的探针）：它还会调用套件与宿主服务，
+     * 让它活过模块卸载就是调到已卸载的内存。 */
+    StopPostWorker();
+
     /* The adapter kit owns the Qt side, and it needs an explicit "we are
      * about to go away" signal: destroying the widget and the QApplication
      * runs code inside THIS module, so it must all be finished before the
@@ -312,7 +356,66 @@ QWidget* QtPlugin::CreateUi(void* user_data)
                                  (uintptr_t)*heartbeatTick, 0);
     });
 
+    /* W-04：create_widget 是宿主 GUI 线程上唯一确定会被调到的插件代码，所以
+     * 在这里记下"UI 线程是哪条"，并按开关决定要不要起那条后台线程。 */
+    me->m_uiThread = QThread::currentThread();
+    me->StartPostWorkerIfEnabled();
+
     return w;
+}
+
+/* --------------------------------------------------------------------------
+ * W-04：从**子线程**调用 pi_qt_view_post 与 pi_host_post_message
+ * ------------------------------------------------------------------------ */
+void QtPlugin::PostProbe(void* user_data)
+{
+    QtPlugin* me = (QtPlugin*)user_data;
+    /* 套件契约：pi_qt_view_post 的回调在宿主 GUI 线程上执行，所以这里可以
+     * 安全地碰 Qt —— 下面这一句就是"回调跑在正确的线程上"的直接证据。 */
+    const bool on_ui_thread = (me->m_uiThread != nullptr) &&
+                              (QThread::currentThread() == me->m_uiThread);
+    me->m_postProbeRuns.fetch_add(1);
+    if (me->m_host)
+        pi_host_post_message(me->m_host.get(), PI_QT_POST_REPORT_MSG,
+                             on_ui_thread ? 1u : 0u, 0);
+    me->m_postProbeDone = true;
+}
+
+void QtPlugin::PostWorkerMain(QtPlugin* me)
+{
+    uintptr_t seq = 0;
+    /* attach 之前的投递会被套件丢弃（那是设计），所以重试到回调真的跑过为止，
+     * 最多约 5 秒；宿主每帧 pump，正常情况下第一两轮就成。 */
+    for (int i = 0; i < 250; ++i) {
+        if (me->m_postWorkerStop || me->m_postProbeDone) break;
+
+        /* 1) 普通跨线程 post_message：消息**就在子线程上**到达宿主回调，
+         *    宿主按契约自己负责 marshal 到它的事件循环。 */
+        if (me->m_host)
+            pi_host_post_message(me->m_host.get(), PI_QT_WORKER_ALIVE_MSG,
+                                 ++seq, 0);
+
+        /* 2) 套件的跨线程 pi_qt_view_post：套件负责 marshal 到宿主 GUI 线程 */
+        IPiPluginView* view = me->m_view.load();
+        if (view) pi_qt_view_post(view, &QtPlugin::PostProbe, me);
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+}
+
+void QtPlugin::StartPostWorkerIfEnabled()
+{
+    if (!PostThreadProbeEnabled()) return;
+    if (m_postWorker.joinable()) return;
+    m_postWorkerStop  = false;
+    m_postProbeDone   = false;
+    m_postWorker = std::thread(&QtPlugin::PostWorkerMain, this);
+}
+
+void QtPlugin::StopPostWorker()
+{
+    m_postWorkerStop = true;
+    if (m_postWorker.joinable()) m_postWorker.join();
 }
 
 void QtPlugin::Retain(void* user_data)

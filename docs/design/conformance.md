@@ -100,6 +100,9 @@ load（模块 + 双向能力门禁 + 实例化 + 初始化）
 | 负向输入（不存在的 DLL、无 entry 的 DLL、未知 class GUID、headless 加载 GUI 插件） | ECO-08 —— **已落地**：前三条在 `tests/unit`，第四条是 ctest `capability_gate_rejects_gui_required_plugin`（`tests/test_plugin_guirequired`） |
 | 画面内容是否正确（只看"有没有崩、有没有 view"） | 需人工/截图断言，见 `scripts/verify_resize_fix.ps1` |
 | 多个 Qt 插件同进程 | **已覆盖**（APP-08）：ctest `multi_plugin_qt_in_one_process` |
+| 多个 imgui 插件同进程 | **已覆盖**（W-05）：ctest `multi_plugin_imgui_in_one_process`（两个不同的 imgui 插件模块各自渲染若干帧、各自心跳推进、一起干净卸载） |
+| 嵌入窗口运行时切换（容器 A→B→A + 尺寸往返） | **已覆盖**（W-02）：ctest `container_switch_runtime` / `container_switch_runtime_qt` |
+| 跨线程（插件子线程 → 宿主 / 套件 post / 并发引用计数） | **已覆盖**（W-04）：ctest `unit_threads`、`qt_view_post_from_worker_thread` |
 | Linux / macOS | FUT-01 / FUT-02 |
 | 崩溃隔离（插件崩了宿主也崩） | FUT-05（跨进程插件） |
 

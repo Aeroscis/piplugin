@@ -30,12 +30,33 @@
 
 /* --------------------------------------------------------------------------
  * Load error diagnostics
+ *
+ * W-01：错误串是**线程局部**的。原先是进程级 static，多线程宿主里各线程
+ * 互相覆盖 —— 并发加载失败时所有线程都只能读到"最后那一条"。
+ * 语义不变（"最近一次 pi_module_load 的可读原因"），只是"下一次调用"
+ * 现在按线程算；单线程行为逐字不变（tests/unit 有回归）。
  * -------------------------------------------------------------------------- */
-static char g_load_error[256] = "no error";
+#if PI_PLATFORM_WINDOWS
+#  define PI_LOAD_ERROR_TLS __declspec(thread)
+#else
+#  define PI_LOAD_ERROR_TLS _Thread_local
+#endif
+
+#define PI_LOAD_ERROR_MAX 256
+
+static PI_LOAD_ERROR_TLS char g_load_error[PI_LOAD_ERROR_MAX] = "no error";
 
 PI_EXPORT const char* pi_module_get_load_error(void)
 {
     return g_load_error;
+}
+
+PI_EXPORT PiResult pi_module_get_load_error_r(char* buf, size_t size)
+{
+    if (!buf || size == 0) return PI_E_INVALIDARG;
+    /* 拷贝本线程那一条；snprintf 保证 NUL 结尾（放不下就截断） */
+    snprintf(buf, size, "%s", g_load_error);
+    return PI_OK;
 }
 
 /* --------------------------------------------------------------------------

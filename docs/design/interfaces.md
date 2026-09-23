@@ -223,6 +223,23 @@ PiResult pi_host_services_create_default(
 void pi_host_default_set_ui_window(IPiHostServices* services, PiNativeWindow window);
 ```
 
+> **运行时切换嵌入窗口（W-02）**：`pi_host_default_set_ui_window()` 改的是宿主
+> 报告的活值（插件已经拿到的 `IPiHostUI` 指针立刻读到新容器），但**不会**自己
+> 搬动插件的 view —— 容器是宿主的自由。宿主把插件界面换到另一个容器上的完整
+> 动作是三件事，顺序不能反：
+>
+> ```c
+> pi_view_detach(view);                                   /* 1. 同步销毁旧容器里的控件 */
+> pi_host_default_set_ui_window(services, new_container);  /* 2. 让 IPiHostUI 报告新容器 */
+> pi_view_attach(view, new_container);                     /* 3. 在新容器里重建 */
+> pi_view_set_visible(view, 1);
+> ```
+>
+> 第 1 步是同步的：`pi_view_detach()` 返回时旧的原生窗口必须已经没了（不然新旧
+> 窗口会抢同一个容器的绘制区域）。回归用例：ctest `container_switch_runtime`
+> （imgui 插件）与 `container_switch_runtime_qt`（Qt 插件）—— 覆盖 A→B→A 切换、
+> detach 同步性、切换后的尺寸往返与卸载。
+
 **可组合宿主服务（APP-01，通道 B）**：默认对象只认框架的 IID，app 无法把
 自己的服务递给插件。`create_ex` 多一个 extra-QI 钩子，框架 IID 之外的
 `QueryInterface` 全部转交宿主：
@@ -374,7 +391,8 @@ PiResult (PI_CALL *pi_host_events_drop_owner)(void* this_ptr, void* owner);
 ```c
 PiPluginModule* pi_module_load(const char* path);                  /* 失败返回 NULL */
 void            pi_module_unload(PiPluginModule* module);
-const char*     pi_module_get_load_error(void);                    /* 上次失败的描述 */
+const char*     pi_module_get_load_error(void);                    /* 上次失败的描述（**线程局部**） */
+PiResult        pi_module_get_load_error_r(char* buf, size_t size); /* 拷进调用方缓冲（W-01） */
 
 PiResult pi_module_get_factory(PiPluginModule* module, IPiPluginFactory** out_factory);
 
@@ -385,6 +403,13 @@ PiResult pi_host_create_plugin(const char* dll_path,
                                IPiPluginBase** out_plugin,
                                PiPluginModule** out_module);      /* out_module 可 NULL（见下） */
 ```
+
+> **加载错误串是线程局部的（W-01）**：并发宿主里每个线程各读各的那一条，不会
+> 互相覆盖（旧实现是进程级 static，多线程下只剩"最后写入的那条"）。
+> 两个入口：`pi_module_get_load_error()` 返回本线程当前那条（下次同线程 load 前
+> 有效，永不为 NULL，"no error" 表示上次成功）；`pi_module_get_load_error_r()`
+> 把它拷贝进调用方缓冲 —— 想**留存**失败原因时用它（拷贝不受后续 load 影响）。
+> 缓冲为 NULL / size 为 0 返回 `PI_E_INVALIDARG`，放不下就截断（仍 NUL 结尾）。
 
 > **注意**：DLL 卸载时机。模块必须存活到所有插件实例释放之后。`pi_host_create_plugin`
 > 中若调用者传 `out_module == NULL`，为安全起见模块**故意不卸载**（接受泄漏），
@@ -436,6 +461,14 @@ PiResult pi_qt_view_create(const PiQtViewDesc* desc, IPiPluginView** out_view);
 QWidget* pi_qt_view_widget(IPiPluginView* view);                       /* Qt 线程独占访问 */
 void pi_qt_view_post(IPiPluginView* view, void (*fn)(void* user), void* user);
 ```
+
+> **`pi_qt_view_post`（W-04）**：任意线程可调，回调**一定在宿主 GUI 线程上执行**
+> —— 在 GUI 线程上调用就是内联执行；从别的线程调用则异步排队，由宿主下一次
+> `pi_on_idle() -> processEvents()` 取出来执行（**不阻塞调用方**，也不引入第二条
+> Qt 线程）。队列是尽力而为：视图 detach / 析构之后尚未执行的调用被丢弃，第一次
+> attach 之前没有可 marshal 的 GUI 线程时同样丢弃（`PI_QT_VIEW_TRACE=1` 有记录）。
+> 回归用例：ctest `qt_view_post_from_worker_thread`（插件子线程调用，断言回调落在
+> 宿主 GUI 线程上；改回内联执行时该用例稳定失败）。
 
 ## 5. 定义你自己的接口（特化协议，通道 A）
 
@@ -680,13 +713,14 @@ pi_host_services_create_ex(&MessageProc, NULL, window,
 |---|---|
 | 宿主主循环 / `pi_on_idle` / `pi_on_resize` | 宿主 GUI 线程 |
 | imgui 套件全部调用 | 宿主 GUI 线程（无内部线程） |
-| Qt 套件 `create_widget` / 控件操作 | Qt 运行时线程（私有后台线程） |
-| Qt 套件 `pi_qt_view_post` | 任意线程可调，marshal 到 Qt 线程 |
+| Qt 套件全部调用（`create_widget` / 控件操作 / 生命周期） | 宿主 GUI 线程（**没有**私有后台线程，见 `adapters/qt/README.md`） |
+| Qt 套件 `pi_qt_view_post` | 任意线程可调；回调在宿主 GUI 线程上执行（同线程内联，跨线程异步排队，W-04） |
 | `pi_host_post_message` | 任意插件线程可调（宿主负责 marshal） |
 | `pi_host_events_publish` | 任意线程可调（宿主 marshal 到自己的主线程） |
 | `pi_event_deliver` / 事件订阅回调 | 宿主主/owner 线程（= 调用 `pi_plugin_initialize()` 的那条）；插件侧无需加锁 |
 | `pi_host_events_subscribe` / `_unsubscribe` / `_drop_owner` | 宿主主线程 |
 | 引用计数 | 原子操作，任何线程安全 |
+| `pi_module_load` 的失败原因（`pi_module_get_load_error*`） | 线程局部（W-01）：每个线程读回**自己**那次 load 的结果 |
 
 ## 7. C++ RAII 层（可选，pi_cpp.h）
 

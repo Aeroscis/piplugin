@@ -32,8 +32,21 @@ PI_EXPORT PiPluginModule* pi_module_load(const char* path);
 PI_EXPORT void pi_module_unload(PiPluginModule* module);
 
 /* Human-readable description of why the last pi_module_load failed
- * (e.g. "LoadLibrary failed (err=126)"). Valid until the next call. */
+ * (e.g. "LoadLibrary failed (err=126)"). "no error" after a successful load.
+ *
+ * THREAD LOCALS (W-01): the string belongs to the CALLING THREAD, so a
+ * multi-threaded host can diagnose several loads at once - each thread reads
+ * back its own result instead of whichever thread wrote last. Valid until the
+ * next pi_module_load ON THAT SAME THREAD; never NULL. */
 PI_EXPORT const char* pi_module_get_load_error(void);
+
+/* Thread-safe variant of the above: copies the calling thread's current load
+ * error into the caller's buffer (always NUL-terminated; truncated to `size`
+ * if it does not fit) and returns PI_OK. The copy stays valid after later
+ * loads, which is what a host wants when it stores the reason for a failure.
+ *
+ * Returns PI_E_INVALIDARG when buf is NULL or size is 0. */
+PI_EXPORT PiResult pi_module_get_load_error_r(char* buf, size_t size);
 
 /* Get the factory from a loaded module. The factory is add-ref'd for the
  * caller; release it with ->pi_release(). */

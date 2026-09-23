@@ -40,6 +40,98 @@ own.
 
 ### Added
 
+- **Two imgui plugin modules in one process (W-05).** The matrix had "several Qt
+  plugins in one process" and "imgui plugin in a non-imgui host", but nothing for
+  the combination that shares process-level resources between two imgui plugins:
+  each view registers its own window class, builds its OWN ImGui context and its
+  OWN D3D11 device, and the kit swaps the current context in and out around every
+  callback. The kit is a STATIC library, so nothing is shared between modules -
+  which is exactly why two DIFFERENT module files (not one file loaded twice) are
+  the interesting case, and why this is the path where the old single
+  process-wide window-class name crashed. `tests/test_plugin_imgui` now builds
+  two variants (`pi_test_plugin_imgui.dll` / `pi_test_plugin_imgui2.dll`,
+  differing only in class GUID, display name and heartbeat code), the imgui test
+  plugin reports its frame counter through `pi_host_post_message` from inside its
+  draw callback, and `tests/test_host_multi --imgui-pair` (ctest
+  `multi_plugin_imgui_in_one_process`) loads both, gives each its own container,
+  drives frames, and asserts that both windows are visible inside their OWN
+  container, that both frame counters ADVANCE (a widget drawn once and then
+  frozen is exactly what a "window exists" check would miss), that neither window
+  wandered into the other's container, and that both are gone after a clean
+  unload.
+
+- **Runtime container switching is automated - the last empty cell of the
+  scenario matrix (W-02).** `pi_host_default_set_ui_window()` has always let a
+  host point its services at another container at runtime, and `pi_attach()` has
+  always accepted a new parent, but nothing exercised the switch: load -> attach
+  into container A -> switch to B -> switch back to A -> resize round trip ->
+  unload, with the plugin window's parent, visibility and geometry asserted at
+  every step. Two ctest cases in `tests/test_host_multi` (`container_switch_runtime`
+  with the imgui plugin, so it also runs where Qt is off, and
+  `container_switch_runtime_qt` for the Qt kit's widget teardown/rebuild path).
+  The case also pins the part that makes switching safe: `pi_view_detach()` is
+  synchronous, so the old native window must be gone before the new one is
+  created - asserted directly, along with the old window's disappearance after
+  unload. The three-step recipe (detach -> `pi_host_default_set_ui_window()` ->
+  attach) is now written down in `docs/design/interfaces.md` next to the call,
+  since the call alone does not move anyone's window.
+
+- **Thread-safety coverage, and the `pi_qt_view_post()` bug it uncovered (W-04).**
+  The three cross-thread paths that had never been automated now have ctest cases:
+
+  1. **A plugin subthread posting to the host** (`ctest unit_threads`, plus the
+     plugin-level half of `qt_view_post_from_worker_thread`): threads call
+     `pi_host_post_message()` while the host does what the contract says it must
+     - receives on whatever thread the call arrives on, queues it, and delivers
+     it on its own loop. The case asserts the callback really is entered on a
+     non-main thread (otherwise the scenario is not being exercised at all), that
+     nothing is lost or duplicated, and that every message is delivered exactly
+     once on the main thread.
+  2. **Concurrent AddRef/Release** (`ctest unit_threads`): paired add/release
+     from four threads must return the count to its base without destroying;
+     N threads releasing concurrently must hit zero with `destroy` called exactly
+     once; and a tight add-only loop from four threads must produce the exact
+     count (a lost update accumulates, where paired operations would cancel).
+     Both the exported helpers and the vtbl slots are driven.
+  3. **`pi_qt_view_post()` from a non-UI thread** (new `pi_qt_view_post` +
+     `ctest qt_view_post_from_worker_thread`): the header said "run fn on the
+     host GUI thread" and the docs said "callable from any thread, marshalled to
+     the Qt thread", but the implementation simply ran the callback inline - so a
+     plugin author following the documented contract would touch QWidget from a
+     background thread. It now keeps that promise the cheap way: called on the
+     host GUI thread it still runs inline; called from anywhere else the call is
+     queued and run by the host's next `pi_on_idle()` slice, without blocking and
+     **without reintroducing the private Qt thread** the kit deliberately
+     abandoned (the README's "do not go back" note is unchanged). Queued calls
+     are dropped when the view is detached or destroyed, and before the first
+     attach - the kit logs each drop under `PI_QT_VIEW_TRACE=1`. The kit's header,
+     `adapters/qt/README.md`, `docs/design/interfaces.md` (its thread-model table
+     also still described a private Qt thread that no longer exists) and
+     `docs/tutorial/adapters.md` now say the same thing.
+     Verified by reverting the implementation to the inline call: the new case
+     fails on both of its assertions, every run.
+     The new cases are registered by `tests/test_host_multi` (which grew modes for
+     `--post-thread` and `--container-switch`) and `tests/unit`
+     (`pi_unit_threads`), so `unit_threads` also runs where Qt is not available.
+
+- **The load-error string is per-thread now, with a copy-out variant (W-01).**
+  `pi_module_get_load_error()` read one process-wide `static char
+  g_load_error[256]`, so a host that loads plugins from several threads could
+  only ever see whichever thread wrote last - a thread frequently read back
+  somebody else's failure reason. The string is thread-local now
+  (`__declspec(thread)` / `_Thread_local`), which keeps the old signature, the
+  old "valid until the next load" lifetime and the old single-threaded behaviour
+  unchanged, and `tests/unit` races four threads (32 rounds each, a distinct
+  bogus path per thread and round, with a widened write-to-read window)
+  asserting every thread reads back its own reason; run against the old
+  process-global buffer the case fails in ~75% of rounds. New alongside it:
+  `pi_module_get_load_error_r(buf, size)` copies this thread's message into a
+  caller-owned buffer, so the reason survives later loads - what a host wants
+  when it reports or stores a failure (`PI_E_INVALIDARG` for a NULL buffer or
+  size 0; truncation is still NUL-terminated). Export surface 27 -> 28; no
+  existing symbol changed shape. Closes freeze-review finding F6
+  (`docs/design/interface-freeze-review.md`).
+
 - **A packaged-consumer test, and the packaging bugs it found (ECO-04).**
   `examples/conan_consumer/` is a consumer in the literal sense - it does not
   `add_subdirectory` anything, it just does `find_package(piplugin)` and links the

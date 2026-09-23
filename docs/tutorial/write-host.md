@@ -17,7 +17,7 @@ pi_host_services_create_default(&MessageProc, NULL,
 
 /* 2) 加载插件模块 */
 PiPluginModule* module = pi_module_load("my_plugin.dll");
-if (!module) { /* 查看 pi_module_get_load_error() */ }
+if (!module) { /* 查看 pi_module_get_load_error()（线程局部：本线程那次的结果） */ }
 
 /* 3) 取工厂 */
 IPiPluginFactory* factory = NULL;
@@ -379,7 +379,7 @@ pi_event_router_pump(g_router);
 
 - [ ] 创建 `IPiHostServices`（GUI 传容器窗口 / headless 传 `PI_INVALID_WINDOW`）
 - [ ] 要给插件自己的服务时用 `pi_host_services_create_ex()` 装 extra-QI 钩子（§8）
-- [ ] `pi_module_load` 失败时检查 `pi_module_get_load_error()`
+- [ ] `pi_module_load` 失败时检查 `pi_module_get_load_error()`（线程局部；要留存原因用 `pi_module_get_load_error_r(buf, size)`）
 - [ ] 实例化前做能力门检查（`pi_descriptor_requires`）
 - [ ] `pi_get_view` 成功后 attach + set_visible
 - [ ] 主循环每帧 `pi_on_idle`

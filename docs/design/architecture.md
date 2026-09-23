@@ -169,6 +169,9 @@ typedef struct PiRefCountedBase {
 - `IPiHostUI` 用独立的轻量 wrapper 对象（COM 身份规则：不同接口需要独立 vtbl 槽位）返回，
   wrapper 内部 AddRef 持有 owner，避免悬垂。
 - `pi_host_default_set_ui_window()` 允许宿主在运行时切换嵌入窗口 / 切回 headless。
+  它改的是宿主报告的**活值**（已发出的 `IPiHostUI` 指针立刻读到新容器），搬动
+  插件控件仍是宿主的动作：`pi_view_detach()` -> 改窗口 -> `pi_view_attach(新容器)`
+  —— 回归用例 `container_switch_runtime`（W-02，tests/test_host_multi）。
 
 ### 6.1 事件通道（APP-06，API 0.4）
 

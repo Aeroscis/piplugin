@@ -58,14 +58,18 @@
 `QueryInterface` 安全转换），减少手写 AddRef/Release 负担。保持 C ABI 不变，
 仅作为头文件内联层提供。
 
-## 6. 加载错误诊断增强 [P2] —— 已上收（W-01）
+## 6. 加载错误诊断增强 [P2] —— 已完成（W-01）
 
-> **状态**：仍开放。`g_load_error[256]` 仍是 `src/pi_plugin_host.c` 的进程级
-> static buffer（L34 定义，L59~L117 各失败路径写入），非线程安全且只保留
-> 最后一条。roadmap §8 曾把本条映射到「BLK-06/08」，**不成立**——BLK-06 只
-> 加了加载失败路径的用例，没动这个机制本身。已上收为下一波工作 **W-01**
-> （`docs/todo/parallel-improvements.md` 派工板，测试线第 1 位）：per-thread
-> 缓冲或新增带尺寸的安全变体，旧 API 保持兼容。
+> **状态**：已落地（W-01）。错误串改为**线程局部**（Windows `__declspec(thread)`、
+> 其余 `_Thread_local`，`src/pi_plugin_host.c`），每个线程读回**自己**那次
+> `pi_module_load` 的结果，不再互相覆盖；旧函数签名与"下次同线程 load 前有效"
+> 的语义不变（单线程行为逐字不变，`tests/unit` 有回归）。另加
+> `pi_module_get_load_error_r(char* buf, size_t size)`（调用方提供缓冲的拷贝
+> 变体：拷贝可留存、不受后续 load 影响；`PI_E_INVALIDARG` / 截断语义已文档化）。
+> 验收：`tests/unit` 新增 `W-01` 用例 —— 4 线程 × 32 轮各加载自己独有的不存在
+> 路径，断言 foreign/stale/copy_bad 全 0 且主线程槽位未被碰过（老实现下该用例
+> 约 75% 轮次失败，属有意设计）；ctest `unit` 连跑 5 次稳定通过。
+> 导出面 27 → 28（纯新增），终审 F6 结案（`interface-freeze-review.md`）。
 
 `pi_module_get_load_error()` 使用一个进程级 static buffer（`g_load_error[256]`），
 非线程安全且只保留最后一条。可改为 per-thread 或返回代码 + 描述的结构，

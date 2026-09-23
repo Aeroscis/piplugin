@@ -189,6 +189,9 @@ public:
     QMutex                m_mutex;      /* only for get_native_window queries */
     PiQtViewDesc          m_desc;
     bool                  m_attached;
+    /* 是否还接受 pi_qt_view_post() 的投递：attach 时置真、detach 时置假。
+     * 只被 GUI 线程读写（attach/detach/drain 都在 GUI 线程）。 */
+    bool                  m_accept_post = false;
     PiNativeWindow        m_parent;
     QWidget*              m_widget;
     PiNativeWindow        m_hwnd;
@@ -227,6 +230,87 @@ void piqt_views_unregister(PiQtView* v)
     if (g_live_views) g_live_views->removeAll(v);
 }
 
+/* ---------- cross-thread pi_qt_view_post() plumbing (W-04) ----------
+ *
+ * pi_qt_view_post() 的契约是"任意线程可调，回调在宿主 GUI 线程上执行"。旧实现
+ * 直接内联执行（fn 在调用线程上跑）：表面满足"任意线程可调"，实际是个陷阱 ——
+ * 照契约在回调里碰 Qt 的插件，就变成从后台线程操作 QWidget。
+ *
+ * 现在的实现**不引入任何新线程**（上面那段"不要改回去"说的私有线程 + 阻塞等待
+ * 正是要避免的东西）：
+ *   - 调用线程 == 宿主 GUI 线程 -> 内联执行（顺序、延迟都不变）；
+ *   - 否则 -> 排进队列，并向一个活在 GUI 线程上的 QObject 投递 posted event；
+ *     宿主每帧的 pi_on_idle() -> processEvents() 会把它取出来在 GUI 线程执行。
+ * 代价是必须有人 pump（宿主本来就每帧 pump，否则插件的定时器也不会跑）。
+ *
+ * 队列里的调用在 drain 时会核对"视图是否还活着且仍接受投递"：detach 之后尚未
+ * 执行的调用被丢弃（插件不该在控件已经没了之后再被回调），视图已析构的调用同样
+ * 丢弃。核对与执行都在 GUI 线程上完成，所以与析构之间没有竞态。
+ * ------------------------------------------------------------------ */
+
+/* 只有 GUI 线程会调用它（析构与 detach 都发生在 GUI 线程），故无需加锁视图内部 */
+bool piqt_view_post_target_alive(PiQtView* v)
+{
+    QMutexLocker lock(&g_views_mutex);
+    if (!g_live_views || !g_live_views->contains(v)) return false;
+    return v->m_accept_post;
+}
+
+typedef void (*PiQtPostFn)(void* user);
+
+class PiQtPostMarshaller : public QObject {
+public:
+    /* 任意线程可调：把一次调用排进队列并唤醒 GUI 线程（不等待） */
+    void postCall(PiQtView* view, PiQtPostFn fn, void* user)
+    {
+        {
+            QMutexLocker lock(&m_mutex);
+            m_queue.append(Call(view, fn, user));
+        }
+        if (!QCoreApplication::instance()) return;   /* 没有事件循环，没人来取 */
+        QCoreApplication::postEvent(this, new QEvent(QEvent::User));
+    }
+
+protected:
+    bool event(QEvent* e) override
+    {
+        if (e->type() != QEvent::User) return QObject::event(e);
+
+        QList<Call> calls;
+        {
+            QMutexLocker lock(&m_mutex);
+            calls.swap(m_queue);
+        }
+        for (int i = 0; i < calls.size(); ++i) {
+            const Call& c = calls.at(i);
+            if (!piqt_view_post_target_alive(c.view)) {
+                piqt_trace("post: dropped a queued call (view %p detached or gone)",
+                           (void*)c.view);
+                continue;
+            }
+            c.fn(c.user);
+        }
+        return true;
+    }
+
+private:
+    struct Call {
+        Call(PiQtView* v, PiQtPostFn f, void* u) : view(v), fn(f), user(u) {}
+        PiQtView*  view;
+        PiQtPostFn fn;
+        void*      user;
+    };
+
+    QMutex      m_mutex;
+    QList<Call> m_queue;
+};
+
+/* 保护 g_post_marshaller 指针本身（它只在 GUI 线程上被赋值一次，之后被任意
+ * 线程读取）。对象本身**故意不析构**：进程生命周期一个 QObject，与
+ * g_live_views 同类；删掉它就会与"某条线程正好在读指针 / 正在 postCall"打架。 */
+QMutex              g_post_mutex;
+PiQtPostMarshaller* g_post_marshaller = nullptr;
+
 /* ---------- QApplication lifetime (host GUI thread only) ---------- */
 
 bool piqt_app_create()
@@ -244,6 +328,10 @@ bool piqt_app_create()
     if (!g_app) return false;
 
     g_app_thread = QThread::currentThread();
+    {
+        QMutexLocker lock(&g_post_mutex);
+        if (!g_post_marshaller) g_post_marshaller = new PiQtPostMarshaller();
+    }
     piqt_trace("app: QApplication created on host GUI thread");
     return true;
 }
@@ -391,6 +479,7 @@ bool PiQtView::attach(PiNativeWindow parent)
 
     m_parent = parent;
     m_attached = true;
+    m_accept_post = true;    /* pi_qt_view_post 从现在起可以把调用投进来 */
 
     if (m_desc.retain)
         m_desc.retain(m_desc.user_data);
@@ -435,6 +524,9 @@ void PiQtView::destroy_widget()
 
 void PiQtView::detach()
 {
+    /* 先关掉投递闸：之后 pi_qt_view_post() 排进来的调用会在 drain 时被丢弃，
+     * 已经在队列里还没执行的也会被丢弃（插件不该在控件已经没了之后再被回调）。 */
+    m_accept_post = false;
     if (!m_attached && !m_widget) return;
     m_attached = false;
     destroy_widget();
@@ -654,6 +746,30 @@ extern "C" PI_QT_API QWidget* pi_qt_view_widget(IPiPluginView* view)
 extern "C" PI_QT_API void pi_qt_view_post(IPiPluginView* view, void (*fn)(void* user), void* user)
 {
     if (!view || !fn) return;
-    /* Single-threaded model: run it inline. */
-    fn(user);
+    /* The vtbl pointer sits at offset 0 of PiQtView; the interface pointer we
+     * were given is exactly that address. */
+    PiQtView* v = (PiQtView*)(void*)view;
+
+    PiQtPostMarshaller* marshaller;
+    {
+        QMutexLocker lock(&g_post_mutex);
+        marshaller = g_post_marshaller;
+    }
+    if (!marshaller) {
+        /* 还没有宿主 GUI 线程（一个视图都没 attach 过）：没有可 marshal 的目标，
+         * 丢掉并留痕。契约里"任意线程可调"的前提是进程里已经有这条 GUI 线程。 */
+        piqt_trace("post: dropped - the kit has no host GUI thread (no view attached yet)");
+        return;
+    }
+
+    if (marshaller->thread() == QThread::currentThread()) {
+        /* 已经在宿主 GUI 线程上：内联执行 —— 顺序与延迟都与"直接调用"一致，
+         * 也是插件在 create_widget / on_idle 里自用的正常路径。 */
+        fn(user);
+        return;
+    }
+
+    /* 别的线程：异步 marshal 到宿主 GUI 线程，由下一次 pi_on_idle() 执行。
+     * 队列里尚未执行的调用会在视图 detach / 析构后被丢弃。 */
+    marshaller->postCall(v, fn, user);
 }
