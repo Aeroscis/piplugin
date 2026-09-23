@@ -4,6 +4,11 @@
 
 [![CI](https://github.com/Aeroscis/piplugin/actions/workflows/ci.yml/badge.svg)](https://github.com/Aeroscis/piplugin/actions/workflows/ci.yml)
 
+> **Two homes (deliberate)**: the primary repository is on
+> [Gitee](https://gitee.com/Aeroscis/piplugin) (which the CMake `HOMEPAGE_URL` and
+> the Conan `url` point to); [GitHub](https://github.com/Aeroscis/piplugin) is the
+> mirror, and CI (Actions, the badge above) runs on the mirror.
+
 Host and plugin talk through a **pure C ABI only** (COM-style vtables plus LV2-style capability
 negotiation), so a plugin can be written in any language and built with any toolchain, and the host
 never has to know whether the plugin uses Qt, imgui or raw Win32 inside.

@@ -24,6 +24,18 @@ same major.*
 A release is one commit on `main` that bumps the version in `CMakeLists.txt` and
 `conanfile.py` and adds the entry below it, tagged `vX.Y.Z`.
 
+Why there is no 0.3.0 entry: it is deliberate, not an oversight. The descriptor
+layout change (APP-04, `properties` / `property_count`) pushed the API version
+0.2 -> 0.3, and events (APP-06, `IPiEventSink` / `IPiHostEvents`) pushed it
+0.3 -> 0.4 the next day; no release was cut in between, so both minor bumps
+shipped together in 0.4.0. "0.3" therefore exists only as a value a plugin may
+declare in `api_version` (the `PI_PLUGIN_API_VERSION` line in
+`include/piplugin/pi_plugin_types.h` carries `0, 4`): a host accepts it under
+the same-major rule in [docs/design/interfaces.md](docs/design/interfaces.md) 1.5,
+and `pi_descriptor_find_property()` already treats a plugin `minor < 3` as
+"the pre-properties descriptor layout", so nothing else needed a 0.3.0 of its
+own.
+
 ## [Unreleased]
 
 ### Added

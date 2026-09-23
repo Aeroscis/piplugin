@@ -4,6 +4,10 @@
 
 [![CI](https://github.com/Aeroscis/piplugin/actions/workflows/ci.yml/badge.svg)](https://github.com/Aeroscis/piplugin/actions/workflows/ci.yml)
 
+> **仓库双址（有意）**：主仓库在 [Gitee](https://gitee.com/Aeroscis/piplugin)
+> （CMake `HOMEPAGE_URL` 与 Conan `url` 指向它）；[GitHub](https://github.com/Aeroscis/piplugin)
+> 是镜像，CI（Actions 与上方徽章）在镜像上运行。
+
 宿主与插件之间只用**纯 C ABI**（COM 风格 vtable + LV2 风格能力协商）通信，因此插件可以用
 任何语言写、用任何工具链编译，而宿主也不必知道插件内部用的是 Qt、imgui 还是裸 Win32。
 
