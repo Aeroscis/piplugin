@@ -107,9 +107,14 @@ PiResult PI_CALL GetView(void* s, IPiPluginView** out) {
 ### 3.2 手动 Qt 线程代码（进阶）
 
 ```cpp
-QWidget* w = pi_qt_view_widget(view);      // 只能在 Qt 线程访问
-pi_qt_view_post(view, &SomeFn, user);      // 任意线程可调，marshal 到 Qt 线程
+QWidget* w = pi_qt_view_widget(view);      // 只能在宿主 GUI 线程访问
+pi_qt_view_post(view, &SomeFn, user);      // 任意线程可调：回调一定在宿主 GUI 线程上执行
 ```
+
+`pi_qt_view_post` 的两种情形（W-04）：在宿主 GUI 线程上调用 = **内联执行**（顺序
+不变、没有额外延迟）；从别的线程调用 = 异步排队，由宿主下一次 `pi_on_idle()` 里的
+`processEvents()` 取出来在 GUI 线程上执行 —— 所以回调里**可以**安全地碰 Qt。
+队列是尽力而为：视图 `pi_detach()` / 析构之后还没执行的调用会被丢掉。
 
 ### 3.3 内部机制
 
