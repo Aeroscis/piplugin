@@ -95,6 +95,14 @@ cd bin\Debug
 .\pi_test_host_qt.exe     pi_test_plugin_imgui.dll    # Qt 宿主：把 imgui 插件嵌进 Qt
 ```
 
+**想自己写一个？** [`examples/`](examples/README.md) 里有可构建运行的最小示范
+（宿主、imgui 插件、Qt 插件、服务插件、特化 app），每个都是"三步跑通"的独立工程：
+
+```powershell
+.\pi_example_minimal_host.exe pi_example_plugin_imgui.dll
+.\pi_example_specialized_app.exe pi_example_specialized_plugin.dll pi_example_service.dll
+```
+
 宿主侧 kit 的用法见 [`docs/tutorial/write-host.md`](docs/tutorial/write-host.md)，
 插件见 [`docs/tutorial/write-plugin.md`](docs/tutorial/write-plugin.md)，
 适配器套件见 [`docs/tutorial/adapters.md`](docs/tutorial/adapters.md)。
@@ -125,7 +133,8 @@ cd bin\Debug
 | `include/piplugin/` | 公共头文件（`pi_plugin.h` 是总入口） |
 | `src/` | 框架核心 C 实现 |
 | `adapters/` | 插件侧 UI 适配器套件（`qt/`、`imgui/`） |
-| `host_kits/` | 宿主侧 kit（`core/` 会话、`qt/` 与 `dx11/` 嵌入胶水） |
+| `host_kits/` | 宿主侧 kit（`core/` 会话、`events/` 事件路由、`qt/` 与 `dx11/` 嵌入胶水） |
+| `examples/` | 可直接构建运行的最小示范（宿主 / imgui 插件 / Qt 插件 / 服务插件 / 特化 app） |
 | `tests/` | 测试宿主、测试插件与单元测试 |
 | `docs/` | 设计文档与教程 |
 

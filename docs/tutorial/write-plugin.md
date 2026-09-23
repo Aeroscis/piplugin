@@ -36,6 +36,11 @@ public:
             (const IPiUnknownVtbl*)&s_factory_vtbl,
             &pi_cpp_destroy<MyPluginFactory>);   // 归零时 delete this
 
+        // 描述符先清零再填：它是"会追加可选字段"的结构（如 0.3 加的 properties），
+        // 而这个对象在堆上，不清零的话那些字段就是垃圾值 —— 宿主读到垃圾
+        // property_count 会去遍历垃圾 properties，然后崩在宿主自己里。
+        pi_descriptor_init(&m_descriptor);
+
         m_descriptor.name = "My Plugin";
         m_descriptor.vendor = "Me";
         m_descriptor.version = "1.0.0";

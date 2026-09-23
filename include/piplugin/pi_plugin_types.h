@@ -171,6 +171,39 @@ typedef struct PiPluginDescriptor {
     uint32_t                  property_count;
 } PiPluginDescriptor;
 
+/* --------------------------------------------------------------------------
+ * Initializing a descriptor
+ *
+ * FILL IT IN ZEROED, then set the fields you care about:
+ *
+ *     PiPluginDescriptor desc;
+ *     pi_descriptor_init(&desc);      // memset(0): every optional field is "absent"
+ *     desc.name = "My Plugin";
+ *     ...
+ *
+ * Why it matters: the descriptor has OPTIONAL fields that get APPENDED over time
+ * (properties/property_count arrived in API 0.3). A descriptor with automatic or
+ * dynamic storage keeps whatever the memory held - in a Debug build that is
+ * 0xCDCDCDCD - and a host that walks `properties` because it read a garbage
+ * `property_count` will crash inside ITSELF, which is a miserable thing to debug
+ * from the plugin author's side. (Found the hard way: examples/minimal_plugin_imgui
+ * crashed the imgui test host this way.) Static/global descriptors are zeroed by
+ * the language and are fine either way.
+ * -------------------------------------------------------------------------- */
+static inline void pi_descriptor_init(PiPluginDescriptor* desc)
+{
+    if (!desc) return;
+    desc->name = NULL;
+    desc->vendor = NULL;
+    desc->version = NULL;
+    desc->category = NULL;
+    desc->api_version = 0;
+    desc->capabilities = NULL;
+    desc->capability_count = 0;
+    desc->properties = NULL;
+    desc->property_count = 0;
+}
+
 /* Check whether the descriptor declares capability `iid` with the wanted
  * flags. Returns the matching entry, or NULL. */
 PI_EXPORT const PiPluginCapability* pi_descriptor_find_capability(
@@ -250,6 +283,16 @@ typedef PiResult (*PiPluginEntryProc)(IPiPluginFactory** out_factory);
 
 #define PI_PLUGIN_ENTRY_NAME "pi_plugin_entry"
 
+/* 入口必须是 **C 链接**：宿主是按名字 "pi_plugin_entry" 去找它的，而 C++ 的名字
+ * 修饰会把它导成 `?pi_plugin_entry@@YA...`，宿主就找不到（报 "does not export"）。
+ * C 里写 extern "C" 不合法，所以按语言条件展开 —— 也就是说，用这个宏的 C++ 插件
+ * 不需要自己再写 extern "C"。 */
+#ifdef __cplusplus
+#  define PI_PLUGIN_ENTRY_LINKAGE extern "C"
+#else
+#  define PI_PLUGIN_ENTRY_LINKAGE
+#endif
+
 /* 在插件里定义入口就用这个宏：
  *     PI_PLUGIN_ENTRY_DECL
  *     {
@@ -258,7 +301,8 @@ typedef PiResult (*PiPluginEntryProc)(IPiPluginFactory** out_factory);
  *         return PI_OK;
  *     }
  */
-#define PI_PLUGIN_ENTRY_DECL PI_PLUGIN_EXPORT PiResult pi_plugin_entry(IPiPluginFactory** out_factory)
+#define PI_PLUGIN_ENTRY_DECL \
+    PI_PLUGIN_ENTRY_LINKAGE PI_PLUGIN_EXPORT PiResult pi_plugin_entry(IPiPluginFactory** out_factory)
 
 /* --------------------------------------------------------------------------
  * Known interface GUIDs (for IPiUnknown::pi_query_interface)

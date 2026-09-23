@@ -1,0 +1,41 @@
+# examples — 可构建、可运行的最小示范
+
+roadmap **ECO-03**：把 `docs/tutorial/` 里的代码段变成能跑的工程。每个例子一个目录、
+一个 `CMakeLists.txt`、一份 README（三步跑通），**只依赖公开 API**（核心库 + 可选套件/宿主 kit），
+不引用 `tests/` 里的任何东西 —— 读者可以把单个目录拷出去当起点。
+
+| 例子 | 是什么 | 需要什么 | 谁驱动它 |
+|---|---|---|---|
+| `minimal_host/` | 一个窗口 + 一个容器 + 一个插件的宿主（view / service 都能驱） | 宿主 kit L0 | — |
+| `service_plugin/` | headless 服务插件（`IPiService`：start/poll/status/stop） | 无（纯 C） | `minimal_host` |
+| `minimal_plugin_imgui/` | 最小 imgui 插件（一个 draw 回调） | conan imgui + imgui 套件 | `minimal_host` |
+| `minimal_plugin_qt/` | 最小 Qt 插件（一个 widget 工厂） | 本地 Qt5 + Qt 套件（SHARED） | `minimal_host` |
+| `specialized_app/` | app 自定义协议（通道 A）+ 宿主自定义服务（通道 B）+ 能力门禁 | 宿主 kit L0 | 自己（一个 exe + 一个插件） |
+
+## 一起构建
+
+```powershell
+cmake --preset conan-default
+cmake --build --preset conan-debug --parallel
+```
+
+产物都部署到 `bin/<CONFIG>/`（与框架 DLL、套件 DLL、Qt 运行时 DLL 同目录），所以直接进去跑即可：
+
+```powershell
+cd bin\Debug
+.\pi_example_minimal_host.exe pi_example_plugin_imgui.dll
+.\pi_example_minimal_host.exe pi_example_service.dll
+.\pi_example_minimal_host.exe pi_example_plugin_qt.dll
+.\pi_example_specialized_app.exe pi_example_specialized_plugin.dll pi_example_service.dll
+```
+
+不需要例子时：`-DPI_BUILD_EXAMPLES=OFF`（或 conan 侧 `-o PI_BUILD_EXAMPLES=False`）。
+
+## 与 tests/ 的分工
+
+- `examples/` = **怎么用**：代码尽量少、注释尽量多、跑起来能看见输出；
+- `tests/` = **对不对**：断言、退出码、负向用例、CI 门禁。
+
+其中两个例子同时注册成了 ctest 用例（`example_minimal_host_service`、
+`example_specialized_app`）—— 它们没有 GUI 工具包依赖，值得每天被自动跑一遍；
+GUI 例子留给 README 里的人工三步。

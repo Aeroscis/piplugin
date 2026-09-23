@@ -26,6 +26,64 @@ A release is one commit on `main` that bumps the version in `CMakeLists.txt` and
 
 ## [Unreleased]
 
+### Added
+
+- **`examples/` - the tutorial as runnable projects (ECO-03).** Each example is a
+  self-contained directory with its own `CMakeLists.txt` and a README whose three
+  steps actually work: `minimal_host` (a window, one container, one plugin - it
+  drives a view OR a service), `service_plugin` (headless `IPiService`),
+  `minimal_plugin_imgui` (one draw callback), `minimal_plugin_qt` (one widget
+  factory) and `specialized_app` (an app-defined protocol on channel A, its own
+  host service on channel B, and the capability gate rejecting a plugin that does
+  not implement the protocol - before instantiation). They depend on public API
+  only and reference nothing under `tests/`, so a single directory can be copied
+  out as a starting point; the two without a GUI toolkit are also `ctest` cases
+  (`example_minimal_host_service`, `example_specialized_app`). Switch:
+  `PI_BUILD_EXAMPLES` (default ON, mirrored in `conanfile.py`).
+- **`pi_descriptor_init(desc)` - zero a descriptor before filling it in.** See the
+  fix below for why this exists.
+
+### Fixed
+
+- **A descriptor with automatic or dynamic storage could crash the HOST.** The
+  descriptor gained appended optional fields in 0.3 (`properties` /
+  `property_count`), which a plugin that fills its descriptor field by field - the
+  pattern the tutorial taught - can forget to initialize. Nothing complains at
+  compile time: the fields hold whatever the memory had (0xCDCDCDCD in a Debug
+  build), the host sees a non-zero `property_count`, walks `properties` and faults
+  inside ITSELF. That is exactly what happened while writing
+  `examples/minimal_plugin_imgui`: `pi_test_host_imgui!LoadPlugin+0x35f` executing
+  `cmp qword ptr [rax+8],0` with `rax = 0xCDCDCDCDCDCDCDCD`, captured with cdb.
+  `pi_descriptor_init()` zeroes every field (documented as "call this first" in the
+  header, interfaces.md 1.4 and the tutorial's factory snippet), the example uses
+  it, and the conformance harness now passes on both example plugins. Static or
+  global descriptors are zeroed by the language already.
+- **`PI_PLUGIN_ENTRY_DECL` produced a C++-mangled entry point.** The macro is what
+  a plugin author is told to use for `pi_plugin_entry`, but it lacked `extern "C"`,
+  so in a C++ plugin the exported symbol was
+  `?pi_plugin_entry@@YAHPEAPEAUIPiPluginFactory@@@Z` and the host - which looks the
+  name up verbatim - answered "does not export pi_plugin_entry". The two C++
+  example plugins hit this immediately; the in-tree C++ test plugins had each
+  written `extern "C"` by hand, which is why nobody had noticed. The macro now
+  expands to C linkage in C++ (and to nothing in C, where `extern "C"` is
+  illegal), so plugin authors no longer have to know.
+- **The imgui adapter kit left the plugin's ImGui context current after
+  `pi_attach()`.** `pi_imgui_view_create()`'s attach path creates the plugin's
+  context and switches to it (deliberately - the init callback runs there) but
+  never switched back, so a host that itself uses Dear ImGui had every later
+  `ImGui::NewFrame()`/backend call run against the plugin's context and device.
+  The path now saves and restores the host's context. (Found while chasing the
+  crash above; it was not that crash's cause, but it is wrong for imgui hosts.)
+
+### Changed
+
+- **Qt is no longer hard-coded (ECO-05).** See the 0.4.0 entry for the switch
+  description - it landed after that section was written, so it is recorded here:
+  the discovery order is `PI_QT_PREFIX` -> `Qt5_DIR`/`CMAKE_PREFIX_PATH` (including
+  the environment, and PATH on Windows), the maintainer's usual location is only a
+  hint when nothing else is given, and a missing Qt disables the four Qt targets
+  with an actionable message instead of breaking the configure.
+
 Nothing yet. Add entries here as work lands; they move under the next version
 when it is cut.
 

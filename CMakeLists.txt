@@ -72,11 +72,22 @@ add_subdirectory(${GLOBAL_PROJECT_SRC_PATH})
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/adapters)
 # host kits path（宿主侧机制库，独立于 src 与 adapters 存在；tests 里的宿主会链接它）
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/host_kits)
-# tests path
+
+# tests 总开关（examples 里也有可注册的 ctest 用例，故 enable_testing 要在两者之前）
 option(PI_BUILD_TESTS "Build test hosts and plugins" ON)
-if(PI_BUILD_TESTS AND DEFINED GLOBAL_PROJECT_TESTS_PATH)
-    # ctest 入口（roadmap BLK-06）：必须在顶级目录调用，测试才被 ctest 收集到
+if((PI_BUILD_TESTS OR PI_BUILD_EXAMPLES) AND DEFINED GLOBAL_PROJECT_TESTS_PATH)
+    # ctest 入口（roadmap BLK-06）：必须在顶级目录调用，且要先于任何 add_test
     enable_testing()
+endif()
+
+# examples path（roadmap ECO-03：可构建可运行的最小示范；只依赖公开 API）
+option(PI_BUILD_EXAMPLES "Build the examples/ directory" ON)
+if(PI_BUILD_EXAMPLES)
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples)
+endif()
+
+# tests path
+if(PI_BUILD_TESTS AND DEFINED GLOBAL_PROJECT_TESTS_PATH)
     add_subdirectory(${GLOBAL_PROJECT_TESTS_PATH})
 endif()
 

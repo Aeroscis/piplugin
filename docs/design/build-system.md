@@ -153,7 +153,23 @@ SHARED 的 Qt 套件 DLL 与核心库一样在 POST_BUILD 阶段自动部署到 
 找不到 Qt 时，四处 Qt 相关目标各自打印一条带指引的消息（`PI_QT_MISSING_HINT`）后禁用，
 configure 仍然成功 —— 别人给出自己的路径即可构建 Qt 目标，不必改仓库文件。
 
-### 3.5 测试（tests/）
+### 3.5 例子（examples/）
+
+roadmap ECO-03：每个例子一个目录、一个 `CMakeLists.txt`、一份 README（三步跑通），
+只依赖公开 API，不引用 `tests/`。开关 `PI_BUILD_EXAMPLES`（默认 ON；Conan 侧同名选项）。
+
+| 目标 | 依赖 | 类型 |
+|---|---|---|
+| `pi_example_minimal_host` | 核心 + 宿主 kit L0 | exe（console + 一个窗口） |
+| `pi_example_service` | 仅核心 | dll（纯 C 服务插件） |
+| `pi_example_plugin_imgui` | imgui + imgui 套件 | dll |
+| `pi_example_plugin_qt` | Qt5 + Qt 套件（SHARED） | dll（仅 Windows） |
+| `pi_example_specialized_plugin` / `pi_example_specialized_app` | 核心 + 宿主 kit L0 | dll + exe（通道 A/B 示范） |
+
+其中两个无 GUI 工具包依赖的例子同时注册为 ctest（`example_minimal_host_service`、
+`example_specialized_app`）；GUI 例子留给 README 的人工三步。
+
+### 3.6 测试（tests/）
 
 可选目标，各自做依赖自检，不满足即 `return()` 禁用（不影响整体构建）：
 

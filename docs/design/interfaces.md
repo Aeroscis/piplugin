@@ -64,11 +64,18 @@ typedef struct PiPluginProperty { const char* key; const char* value; } PiPlugin
 
 配套函数：
 
+- `pi_descriptor_init(desc)` → **先把整个描述符清零**（可选字段一律"不存在"），再填字段
 - `pi_descriptor_find_capability(desc, iid)` → 匹配的 `PiPluginCapability*` 或 NULL
 - `pi_descriptor_provides(desc, iid)` → 是否提供该能力
 - `pi_descriptor_requires(desc, iid)` → 是否必需该能力
 - `pi_descriptor_find_property(desc, key)` → 属性的值，或 NULL（`properties` 为 NULL /
   `key` 为 NULL / 未声明该 key 都返回 NULL；重复 key 取第一个）
+
+> **描述符必须清零后再填**（`pi_descriptor_init()` 或静态存储）。
+> 它是**会追加字段**的结构（`properties` 就是 0.3 追加的），自动/动态存储的描述符默认是
+> 未初始化内存（Debug 下是 `0xCDCDCDCD`）——宿主读到垃圾 `property_count` 就会去遍历
+> 垃圾 `properties`，然后在**宿主自己**里崩，插件作者极难定位。
+> 静态/全局描述符由语言保证清零，无需额外调用。
 
 **properties 是自由元数据**：描述性事实（UI 工具包、支持的文件格式、主页、许可证……）
 不该硬塞进 capabilities。键值都是 UTF-8、NUL 结尾；`pi.` 前缀保留给框架，app / 插件

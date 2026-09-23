@@ -165,7 +165,17 @@ bool PiImGuiView::create_resources(PiNativeWindow parent)
         backBuffer->Release();
     }
 
-    /* ImGui context + backends, bound to OUR context. */
+    /* ImGui context + backends, bound to OUR context.
+     *
+     * Save the host's context first. ImGui::CreateContext() alone would restore
+     * it (it keeps the previous context if there was one), but this function
+     * deliberately switches to ours and must therefore switch BACK before it
+     * returns: everything the host does after pi_attach() - its own ImGui frames,
+     * its own backend calls - belongs to the HOST's context. Leaving ours current
+     * makes the host render its UI through the plugin's backend and device, which
+     * is undefined behaviour (found by running examples/minimal_plugin_imgui
+     * through the conformance harness: the host crashed on its next frame). */
+    ImGuiContext* previous = ImGui::GetCurrentContext();
     m_imguiCtx = ImGui::CreateContext();
     ImGui::SetCurrentContext(m_imguiCtx);
     ImGui::StyleColorsDark();
@@ -173,6 +183,7 @@ bool PiImGuiView::create_resources(PiNativeWindow parent)
     ImGui_ImplDX11_Init(m_device, m_context);
     if (m_desc.init)
         m_desc.init(m_desc.user_data);
+    ImGui::SetCurrentContext(previous);   /* NULL is a valid value */
 
     return true;
 }

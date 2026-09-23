@@ -69,6 +69,8 @@ class PiPluginConan(ConanFile):
         "PI_BUILD_HOST_KIT_QT": [True, False],    # 分开关：L1 Qt 嵌入区域（Qt5 本地安装 + L0）
         "PI_BUILD_HOST_KIT_DX11": [True, False],  # 分开关：L1 DX11 嵌入胶水（Windows）
         # tests（测试件，默认全开；conan create 打包时建议 -o PI_BUILD_TESTS=False）
+        # examples（ECO-03：可构建的最小示范；只依赖公开 API，不进包）
+        "PI_BUILD_EXAMPLES": [True, False],       # 总开关
         "PI_BUILD_TESTS": [True, False],          # 总开关
         "PI_BUILD_UNIT_TESTS": [True, False],     # 核心回归单测（ctest 的 unit 用例）
         "PI_BUILD_UNIT_CPP_TESTS": [True, False],  # C++ RAII 层测试（ctest 的 unit_cpp 用例）
@@ -94,6 +96,7 @@ class PiPluginConan(ConanFile):
         "PI_BUILD_HOST_KIT_EVENTS": True,
         "PI_BUILD_HOST_KIT_QT": True,
         "PI_BUILD_HOST_KIT_DX11": True,
+        "PI_BUILD_EXAMPLES": True,
         "PI_BUILD_TESTS": True,
         "PI_BUILD_UNIT_TESTS": True,
         "PI_BUILD_UNIT_CPP_TESTS": True,
@@ -109,7 +112,7 @@ class PiPluginConan(ConanFile):
         "PI_BUILD_TEST_PLUGIN_EVENTS": True,
     }
 
-    exports_sources = "CMakeLists.txt", "cmake/*", "include/*", "src/*", "adapters/*", "host_kits/*", "tests/*"
+    exports_sources = "CMakeLists.txt", "cmake/*", "include/*", "src/*", "adapters/*", "host_kits/*", "examples/*", "tests/*"
     # CMakeToolchain 不在 generators 声明：需要在 generate() 手动实例化以注入自定义 cache 变量。
     # （Conan 禁止同一生成器既声明又手动实例化；CMakeDeps 的依赖查找路径经
     #   conan_cmakedeps_paths.cmake 由工具链在 configure 时包含，与生成顺序无关）
