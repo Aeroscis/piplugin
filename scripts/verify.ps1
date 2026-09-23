@@ -60,10 +60,17 @@ if ($LASTEXITCODE -ne 0) {
 #    Which plugins are tested is discovered from the bin directory, so this works
 #    both with the full build (Qt + imgui plugins) and with CI, where the Qt
 #    targets are off because Qt5 is a local install there.
+#
+#    The examples/ plugins are in the list on purpose: the harness is the
+#    documented acceptance for "an adapter kit written from
+#    docs/design/adapter-spec.md works with an official host" (ECO-01), and it
+#    costs one more cycle per plugin.
 # ---------------------------------------------------------------------------
 Write-Section "2/3  conformance harness"
 $available = @()
-foreach ($name in 'pi_test_plugin_qt.dll', 'pi_test_plugin_imgui.dll') {
+foreach ($name in 'pi_test_plugin_qt.dll', 'pi_test_plugin_imgui.dll',
+                  'pi_example_plugin_imgui.dll', 'pi_example_plugin_qt.dll',
+                  'pi_example_plugin_win32.dll') {
     if (Test-Path (Join-Path $BinDir $name)) { $available += $name }
 }
 

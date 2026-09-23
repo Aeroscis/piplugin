@@ -28,6 +28,25 @@ A release is one commit on `main` that bumps the version in `CMakeLists.txt` and
 
 ### Added
 
+- **`docs/design/adapter-spec.md` - the adapter kit contract (ECO-01).** What a UI
+  adapter kit must do was spread across two READMEs and a lot of tribal knowledge.
+  The spec now states it as clauses a third party can follow: the `IPiPluginView`
+  slots one at a time (with the mistakes each invites), the lifecycle contract
+  (no native resource before `pi_attach`, detach is synchronous and repeatable,
+  object vs. resource), the thread model you must declare (all-host-thread vs.
+  private-thread-and-marshal - including why the Qt kit abandoned the second one
+  after it deadlocked), the shutdown-before-`FreeLibrary` contract, the
+  `PI_<KIT>_TRACE=1` trace convention, the STATIC-vs-SHARED decision rule, how the
+  conformance harness admits a kit to the ecosystem list, and a pre-delivery
+  checklist.
+  It is not just prose: **`examples/minimal_kit_win32/`** is a complete adapter kit
+  written from that spec - ~250 lines of plain C with no toolkit at all (Win32 GDI
+  child window, paint callback, per-owner shutdown, optional trace) plus a plugin
+  that uses it. It passes the official conformance harness
+  (`run_selftest.ps1 -Plugin pi_example_plugin_win32.dll -Cycles 3` -> PASS), so
+  "a kit written from the spec works with an official host" is demonstrated rather
+  than asserted. `scripts/verify.ps1` now feeds the example plugins to the harness
+  as well, which is what keeps that claim honest.
 - **`examples/` - the tutorial as runnable projects (ECO-03).** Each example is a
   self-contained directory with its own `CMakeLists.txt` and a README whose three
   steps actually work: `minimal_host` (a window, one container, one plugin - it
@@ -67,6 +86,19 @@ A release is one commit on `main` that bumps the version in `CMakeLists.txt` and
   written `extern "C"` by hand, which is why nobody had noticed. The macro now
   expands to C linkage in C++ (and to nothing in C, where `extern "C"` is
   illegal), so plugin authors no longer have to know.
+- **The imgui adapter kit used ONE process-wide window class name.** A fixed class
+  name is a process-wide resource and Windows does not drop a class when the
+  module that registered it is unloaded, so a second imgui plugin module - or the
+  same plugin reloaded at a different address - registered the same name, got
+  `RegisterClassExW == FALSE` (which was ignored), and then created its window
+  with the PREVIOUS module's `WndProc`. It works until a message dispatches into
+  code whose module state is gone. Caught by feeding the example plugins to the
+  conformance harness alongside the official ones: the fault was
+  `pi_example_plugin_imgui!ImGui_ImplWin32_GetDpiScaleForMonitor+0x42`, reached
+  from `USER32!UserCallWinProcCheckWow` - a window procedure dispatch. The class
+  is now unique per view and unregistered when that view's window is destroyed
+  (the Win32 example kit does the same per module, with a re-register fallback for
+  a reload at the same base). Five plugins, one process: PASS.
 - **The imgui adapter kit left the plugin's ImGui context current after
   `pi_attach()`.** `pi_imgui_view_create()`'s attach path creates the plugin's
   context and switches to it (deliberately - the init callback runs there) but

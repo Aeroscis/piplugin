@@ -25,3 +25,6 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/minimal_plugin_qt)
 
 # 特化 app：app 自定义协议（通道 A）+ 宿主自定义服务（通道 B）+ 能力门禁
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/specialized_app)
+
+# 最小套件（ECO-01 的可执行附录）：纯 C + Win32 GDI，零工具包，照 adapter-spec.md 写
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/minimal_kit_win32)

@@ -164,6 +164,7 @@ roadmap ECO-03：每个例子一个目录、一个 `CMakeLists.txt`、一份 REA
 | `pi_example_service` | 仅核心 | dll（纯 C 服务插件） |
 | `pi_example_plugin_imgui` | imgui + imgui 套件 | dll |
 | `pi_example_plugin_qt` | Qt5 + Qt 套件（SHARED） | dll（仅 Windows） |
+| `pi_example_kit_win32` / `pi_example_plugin_win32` | 仅核心（Windows） | STATIC 套件 + dll（ECO-01 的可执行附录：照 `docs/design/adapter-spec.md` 写的最小套件） |
 | `pi_example_specialized_plugin` / `pi_example_specialized_app` | 核心 + 宿主 kit L0 | dll + exe（通道 A/B 示范） |
 
 其中两个无 GUI 工具包依赖的例子同时注册为 ctest（`example_minimal_host_service`、

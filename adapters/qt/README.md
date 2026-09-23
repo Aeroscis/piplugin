@@ -1,5 +1,10 @@
 # piplugin_qt — Qt UI 适配器套件
 
+> 写自己的套件？先读 **[`docs/design/adapter-spec.md`](../../docs/design/adapter-spec.md)**：
+> 它把适配器与框架/宿主之间的契约写成条款 + 自查清单，并附一个照它写出来的最小套件
+> （`examples/minimal_kit_win32`，纯 C 零工具包，已通过官方一致性验收）。本文余下部分
+> 讲 Qt 套件的具体做法。
+
 这是 piplugin 的第一个 **UI 适配器套件（adapter kit）**：它把"Qt 兼容层"
 从插件代码中抽离出来，封装成一个可复用的 **SHARED 库**（一套 0.2.0 时是静态库，
 见文末"边界与限制"）。任何 Qt 写的插件链接它之后，就获得了在**任意宿主**

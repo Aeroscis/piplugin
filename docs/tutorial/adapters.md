@@ -1,5 +1,11 @@
 # 使用 UI 适配器套件（Adapters）
 
+> **想自己写一个套件？** 先读 [`docs/design/adapter-spec.md`](../design/adapter-spec.md)：
+> 适配器与框架/宿主之间的契约（必须实现的槽位、生命周期、线程模型申报、shutdown 契约、
+> trace 约定、交付前自查清单）都在那里，并且它有一个照规范写出来、通过官方一致性验收的
+> 最小实现可对照：`examples/minimal_kit_win32/`（~250 行纯 C，零工具包，用一份 paint
+> 回调画出 UI）。本文余下部分讲**官方两个套件怎么用**。
+
 本文讲解两个 UI 适配器套件的用法：`piplugin_imgui`（立即模式 UI）与
 `piplugin_qt`（窗口控件 UI）。两者的共同点：**插件作者只写纯 UI 逻辑**，
 事件循环合并、窗口嵌入、线程 marshal、生命周期都由套件处理。

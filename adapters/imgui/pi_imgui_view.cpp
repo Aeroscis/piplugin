@@ -7,6 +7,7 @@
 #include <windows.h>
 #include <d3d11.h>
 #include <dxgi.h>
+#include <stdio.h>
 
 /* Forward declaration (deliberately not declared in the backend header
  * to avoid dragging <windows.h> into it). */
@@ -43,6 +44,9 @@ public:
     IDXGISwapChain*         m_swapChain;
     ID3D11RenderTargetView* m_rtv;
     ImGuiContext*   m_imguiCtx;
+    /* Window class name for THIS view. Unique per view on purpose - see
+     * create_resources(). */
+    wchar_t         m_className[64];
 
     static const IPiPluginViewVtbl s_vtbl;
     static PiImGuiView* from_iface(void* self_ptr) { return (PiImGuiView*)self_ptr; }
@@ -63,9 +67,22 @@ public:
 };
 
 /* --------------------------------------------------------------------------
- * Child window plumbing. The window class is registered against THIS
- * module's instance, so its WndProc code (mapped from the plugin DLL)
- * cannot outlive us - and Windows unregisters the class with the module.
+ * Child window plumbing.
+ *
+ * The window class is registered against THIS MODULE's instance, so its WndProc
+ * code (mapped from the plugin DLL) cannot outlive the module - and the name is
+ * UNIQUE PER VIEW and unregistered again in destroy_resources().
+ *
+ * Both of those exist because of a real crash: a fixed class name is a
+ * process-wide resource, and Windows does not drop a class when the module that
+ * registered it is unloaded. A second imgui plugin module (or a reload after an
+ * unload) that registers the same name gets RegisterClassExW == FALSE - which
+ * used to be ignored - and then creates its window with the PREVIOUS module's
+ * WndProc. The window works until it dispatches a message into code whose data is
+ * gone: found by running a second imgui plugin through the conformance harness,
+ * with the fault inside the Win32 backend's DPI helper called from USER32's
+ * window-procedure dispatch. Per-view names + unregister make the class die with
+ * its window, whatever the host does with the module.
  * ------------------------------------------------------------------------ */
 
 static LRESULT WINAPI PiImGuiViewWndProc(HWND hWnd, UINT msg,
@@ -83,23 +100,13 @@ static LRESULT WINAPI PiImGuiViewWndProc(HWND hWnd, UINT msg,
     return DefWindowProcW(hWnd, msg, wParam, lParam);
 }
 
-static void pi_imgui_register_class()
+static HMODULE pi_imgui_kit_module(void)
 {
-    static bool registered = false;
-    if (registered) return;
-    registered = true;
-
     HMODULE module = NULL;
     GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
                        GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                        (LPCWSTR)&PiImGuiViewWndProc, &module);
-
-    WNDCLASSEXW wc = { sizeof(wc) };
-    wc.style         = CS_CLASSDC;
-    wc.lpfnWndProc   = &PiImGuiViewWndProc;
-    wc.hInstance     = module;
-    wc.lpszClassName = L"PiImGuiViewWnd";
-    RegisterClassExW(&wc);
+    return module;
 }
 
 /* --------------------------------------------------------------------------
@@ -109,15 +116,27 @@ static void pi_imgui_register_class()
 bool PiImGuiView::create_resources(PiNativeWindow parent)
 {
     HWND parentHwnd = (HWND)parent;
-    pi_imgui_register_class();
+    HMODULE module = pi_imgui_kit_module();
+    WNDCLASSEXW wc = { sizeof(wc) };
 
-    HMODULE module = NULL;
-    GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-                       GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                       (LPCWSTR)&PiImGuiViewWndProc, &module);
+    /* Unique per view: it cannot collide with another plugin's class, and
+     * destroy_resources() unregisters it again. */
+    swprintf_s(m_className, _countof(m_className),
+               L"PiImGuiViewWnd_%p", (void*)this);
+    wc.style         = CS_CLASSDC;
+    wc.lpfnWndProc   = &PiImGuiViewWndProc;
+    wc.hInstance     = module;
+    wc.lpszClassName = m_className;
+    if (!RegisterClassExW(&wc)) {
+        /* A stale class of the same name (this module reloaded at the same
+         * address): drop it and try once more - it has no windows left, because
+         * a view unregisters its own class in destroy_resources(). */
+        UnregisterClassW(m_className, module);
+        if (!RegisterClassExW(&wc)) return false;
+    }
 
     RECT rc; GetClientRect(parentHwnd, &rc);
-    m_hwnd = CreateWindowExW(0, L"PiImGuiViewWnd", L"",
+    m_hwnd = CreateWindowExW(0, m_className, L"",
                              WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN,
                              0, 0, rc.right, rc.bottom,
                              parentHwnd, NULL, module, NULL);
@@ -223,6 +242,10 @@ void PiImGuiView::destroy_resources()
 
     DestroyWindow(m_hwnd);
     m_hwnd = NULL;
+
+    /* The class dies with its window: no process-wide name survives this module. */
+    if (m_className[0])
+        UnregisterClassW(m_className, pi_imgui_kit_module());
 }
 
 /* --------------------------------------------------------------------------

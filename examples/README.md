@@ -10,6 +10,7 @@ roadmap **ECO-03**：把 `docs/tutorial/` 里的代码段变成能跑的工程�
 | `service_plugin/` | headless 服务插件（`IPiService`：start/poll/status/stop） | 无（纯 C） | `minimal_host` |
 | `minimal_plugin_imgui/` | 最小 imgui 插件（一个 draw 回调） | conan imgui + imgui 套件 | `minimal_host` |
 | `minimal_plugin_qt/` | 最小 Qt 插件（一个 widget 工厂） | 本地 Qt5 + Qt 套件（SHARED） | `minimal_host` |
+| `minimal_kit_win32/` | **一个最小适配器套件**（纯 C + GDI，零工具包）+ 用它的插件 | 无（Windows） | `minimal_host` / 官方一致性宿主 |
 | `specialized_app/` | app 自定义协议（通道 A）+ 宿主自定义服务（通道 B）+ 能力门禁 | 宿主 kit L0 | 自己（一个 exe + 一个插件） |
 
 ## 一起构建
@@ -26,7 +27,14 @@ cd bin\Debug
 .\pi_example_minimal_host.exe pi_example_plugin_imgui.dll
 .\pi_example_minimal_host.exe pi_example_service.dll
 .\pi_example_minimal_host.exe pi_example_plugin_qt.dll
+.\pi_example_minimal_host.exe pi_example_plugin_win32.dll
 .\pi_example_specialized_app.exe pi_example_specialized_plugin.dll pi_example_service.dll
+```
+
+`minimal_kit_win32/` 还额外跑官方一致性验收（`scripts/verify.ps1` 会自动带上它）：
+
+```powershell
+pwsh -NoProfile -File scripts\run_selftest.ps1 -Plugin pi_example_plugin_win32.dll -Cycles 3
 ```
 
 不需要例子时：`-DPI_BUILD_EXAMPLES=OFF`（或 conan 侧 `-o PI_BUILD_EXAMPLES=False`）。
