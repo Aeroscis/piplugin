@@ -704,6 +704,71 @@ static void TestHostServicesCreateEx(void)
 }
 
 /* --------------------------------------------------------------------------
+ * ECO-08：工厂的负向用例（未知 class GUID / 非法参数）
+ *
+ * 需要一个真实插件 DLL；由 ctest 把插件名当 argv[1] 传进来。没传就打印一行说明
+ * 并跳过 —— 但正向控制也在这里（真 GUID 必须成功），避免出现"全都失败"式的假通过。
+ * -------------------------------------------------------------------------- */
+static void TestFactoryNegative(const char* plugin_path)
+{
+    Section("ECO-08 工厂负向用例（未知 GUID / 非法参数）");
+
+    if (!plugin_path || !plugin_path[0]) {
+        printf("  (no plugin path given: skipping the factory negative cases)\n");
+        return;
+    }
+
+    {
+        static const PiGuid UNKNOWN_CLASS_GUID =
+            PI_GUID(0x0BADF00D, 0x1234, 0x5678, 0x9A, 0xBC, 0xDE, 0xF0, 0x12, 0x34, 0x56, 0x78);
+        PiPluginModule* module = pi_module_load(plugin_path);
+        IPiPluginFactory* factory = NULL;
+        IPiHostServices* host = NULL;
+        IPiPluginBase* out = NULL;
+        PiGuid real_guid;
+        PiGuid guid_out;
+
+        CHECK(module != NULL);
+        if (!module) { printf("  load error: %s\n", pi_module_get_load_error()); return; }
+
+        CHECK_EQ_INT(pi_module_get_factory(module, &factory), PI_OK);
+        CHECK(factory != NULL);
+        CHECK_EQ_INT(pi_host_services_create_default(NULL, NULL, PI_INVALID_WINDOW, &host), PI_OK);
+
+        /* 1) 未知 class GUID -> PI_E_NOINTERFACE，且 *out 被置 NULL */
+        out = (IPiPluginBase*)(uintptr_t)0x1;    /* 故意留脏值 */
+        CHECK_EQ_INT(pi_factory_create_instance(factory, &UNKNOWN_CLASS_GUID, host, &out),
+                     PI_E_NOINTERFACE);
+        CHECK(out == NULL);
+
+        /* 2) 非法参数 */
+        out = NULL;
+        CHECK_EQ_INT(pi_factory_create_instance(factory, NULL, host, &out), PI_E_INVALIDARG);
+        CHECK_EQ_INT(pi_factory_create_instance(factory, &UNKNOWN_CLASS_GUID, host, NULL),
+                     PI_E_INVALIDARG);
+        memset(&guid_out, 0, sizeof(guid_out));
+        CHECK_EQ_INT(pi_factory_get_class_guid(factory, 99u, &guid_out), PI_E_INVALIDARG);
+        CHECK_EQ_INT(pi_factory_get_class_guid(factory, 0u, NULL), PI_E_INVALIDARG);
+
+        /* 3) 正向控制：真 GUID 必须成功 —— 否则上面那些"失败"什么都证明不了 */
+        memset(&real_guid, 0, sizeof(real_guid));
+        CHECK_EQ_INT(pi_factory_get_class_guid(factory, 0u, &real_guid), PI_OK);
+        out = NULL;
+        CHECK_EQ_INT(pi_factory_create_instance(factory, &real_guid, host, &out), PI_OK);
+        CHECK(out != NULL);
+        if (out) {
+            CHECK_EQ_INT(pi_plugin_initialize(out, host), PI_OK);
+            CHECK_EQ_INT(pi_plugin_terminate(out), PI_OK);
+            CHECK_EQ_INT(pi_iunknown_release((IPiUnknown*)out), 0);
+        }
+
+        if (host) CHECK_EQ_INT(pi_iunknown_release((IPiUnknown*)host), 0);
+        if (factory) pi_iunknown_release((IPiUnknown*)factory);
+        pi_module_unload(module);
+    }
+}
+
+/* --------------------------------------------------------------------------
  * main
  * -------------------------------------------------------------------------- */
 int main(int argc, char** argv)
@@ -719,6 +784,7 @@ int main(int argc, char** argv)
     TestApiVersion();
     TestHostServices();
     TestHostServicesCreateEx();
+    TestFactoryNegative((argc > 1) ? argv[1] : NULL);
 
     printf("== checks=%u failures=%u ==\n", g_checks, g_failures);
     if (g_failures != 0) {

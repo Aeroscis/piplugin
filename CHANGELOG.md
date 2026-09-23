@@ -28,6 +28,21 @@ A release is one commit on `main` that bumps the version in `CMakeLists.txt` and
 
 ### Added
 
+- **The negative test set (ECO-08).** The four ways a plugin can be wrong now have
+  automated assertions instead of a checklist. Three live in `tests/unit`: a
+  missing DLL (`pi_module_load` returns NULL with the path in the message), a DLL
+  without `pi_plugin_entry` (the test binary itself is used as that DLL, so the
+  "does not export" path is exercised with a real module), and
+  `pi_factory_create_instance` with an unknown class GUID - which checks the error
+  code, the `*out = NULL` rule, the invalid-argument paths, and, importantly, a
+  POSITIVE control with the real GUID so a run where everything fails cannot look
+  like a pass. The fourth is a new test plugin that declares
+  `PI_IID_HOST_UI (REQUIRED)`; the headless host must refuse it before
+  instantiation, and ctest case `capability_gate_rejects_gui_required_plugin`
+  asserts the refusal message ("plugin requires capability iid data1=0x00000011
+  but this host does not provide it"). Switch `PI_BUILD_TEST_PLUGIN_GUIREQUIRED`
+  (mirrored into `conanfile.py`).
+
 - **`docs/design/adapter-spec.md` - the adapter kit contract (ECO-01).** What a UI
   adapter kit must do was spread across two READMEs and a lot of tribal knowledge.
   The spec now states it as clauses a third party can follow: the `IPiPluginView`
@@ -63,6 +78,12 @@ A release is one commit on `main` that bumps the version in `CMakeLists.txt` and
   fix below for why this exists.
 
 ### Fixed
+
+- **Two test plugins violated the frozen out-parameter rule.** Both returned
+  `PI_E_NOINTERFACE` from `pi_create_instance` without clearing `*out`, which the
+  conventions (interfaces.md 2.4, decided in the interface freeze review) and every
+  host rely on. The new unknown-GUID unit case caught both on its first run - a
+  caller that passed a dirty `out` would have read its own stale value back.
 
 - **A descriptor with automatic or dynamic storage could crash the HOST.** The
   descriptor gained appended optional fields in 0.3 (`properties` /

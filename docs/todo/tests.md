@@ -51,7 +51,21 @@
 - Qt 套件 `pi_qt_view_post` 跨线程 marshal；
 - 引用计数并发增减压力测试。
 
-## 6. 负向测试 [P2]
+## 6. 负向测试 [P2] —— 已完成（roadmap ECO-08）
+
+> **状态**：四类负向输入都有自动化断言，且都在 `ctest` 里：
+>
+> | 负向输入 | 断言位置 |
+> |---|---|
+> | 加载不存在的 DLL | `tests/unit`（`pi_module_load` 返回 NULL + 错误描述含路径） |
+> | 加载不含 `pi_plugin_entry` 的 DLL | `tests/unit`（拿单测自身当模块，错误描述含 `pi_plugin_entry`） |
+> | `pi_create_instance` 传未知 class GUID | `tests/unit`（`PI_E_NOINTERFACE` + `*out` 为 NULL + 非法参数 + **正向控制**） |
+> | headless 宿主加载 `HOST_UI REQUIRED` 插件 | ctest `capability_gate_rejects_gui_required_plugin`（`tests/test_plugin_guirequired`，断言拒绝理由） |
+>
+> 顺带成果：写这组用例时抓到两个测试插件在 `PI_E_NOINTERFACE` 路径上**没有把 `*out`
+> 置 NULL**，违反终审约定 2.4 —— 已修。
+
+原来的建议（保留作为检查项清单）：
 
 - 加载不存在的 DLL → `pi_module_load` 返回 NULL，错误描述正确；
 - 加载不含 `pi_plugin_entry` 的 DLL → 报 "does not export"；

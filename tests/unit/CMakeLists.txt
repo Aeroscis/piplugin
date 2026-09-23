@@ -42,8 +42,18 @@ add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
 # ------- ctest 注册 -------------
 # 只按退出码判定（0 = 全过），刻意不加 PASS_REGULAR_EXPRESSION —— 设了它
 # ctest 就不再检查退出码，反而更松。
-add_test(NAME unit
-    COMMAND "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}/${TARGET_NAME}.exe"
-    WORKING_DIRECTORY "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
-    )
+#
+# 有测试插件时把它的名字传给单测：工厂负向用例（ECO-08）需要一个真实模块
+# （未知 class GUID / 非法参数 / 正向控制），没有就跳过那一段。
+if(TARGET pi_test_plugin_imgui)
+    add_test(NAME unit
+        COMMAND "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}/${TARGET_NAME}.exe" "pi_test_plugin_imgui.dll"
+        WORKING_DIRECTORY "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
+        )
+else()
+    add_test(NAME unit
+        COMMAND "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}/${TARGET_NAME}.exe"
+        WORKING_DIRECTORY "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
+        )
+endif()
 set_tests_properties(unit PROPERTIES TIMEOUT 120)

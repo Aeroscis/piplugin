@@ -19,6 +19,7 @@ _TEST_ADAPTER_NEEDS = {
     "PI_BUILD_TEST_PLUGIN": "QT",          # qt 测试插件：需要 qt adapter kit
     "PI_BUILD_TEST_PLUGIN_IMGUI": "IMGUI",  # imgui 测试插件：需要 imgui adapter kit
     "PI_BUILD_TEST_PLUGIN_BADVERSION": None,   # 坏版本测试插件（BLK-03）：仅核心
+    "PI_BUILD_TEST_PLUGIN_GUIREQUIRED": None,  # GUI-required 测试插件（ECO-08）：仅核心
     "PI_BUILD_TEST_PLUGIN_SERVICE": None,      # 服务测试插件（APP-07）：仅核心
     "PI_BUILD_TEST_PLUGIN_EVENTS": None,       # 事件测试插件（APP-06）：仅核心
     "PI_BUILD_UNIT_TESTS": None,               # 核心单测（BLK-06）：仅核心
@@ -82,6 +83,7 @@ class PiPluginConan(ConanFile):
         "PI_BUILD_TEST_PLUGIN": [True, False],     # qt 测试插件（依赖 Qt5 + qt adapter kit）
         "PI_BUILD_TEST_PLUGIN_IMGUI": [True, False],  # imgui 测试插件（依赖 imgui + imgui adapter kit）
         "PI_BUILD_TEST_PLUGIN_BADVERSION": [True, False],  # 声明不兼容 api_version 的测试插件（BLK-03 负向用例，仅依赖核心）
+        "PI_BUILD_TEST_PLUGIN_GUIREQUIRED": [True, False],  # 声明 HOST_UI REQUIRED 的测试插件（ECO-08 负向用例，仅依赖核心）
         "PI_BUILD_TEST_PLUGIN_SERVICE": [True, False],  # 服务测试插件（APP-07，仅依赖核心）
         "PI_BUILD_TEST_PLUGIN_EVENTS": [True, False],   # 事件测试插件（APP-06，仅依赖核心）
     }
@@ -108,6 +110,7 @@ class PiPluginConan(ConanFile):
         "PI_BUILD_TEST_PLUGIN": True,
         "PI_BUILD_TEST_PLUGIN_IMGUI": True,
         "PI_BUILD_TEST_PLUGIN_BADVERSION": True,
+        "PI_BUILD_TEST_PLUGIN_GUIREQUIRED": True,
         "PI_BUILD_TEST_PLUGIN_SERVICE": True,
         "PI_BUILD_TEST_PLUGIN_EVENTS": True,
     }

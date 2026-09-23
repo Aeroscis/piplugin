@@ -151,6 +151,9 @@ PiResult PI_CALL QtPluginFactory::CreateInstance(void* self_ptr, const PiGuid* g
                                                  IPiHostServices* host, IPiPluginBase** out) {
     (void)self_ptr;
     if (!guid || !out) return PI_E_INVALIDARG;
+    /* 终审约定 2.4：失败时一律把 *out 置 NULL。这里原本漏了，
+     * 被 tests/unit 的 ECO-08 负向用例抓出来。 */
+    *out = nullptr;
     if (!pi_guid_equal(guid, &QT_PLUGIN_CLASS_GUID)) return PI_E_NOINTERFACE;
     QtPlugin* plugin = new QtPlugin();
     if (!plugin) return PI_E_OUTOFMEMORY;

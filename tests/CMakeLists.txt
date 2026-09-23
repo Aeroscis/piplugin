@@ -11,6 +11,7 @@ option(PI_BUILD_UNIT_CPP_TESTS "Build the C++ RAII layer tests (ctest target 'un
 option(PI_BUILD_TEST_PLUGIN "Build the Qt-based test plugin" ON)                   # 依赖: Qt5 framework qt adapter
 option(PI_BUILD_TEST_PLUGIN_IMGUI "Build the ImGui-based test plugin" ON)          # 依赖: imgui framework imgui adapter
 option(PI_BUILD_TEST_PLUGIN_BADVERSION "Build the bad-api_version test plugin (BLK-03 negative case)" ON)  # 依赖: framework core
+option(PI_BUILD_TEST_PLUGIN_GUIREQUIRED "Build the GUI-required test plugin (ECO-08 negative case)" ON)  # 依赖: framework core
 option(PI_BUILD_TEST_PLUGIN_SERVICE "Build the service (headless, IPiService) test plugin (APP-07)" ON)  # 依赖: framework core
 option(PI_BUILD_TEST_PLUGIN_EVENTS "Build the events (IPiEventSink + publish/subscribe) test plugin (APP-06)" ON)  # 依赖: framework core
 option(PI_BUILD_TEST_HOST "Build the imgui-based test host" ON)                    # 依赖: imgui
@@ -44,6 +45,11 @@ endif()
 # bad-api_version test plugin（BLK-03 负向用例，纯 C 无依赖）
 if(PI_BUILD_TEST_PLUGIN_BADVERSION)
     add_subdirectory(test_plugin_badversion)
+endif()
+
+# gui-required test plugin（ECO-08 负向用例：HOST_UI REQUIRED，纯 C 无依赖）
+if(PI_BUILD_TEST_PLUGIN_GUIREQUIRED)
+    add_subdirectory(test_plugin_guirequired)
 endif()
 
 # service (headless) test plugin（APP-07：IPiService 全生命周期，纯 C 无依赖）

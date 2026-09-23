@@ -112,6 +112,19 @@ if(TARGET pi_test_plugin_qt)
         TIMEOUT 120)
 endif()
 
+# ---- ECO-08 负向用例：headless 宿主必须拒绝 HOST_UI REQUIRED 的插件 ----
+# 与版本门禁用例同理：宿主以非 0 退出（拒绝 = 期望结果），所以断言的是
+# "拒绝理由出现在输出里"。能力门禁在 create_instance 之前跑，插件自己的
+# CreateInstance 返回 NOTIMPL —— 一旦门禁失效，日志里会出现 NOTIMPL 而不是拒绝理由。
+if(TARGET pi_test_plugin_guirequired)
+    add_test(NAME capability_gate_rejects_gui_required_plugin
+        COMMAND "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}/${TARGET_NAME}.exe" "pi_test_plugin_guirequired.dll"
+        WORKING_DIRECTORY "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
+        )
+    set_tests_properties(capability_gate_rejects_gui_required_plugin PROPERTIES
+        PASS_REGULAR_EXPRESSION "requires capability"
+        TIMEOUT 120)
+endif()
 # ---- APP-01（通道 B：app 自定义宿主服务）的端到端断言 ----
 # 宿主用 pi_host_services_create_ex() 的 extra_qi 钩子暴露自己的服务；插件对
 # 宿主对象 QI 到它并调用。宿主自己只做 QI 探测（不调方法），因此那行计数里的

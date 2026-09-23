@@ -97,9 +97,9 @@ load（模块 + 双向能力门禁 + 实例化 + 初始化）
 
 | 不覆盖 | 归属 |
 |---|---|
-| 负向输入（不存在的 DLL、无 entry 的 DLL、未知 class GUID、headless 加载 GUI 插件） | ECO-08 |
+| 负向输入（不存在的 DLL、无 entry 的 DLL、未知 class GUID、headless 加载 GUI 插件） | ECO-08 —— **已落地**：前三条在 `tests/unit`，第四条是 ctest `capability_gate_rejects_gui_required_plugin`（`tests/test_plugin_guirequired`） |
 | 画面内容是否正确（只看"有没有崩、有没有 view"） | 需人工/截图断言，见 `scripts/verify_resize_fix.ps1` |
-| 多个 Qt 插件同进程 | APP-08（Qt 套件 SHARED 化） |
+| 多个 Qt 插件同进程 | **已覆盖**（APP-08）：ctest `multi_plugin_qt_in_one_process` |
 | Linux / macOS | FUT-01 / FUT-02 |
 | 崩溃隔离（插件崩了宿主也崩） | FUT-05（跨进程插件） |
 
