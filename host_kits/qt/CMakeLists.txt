@@ -26,7 +26,8 @@ set(CMAKE_AUTOMOC ON)
 # dependency check（Qt5 本地安装，非 conan 依赖；L0 缺失也不成立 —— 本 kit 依赖它）
 find_package(Qt5 COMPONENTS Widgets Core QUIET)
 if(NOT Qt5_FOUND)
-    message(STATUS "Qt5 not found -> Qt host kit (${TARGET_NAME}) disabled")
+    message(STATUS "Qt5 not found -> Qt host kit (${TARGET_NAME}) disabled
+  ${PI_QT_MISSING_HINT}")
     return()
 endif()
 if(NOT TARGET piplugin_host)

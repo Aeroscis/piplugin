@@ -22,7 +22,8 @@ set(CMAKE_AUTOMOC ON)
 # dependency check（Qt5 本地安装，非 conan 依赖；找不到则禁用本 kit）
 find_package(Qt5 COMPONENTS Widgets Core QUIET)
 if(NOT Qt5_FOUND)
-    message(STATUS "Qt5 not found -> Qt adapter kit (${TARGET_NAME}) disabled")
+    message(STATUS "Qt5 not found -> Qt adapter kit (${TARGET_NAME}) disabled
+  ${PI_QT_MISSING_HINT}")
     return()
 endif()
 

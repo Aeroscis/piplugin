@@ -146,6 +146,13 @@ target_link_libraries(... PUBLIC piplugin imgui::imgui)
 SHARED 的 Qt 套件 DLL 与核心库一样在 POST_BUILD 阶段自动部署到 `bin/<CONFIG>/`，
 插件运行时必须能找到它。
 
+**Qt5 怎么被找到（ECO-05）**：仓库不写死任何 Qt 路径。根 `CMakeLists.txt` 暴露缓存变量
+`PI_QT_PREFIX`（默认空）；查找顺序是 `PI_QT_PREFIX` → `Qt5_DIR` → `CMAKE_PREFIX_PATH`
+（含环境变量）→ Windows 上 PATH 里的 Qt。只有以上都没给线索、且本机常见的
+`C:/Qt/5.15.2/msvc2019_64` 恰好存在时，才把它当**提示**用一次并打印说明。
+找不到 Qt 时，四处 Qt 相关目标各自打印一条带指引的消息（`PI_QT_MISSING_HINT`）后禁用，
+configure 仍然成功 —— 别人给出自己的路径即可构建 Qt 目标，不必改仓库文件。
+
 ### 3.5 测试（tests/）
 
 可选目标，各自做依赖自检，不满足即 `return()` 禁用（不影响整体构建）：

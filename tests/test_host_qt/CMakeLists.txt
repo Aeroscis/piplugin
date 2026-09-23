@@ -18,7 +18,8 @@ set(CMAKE_AUTOMOC ON)
 # dependency check（需要 Qt5 与 imgui adapter kit）
 find_package(Qt5 COMPONENTS Widgets Core QUIET)
 if(NOT Qt5_FOUND)
-    message(WARNING "Qt5 not found -> ${TARGET_NAME} DISABLED")
+    message(WARNING "Qt5 not found -> ${TARGET_NAME} DISABLED
+  ${PI_QT_MISSING_HINT}")
     return()
 endif()
 if(NOT TARGET piplugin_imgui)

@@ -61,6 +61,20 @@ cmake --build --preset conan-debug
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
+**Qt 相关目标（可选）**：Qt 是本地安装、不是 Conan 依赖，仓库里**没有**写死任何路径。
+CMake 按这个顺序找它，任选一种即可：
+
+```bash
+# 1) 标准 CMake 方式（推荐：环境里已有 Qt 时通常什么都不用做）
+cmake --preset conan-default -DQt5_DIR="C:/Qt/5.15.2/msvc2019_64/lib/cmake/Qt5"
+# 2) 本项目的便捷变量（前缀即可）
+cmake --preset conan-default -DPI_QT_PREFIX="C:/Qt/5.15.2/msvc2019_64"
+# 3) 或者干脆把 Qt 的 bin 放进 PATH / 设 CMAKE_PREFIX_PATH
+```
+
+找不到 Qt 时不会失败：Qt 套件、Qt 宿主与 Qt 测试件会打印一条带指引的提示后自动禁用
+（`-DPI_QT_PREFIX=<路径>` / `-DQt5_DIR=<路径>/lib/cmake/Qt5`），其余目标照常构建。
+
 ### 方式二：纯 CMake（只要本机有 MSVC / Windows SDK）
 
 不需要 Conan：适配器与依赖 Qt / imgui 的目标会自动禁用，剩下核心库、host kit、
