@@ -16,7 +16,7 @@
 |---|---|
 | 插件 UI 简单 / 想直接画控件、图表、调试面板 | **imgui 套件**（宿主 GUI 线程驱动，最简单） |
 | 插件 UI 复杂 / 需要 Qt 控件库（表格、树、样式表） | **Qt 套件**（私有 Qt 事件循环线程） |
-| 宿主本身就是 Qt 程序 | 不要用 Qt 套件——直接把控件放进宿主 Qt 事件循环（见限制） |
+| 宿主本身就是 Qt 程序 | 不要用 Qt 套件——改**直连**：插件把 `QWidget*` 交给宿主，宿主放进自己的 `QLayout`（[`qt-host-direct.md`](qt-host-direct.md)、`examples/qt_host_direct/`） |
 | 宿主自身也用 imgui | imgui 套件没问题（context 自动隔离） |
 
 ## 2. imgui 套件（piplugin_imgui）
@@ -113,13 +113,23 @@ pi_qt_view_post(view, &SomeFn, user);      // 任意线程可调，marshal 到 Q
 
 ### 3.3 内部机制
 
-- **PiQtRuntime**：进程级共享。首个 view attach 时启动后台线程并创建唯一
-  `QApplication`；最后一个 view detach 时异步 `quit()`。按用户数引用计数。
-- **嵌入**：`pi_attach` 在 Qt 线程内 `SetParent` 把控件 HWND 挂进宿主容器（Windows）。
-- **idle 驱动**：宿主的 `pi_on_idle()` 仅做 `wakeUp()` 唤醒 Qt dispatcher，
-  绝不跨线程 `processEvents()`（那会触发跨线程 UB）。
-- **同步释放**：`pi_release()` 引用归零后**同步阻塞**等待 Qt 线程清理完控件并 join
-  运行时线程——保证宿主随后 `FreeLibrary`（卸载插件 DLL）安全。
+- **线程模型**：所有 Qt 调用都在**宿主的 GUI 线程**上（该线程就是创建 `QApplication`
+  的线程）。早期版本用"后台 QThread + queued invocation + 等控件销毁的信号量"，
+  结果是卸载崩溃与 detach 卡死——不要改回去，原因见 `adapters/qt/README.md`
+  的"线程模型（重要，不要改回去）"。
+- **进程级共享（SHARED）**：套件的 `QApplication` 与活视图登记表是**进程一份**，
+  所以同一进程可以同时加载多个 Qt 插件 DLL，它们共用一个 `QApplication`。
+  按 owner 拆控件用 `pi_qt_view_shutdown_owner(owner)`；不带 owner 的
+  `pi_qt_view_shutdown()` 会拆掉进程里所有 Qt 插件界面。
+- **嵌入**：`pi_attach` 在控件原生窗口**创建之前**把宿主容器 HWND 写进 Qt 的
+  `_q_embedded_native_parent_handle` 动态属性，Qt 自己把控件建成该容器的 `WS_CHILD`
+  （不做顶层窗口 `SetParent`、不叠边框、不按屏幕坐标算位置；只有控件已自带原生窗口时
+  才退回 `SetParent` 兜底）。因此控件工厂必须返回**全新的、尚未 `show()`/`winId()` 过**
+  的控件。
+- **idle 驱动**：宿主的 `pi_on_idle()` 里套件调一次 `processEvents()`（有界时间片），
+  Qt 的定时器/绘制/输入由此推进——宿主卡住时插件界面也会卡住（正确行为）。
+- **同步释放**：`pi_detach()` 返回时控件已经析构，`pi_release()`（最后一个视图引用
+  归零）返回时 `QApplication` 也已析构，因此宿主随后 `FreeLibrary` 是安全的。
 
 ## 4. CMake 链接
 
@@ -138,7 +148,7 @@ Qt 插件部署时要带上套件 DLL（本仓库构建会自动部署到 `bin/<
 
 | 事项 | 说明 |
 |---|---|
-| Qt 套件面向**非 Qt 宿主** | 宿主本身是 Qt 时不要用本套件 |
+| Qt 套件面向**非 Qt 宿主** | 宿主本身是 Qt 时不要用本套件：套件会去建进程里唯一的 `QApplication`，而宿主已经有一个（`attach` 在 `piqt_app_create()` 处失败）。改走**直连**：[`qt-host-direct.md`](qt-host-direct.md) + `examples/qt_host_direct/` |
 | 多 Qt 插件同进程 | ✅ 已支持：套件是 SHARED，所有 Qt 插件共用进程里唯一一个 `QApplication`；回归用例 `tests/test_host_multi`（ctest `multi_plugin_qt_in_one_process`）。拆控件用 `pi_qt_view_shutdown_owner(owner)`，不要用进程级的 `pi_qt_view_shutdown()` |
 | Qt 套件 Linux/macOS 嵌入 | `SetParent` 仅 Windows；X11 XEmbed / NSView 嵌入未实现（TODO） |
 | imgui 套件 | 仅 Windows（D3D11 backend），其他平台待移植 |

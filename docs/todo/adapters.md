@@ -21,16 +21,30 @@ X11 嵌入。README（`adapters/qt/README.md`）已预留此方向。
 
 插件 UI 用 HTML/JS（WebView2 / WebKitGTK / WKWebView）时，封装成同一模式。
 
-## 4. Qt 宿主内嵌 Qt 插件的一等用法 [P2]
+## 4. Qt 宿主内嵌 Qt 插件的一等用法 [P2] —— 已完成（W-06）
 
-当前 Qt 套件**只面向非 Qt 宿主**（README 明确限制）。补充文档/示例：
-宿主本身是 Qt 时，插件控件直接进入宿主 Qt 事件循环的正确集成方式
-（不经过本套件），或提供专门的 "Qt-host 直连" 桥接。
-
-实测补充：`pi_test_host_qt.exe` 加载 Qt 插件时，套件的 `attach()` 在
-`piqt_app_create()` 处就失败（进程内已存在宿主的 `QApplication`，套件拒绝再建一个），
-插件控件根本不会被创建——即"Qt 宿主 + 本套件"当前是静默不可用，而不是"能用但不完美"。
-`PI_QT_VIEW_TRACE=1` 时表现为日志只到 `attach: enter` 一行。
+> **状态**：已落地，三件产物：
+> 1. **教程** `docs/tutorial/qt-host-direct.md`——症状与判定（为什么"Qt 宿主 + Qt 套件"
+>    是不可用而不是不完美）、宿主×插件工具包选型表、直连的正确姿势、四条硬规则
+>    （线程 / 所有权与销毁顺序 / 用能力门禁挡下走错路的插件 / 别把套件 DLL 混进依赖）、
+>    常见错误—症状对照表、无需人眼的自查方式；
+> 2. **可运行示例** `examples/qt_host_direct/`（宿主 `QApplication` + `QLayout` 收编
+>    插件的 `QWidget*`，app 自定义协议走通道 A，插件不链接 `piplugin_qt`）：
+>    三步跑通，另有 `--self-test`（程序化点击插件按钮 → 断言消息到达宿主 →
+>    按顺序卸载 → 退出码判定，脚本里已实测 `RESULT: PASS`）；
+> 3. **门禁示范**：示例宿主用 `pi_host_session_require()` 声明生态要求，把套件写的 Qt
+>    插件在**实例化之前**挡下（`load failed (hr=-8): plugin does not provide iid ...`），
+>    把"静默无界面"变成一条指名道姓的加载错误。
+>
+> 顺带修正 `docs/tutorial/adapters.md` §3.3 的过期机制描述（还停在"后台 QThread +
+> `SetParent` + `wakeUp()`"，与 `adapters/qt/README.md` 的现线程模型矛盾）。
+>
+> 原始记录（保留）：实测 `pi_test_host_qt.exe` 加载 Qt 插件时，套件的 `attach()` 在
+> `piqt_app_create()` 处就失败（进程内已存在宿主的 `QApplication`，套件拒绝再建一个），
+> 插件控件根本不会被创建——即"Qt 宿主 + 本套件"是**静默不可用**，而不是"能用但不完美"。
+> `PI_QT_VIEW_TRACE=1` 时表现为日志只到 `attach: enter` 一行。W-06 复核时进程 5 秒后
+> 仍在运行、需强杀，说明该路径的表现（静默失败 / 卡住）还取决于构建配置，
+> 结论不变：不可用。
 
 ## 5. imgui 套件非 Windows backend [P1]
 

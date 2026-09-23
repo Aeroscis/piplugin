@@ -254,6 +254,68 @@ own.
   `PI_BUILD_EXAMPLES` (default ON, mirrored in `conanfile.py`).
 - **`pi_descriptor_init(desc)` - zero a descriptor before filling it in.** See the
   fix below for why this exists.
+- **The Qt 5.15 end-of-life question got an answer instead of a shrug (W-12).**
+  `docs/design/qt6-assessment.md` is the FUT-09 evaluation, and it separates what
+  "EOL" actually means for 5.15 from what it sounds like: regular commercial LTS
+  support ended 2025-05-26 and the online installer's last public Qt 5 binary is
+  5.15.2, but the public archive still publishes OPEN SOURCE 5.15 source packages
+  and CVE diffs (`qt-everywhere-opensource-src-5.15.19.tar.xz`, 2026-05), so the
+  situation is "self-maintained", not "abandoned". Its conclusion is a decision,
+  not a survey: stay on a single Qt 5.15.2 through the 1.0 freeze, refuse the
+  long-lived dual-version kit, and migrate to Qt6 in one step - gated on a Qt6
+  build lane existing first. Why dual-version loses even though APP-08 made the
+  kit SHARED: one process cannot host two Qt majors regardless (two event
+  dispatchers, one Win32 message queue), so "two kits" only ever means "two
+  builds, two deployment matrices, no mixed plugins" - a maintenance tax for a
+  scenario nobody here has. The doc also records that the migration surface is
+  thin (a scan for Qt5-only API in the kit, host kit, Qt example and Qt test host
+  comes back empty, and the private `_q_embedded_native_parent_handle` mechanism
+  the embedding depends on still exists in Qt 6.10's `qwidget.cpp` and
+  `qwindowswindow.cpp`) and the three triggers that would reopen the decision.
+- **A Qt host can run Qt plugins - the missing first-class path (W-06).** The Qt
+  adapter kit is for hosts that do NOT run Qt (it brings the process's
+  `QApplication` and pumps it from the host's loop), so a Qt host loading a
+  kit-based plugin got no UI: `PiQtView::attach()` bails at `piqt_app_create()`,
+  which constructs a second `QApplication` on top of the host's own (Qt allows
+  exactly one). Re-checked while writing this: with `PI_QT_VIEW_TRACE=1` the trace
+  stops after `attach: enter` and the process had to be killed 5s later - whether
+  it fails quietly or stalls depends on the build, and either way it is unusable.
+  `docs/tutorial/qt-host-direct.md` is the missing page: a host x plugin toolkit
+  decision table, the direct integration (the plugin hands over a `QWidget*`, the
+  host adopts it in its own `QLayout`, the host's own event loop drives it), the
+  four rules that make it safe (GUI thread only; destroy the widget BEFORE
+  unloading the module, because its signal/slot bodies live there; require the app
+  protocol so a mis-targeted plugin fails the gate instead of loading and showing
+  nothing; never link the kit into a direct plugin), and an error-to-symptom table.
+  **`examples/qt_host_direct/`** runs it end to end: an app-defined protocol
+  carrying `QWidget*` (channel A - the plugin declares `PI_CAP_PROVIDES`, the host
+  `pi_host_session_require()`s it), a host with its own `QApplication` and layout,
+  and a `--self-test` mode that clicks the plugin's button programmatically,
+  asserts the message reached the host, unloads in order and exits on the verdict
+  (`RESULT: PASS`, run). Pointed at the kit-based example plugin it fails by name
+  before instantiation:
+  `plugin does not provide iid data1=0x9C3E71B5 required by this host`.
+  While documenting this, `docs/tutorial/adapters.md` 3.3 turned out to still
+  describe the kit's abandoned design (a private `QThread` running
+  `QApplication::exec()`, `SetParent`, `wakeUp()`), which `adapters/qt/README.md`
+  explicitly forbids; it now describes the shipped thread model.
+- **Plugin discovery got its first code fact - a directory scanner (W-11).**
+  FUT-07 (discovery/distribution) was a direction with no implementation to argue
+  from. `examples/plugin_scan/` is the smallest thing that answers a real design
+  question - can a host learn a folder's contents from descriptors alone? - and
+  the answer is yes: walk the directory, `pi_host_session_inspect()` each
+  candidate (load + version gate + capability gates, no instantiation), read the
+  descriptor, then unload immediately. Run over `bin/<CONFIG>` it reports 11
+  usable plugins out of 18 DLLs and, just as usefully, the 7 that are not
+  plugins here - the framework DLLs and Qt runtime ("does not export
+  pi_plugin_entry"), the bad-api_version test plugin and the GUI-required one
+  (this scanner is a headless host), each with the gate's own reason. Version
+  selection is deliberately a PLACEHOLDER (same descriptor name -> highest
+  numeric version) and says so in its own output; a real resolver would also
+  weigh api_version, capabilities, platform and dependencies. The example also
+  documents the lifetime trap every manifest tool hits once: descriptor strings
+  belong to the module, so everything kept is deep-copied before the unload.
+  No core file and no ABI changed.
 
 ### Fixed
 

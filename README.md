@@ -109,7 +109,9 @@ cd bin\Debug
 
 宿主侧 kit 的用法见 [`docs/tutorial/write-host.md`](docs/tutorial/write-host.md)，
 插件见 [`docs/tutorial/write-plugin.md`](docs/tutorial/write-plugin.md)，
-适配器套件见 [`docs/tutorial/adapters.md`](docs/tutorial/adapters.md)。
+适配器套件见 [`docs/tutorial/adapters.md`](docs/tutorial/adapters.md)；
+**宿主本身是 Qt 程序**时见 [`docs/tutorial/qt-host-direct.md`](docs/tutorial/qt-host-direct.md)
+（不要用 Qt 套件，改直连：`examples/qt_host_direct/`）。
 
 ## 架构
 

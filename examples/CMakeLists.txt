@@ -23,8 +23,14 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/minimal_plugin_imgui)
 # 最小插件：Qt 套件（找不到 Qt5 时自动禁用）
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/minimal_plugin_qt)
 
+# Qt 宿主直连 Qt 插件（不走套件：宿主自己持有 QApplication，收编插件的 QWidget*）
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/qt_host_direct)
+
 # 特化 app：app 自定义协议（通道 A）+ 宿主自定义服务（通道 B）+ 能力门禁
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/specialized_app)
 
 # 最小套件（ECO-01 的可执行附录）：纯 C + Win32 GDI，零工具包，照 adapter-spec.md 写
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/minimal_kit_win32)
+
+# 插件发现试水（FUT-07 第一步）：扫目录 + 读 descriptor + 立刻卸载，打印清单
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/plugin_scan)

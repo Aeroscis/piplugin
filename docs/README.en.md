@@ -91,7 +91,9 @@ cd bin\Debug
 
 Writing a host: [`tutorial/write-host.md`](tutorial/write-host.md) (the host kits are documented
 there too). Writing a plugin: [`tutorial/write-plugin.md`](tutorial/write-plugin.md). Adapter kits:
-[`tutorial/adapters.md`](tutorial/adapters.md).
+[`tutorial/adapters.md`](tutorial/adapters.md). If the HOST is itself a Qt program, read
+[`tutorial/qt-host-direct.md`](tutorial/qt-host-direct.md) *before* reaching for the Qt kit
+(`examples/qt_host_direct/` is the runnable version).
 
 ## Architecture
 

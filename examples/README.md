@@ -10,9 +10,11 @@ roadmap **ECO-03**：把 `docs/tutorial/` 里的代码段变成能跑的工程�
 | `service_plugin/` | headless 服务插件（`IPiService`：start/poll/status/stop） | 无（纯 C） | `minimal_host` |
 | `minimal_plugin_imgui/` | 最小 imgui 插件（一个 draw 回调） | conan imgui + imgui 套件 | `minimal_host` |
 | `minimal_plugin_qt/` | 最小 Qt 插件（一个 widget 工厂） | 本地 Qt5 + Qt 套件（SHARED） | `minimal_host` |
+| `qt_host_direct/` | **Qt 宿主直连 Qt 插件**（宿主自己持有 `QApplication`，收编插件的 `QWidget*`，不走套件） | 本地 Qt5 + 宿主 kit L0 | 自己（一个 exe + 一个插件，带 `--self-test`） |
 | `minimal_kit_win32/` | **一个最小适配器套件**（纯 C + GDI，零工具包）+ 用它的插件 | 无（Windows） | `minimal_host` / 官方一致性宿主 |
 | `ffi/` | 用 **Python / Rust / C#** 各写一遍宿主（含本语言实现的宿主对象） | 对应语言的工具链 | 自己（`scripts/verify_ffi.ps1`） |
 | `specialized_app/` | app 自定义协议（通道 A）+ 宿主自定义服务（通道 B）+ 能力门禁 | 宿主 kit L0 | 自己（一个 exe + 一个插件） |
+| `plugin_scan/` | **插件发现试水**（FUT-07 第一步）：扫目录 + 读 descriptor + 立刻卸载，打印清单 | 宿主 kit L0 | 自己（扫 `bin/<CONFIG>` 之类的目录） |
 
 ## 一起构建
 
@@ -30,6 +32,8 @@ cd bin\Debug
 .\pi_example_minimal_host.exe pi_example_plugin_qt.dll
 .\pi_example_minimal_host.exe pi_example_plugin_win32.dll
 .\pi_example_specialized_app.exe pi_example_specialized_plugin.dll pi_example_service.dll
+.\pi_example_qt_direct_host.exe --self-test        # Qt 宿主 × Qt 插件（直连，退出码判定）
+.\pi_example_plugin_scan.exe                       # 发现：把本目录的插件清单打出来
 ```
 
 `minimal_kit_win32/` 还额外跑官方一致性验收（`scripts/verify.ps1` 会自动带上它）：
