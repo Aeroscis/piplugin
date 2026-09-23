@@ -1,6 +1,14 @@
 # 测试与质量待办（Tests & Quality）
 
-## 1. 单元测试框架 [P1]
+## 1. 单元测试框架 [P1] —— 已完成（roadmap BLK-06）
+
+> **状态**：已落地。`tests/unit/`（纯 C，ctest 用例 `unit`，109 项断言）与
+> `tests/unit_cpp/`（C++ RAII 层用例 `unit_cpp`，`_CrtDumpMemoryLeaks()` 在 Debug
+> 下按退出码断言无泄漏）。覆盖超出原清单：GUID、descriptor 能力查询与
+> properties 读法（含 0.3 前布局）、引用计数（含 destroy 回调）、
+> `pi_module_load` 失败路径、`pi_host_services_create_default` headless/GUI
+> 两形态、`pi_api_version_compatible` 边界、`pi_host_services_create_ex`
+> 钩子契约；注册表见 `tests/CMakeLists.txt`。
 
 **现状**：没有单元测试；`tests/` 全是演示宿主/插件（集成式）。
 核心纯 C 逻辑（GUID 比较、descriptor 能力查询、引用计数、模块加载）
@@ -12,7 +20,14 @@
   `pi_refcounted_add_ref/release`（含 destroy 回调）、`pi_module_load` 失败路径、
   `pi_host_services_create_default` 的 headless/GUI 两种形态。
 
-## 2. 宿主自动化验证脚本 [P1]
+## 2. 宿主自动化验证脚本 [P1] —— 已完成（roadmap ECO-07，演化形态）
+
+> **状态**：自动化已覆盖，但**没有**按本文原方案落地——`scripts/run_host_tests.ps1`
+> 与 `--autoclose-ms` 从未实现（roadmap ECO-07 的演化形态）。实际分工：
+> ctest 的 headless 冒烟（BLK-06，严格退出码断言）+ 一致性验收
+> `scripts/run_selftest.ps1`（`--cycles`，退出码裁决）+ 像素级缩放回归
+> `scripts/verify_resize_fix.ps1`；分工总表见 `docs/design/conformance.md` §7，
+> 一条命令入口是 `scripts/verify.ps1`。
 
 **现状**：三个测试宿主都写了 `pi_test_host.log` / `pi_qt_host.log` 供"自动化验证"，
 但仓库里没有驱动它们的脚本。
@@ -24,7 +39,12 @@
      然后断言 log 内容；
 - 接入 CI（见 `build.md` 第 2 条）。
 
-## 3. 内存 / 线程卫生验证 [P1]
+## 3. 内存 / 线程卫生验证 [P1] —— 已上收（W-03）
+
+> **状态**：ASan/sanitizer 跑道仍未建立（roadmap §8 原计划「随 BLK-05 加」，落地时
+> 静默丢掉）。已上收为下一波工作 **W-03**（`docs/todo/parallel-improvements.md`
+> 派工板，CI/脚本线）：MSVC `/fsanitize=address` 先只跑 unit + headless，
+> 避开 DWM/GUI 噪音。
 
 - 插件卸载顺序（view → plugin → factory → module → host）是最容易出错的地方；
   现有 unwrap 顺序在代码里手工维护。建议：
@@ -39,13 +59,16 @@
 |---|---|
 | imgui 宿主 + imgui 插件 | ✅ 已演示 |
 | Qt 宿主 + imgui 插件 | ✅ 已演示 |
-| imgui 宿主 + Qt 插件 | ✅ 可跑（`pi_test_host_imgui.exe pi_test_plugin_qt.dll`），未纳入自动化 |
+| imgui 宿主 + Qt 插件 | ✅ 可跑（`pi_test_host_imgui.exe pi_test_plugin_qt.dll`），未纳入自动化（已核实 `tests/test_host_multi` 是纯 Win32 宿主、无 D3D，APP-08 的用例不覆盖此格） |
 | headless 宿主 + GUI 插件 | ✅ 已演示（插件无头运行、不建 UI） |
 | headless 宿主 + service 插件 | ✅ 已有示例并纳入自动化（APP-07：`pi_test_plugin_service.dll` + ctest `headless_host_service_lifecycle`，断言 start/poll/status/stop 全生命周期） |
 | 多插件同进程 | ✅ 已覆盖（APP-08：`tests/test_host_multi` / ctest `multi_plugin_qt_in_one_process`，两个不同的 Qt 插件 DLL 同时加载、各自有 UI、各自跑定时器、一起卸载） |
-| 嵌入窗口动态切换 | ❌ 未覆盖（`pi_host_default_set_ui_window` 运行时切换） |
+| 嵌入窗口动态切换 | ❌ 未覆盖（`pi_host_default_set_ui_window` 运行时切换）——已上收 **W-02**（派工板，测试线） |
 
-## 5. 线程安全专项 [P2]
+## 5. 线程安全专项 [P2] —— 已上收（W-04）
+
+> **状态**：仍开放。已上收为下一波工作 **W-04**（派工板，测试线第 2 位）：
+> 下述三项全部做成 ctest 注册的压测用例。
 
 - `pi_host_post_message` 从插件子线程调用宿主的场景（测试插件目前只在 UI 回调里发消息）；
 - Qt 套件 `pi_qt_view_post` 跨线程 marshal；
@@ -130,7 +153,12 @@
   用 `[System.IO.File]::Open(path, 'Open','Read','ReadWrite')` 可绕过
   （脚本内已实现，含重试）。
 
-## 8. 代码质量工具 [P2]
+## 8. 代码质量工具 [P2] —— clang-format 部分落地；其余已上收（W-13）
+
+> **状态**：clang-format 已接入 `scripts/verify.ps1` 第 4 项——**只报告漂移、
+> 不拦截**（这是对 roadmap BLK-05 原定 `--dry-run --Werror` 强制检查的有意偏离，
+> 脚本注释有说明；是否升级为强制是待维护者拍板项，见派工板）。clang-tidy /
+> cppcheck 评估已上收为 **W-13**（派工板，CI/脚本线，含「文档-仓库 drift」lint）。
 
 - 已配置 `.clang-format`（根目录），建议接入 CI 检查（`clang-format --dry-run --Werror`）；
 - 评估 clang-tidy / cppcheck（MSVC 环境下可用 clang-tidy 对翻译单元分析）。
