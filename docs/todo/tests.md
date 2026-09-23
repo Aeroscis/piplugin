@@ -73,6 +73,13 @@
 > 3. `-NoParallel` 是给「沙箱禁用 MSBuild 多节点命名管道」的环境用的开关；
 >    CI 不需要它。
 >
+> 另外两条读日志时该认得的东西：插桩构建的**链接期**会打印
+> `LNK4044 无法识别的选项 "/fsanitize=address"`（它是编译期开关，链接器不认）与
+> `LNK4300 忽略 "/INCREMENTAL"`（输入含 ASan 元数据），两条都是预期噪音，不是失败。
+> 而 `detect_leaks=1` 那种启动即死**不打报告、也不像崩溃**：表现出来是整套用例
+> 全报 `Required regular expression not found`、`0% tests passed`——看着像断言集体
+> 失效，实际是运行时在 `main()` 之前就退了。
+>
 > **遗留（如实记录）**：本轮执行环境无外网，`asan` job 在 GitHub runner 上的
 > 首次运行没有被观察到；本地证据是上面的日志与探针。job 依赖 runner 装有 VS 的
 > ASan 组件，脚本会先找 `clang_rt.asan*_dynamic*.dll`，找不到就带着「装哪个
@@ -96,6 +103,14 @@
 | headless 宿主 + service 插件 | ✅ 已有示例并纳入自动化（APP-07：`pi_test_plugin_service.dll` + ctest `headless_host_service_lifecycle`，断言 start/poll/status/stop 全生命周期） |
 | 多插件同进程 | ✅ 已覆盖（APP-08：`tests/test_host_multi` / ctest `multi_plugin_qt_in_one_process`，两个不同的 Qt 插件 DLL 同时加载、各自有 UI、各自跑定时器、一起卸载；W-05 补上 imgui 变体：ctest `multi_plugin_imgui_in_one_process`，两个不同的 **imgui** 插件模块各自渲染若干帧、各自心跳推进、一起干净卸载） |
 | 嵌入窗口动态切换 | ✅ 已覆盖（W-02：`tests/test_host_multi --container-switch`，ctest `container_switch_runtime`（imgui 插件）/ `container_switch_runtime_qt`（Qt 插件）—— attach A → 切到 B → 切回 A → 尺寸往返 → 卸载，每步断言"插件窗口是**指定容器**的子窗口、可见、尺寸与容器客户区一致"，并断言 `pi_view_detach()` 后旧窗口确实已销毁） |
+
+> **已知环境性退化（观察，非定论）**：在同一个长会话里反复跑 ctest 之后，imgui 那几个
+> 用例会集体挂住——宿主日志显示心跳推进不了（`heartbeats=0/2`），
+> `container_switch_runtime` / `multi_plugin_*` 以 Timeout 收场，且此后持续复现；
+> 同时 `taskkill` 查不到任何残留进程，另起一棵树的副本跑 ctest 仍是 **21/21 全绿**。
+> 所以它更像会话/环境问题而不是代码问题，但根因未定，这里只如实记录。
+> **做法**：改动后**立刻**跑一次完整 `ctest` 作为证据，之后不要再靠"再跑一遍"举证
+> ——再跑一遍很可能是在测环境而不是测代码；判定失败前先确认心跳在推进。
 
 ## 5. 线程安全专项 [P2] —— 已完成（W-04）
 

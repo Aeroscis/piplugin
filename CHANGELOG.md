@@ -566,6 +566,29 @@ own.
   W-08. Freeze-review finding F6 is fixed, so it moved from "open before 1.0" to
   "fixed". Nothing in the code changed except two comments.
 
+- **The conventions behind these documents are in the repository now, and two
+  build/test traps are written down.** `CONTRIBUTING.md` records what until now
+  lived only in a private working note: the `docs/design` / `docs/tutorial` /
+  `docs/todo` split and how to tell them apart, the rule that a finished todo item
+  hands its general knowledge to a standalone `docs/design/` document and keeps
+  only a conclusion plus a link, the language split (`docs/` Chinese,
+  `CHANGELOG.md` English, English conventional commit subjects), and the commit
+  discipline (explicit pathspecs, never `git add -A`, the one-off planning
+  documents stay untracked so tracked documents must not name them, `.workbuddy/`
+  stays ignored). `docs/tutorial/quickstart.md` gained 5.9 - `cmake --build` can
+  stall silently after the root `CMakeLists.txt` changes, because the build first
+  triggers a nested CMake regeneration; configure explicitly once and it proceeds
+  - and a note that `verify.ps1`'s documentation-drift step reports a false failure
+  outside a git checkout, since it scans `git ls-files '*.md'`.
+  `docs/todo/tests.md` #3 now names the shape an ASan startup failure takes (every
+  case fails a regex, `0% tests passed`, no crash report) and lists the two
+  expected linker warnings, while #4 records the environmental degradation that
+  makes the imgui cases time out in a long session - which is why a change is
+  evidenced by one full `ctest` run taken right after it, not by re-running later.
+  `scripts/probe_x11_native_window.sh` is the Xlib probe behind
+  `docs/todo/platform.md` #5, committed so the next change to `PiNativeWindow`
+  can re-run it instead of trusting a number in a document.
+
 Nothing yet. Add entries here as work lands; they move under the next version
 when it is cut.
 

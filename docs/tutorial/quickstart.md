@@ -172,6 +172,12 @@ powershell -ExecutionPolicy Bypass -File scripts\verify.ps1
 退出码 0 = 所有**强制**检查通过。`-SkipGui`（无桌面会话时）、`-SkipFfi`、`-SkipFormat`、
 `-SkipDocDrift` 可按需跳过。
 
+> **注意：在不是 git 检出的目录里，第 5 项会假失败。** 它的扫描范围是
+> `git ls-files '*.md'`（这正是"未跟踪的临时派工件天然不在内"的实现方式），
+> 于是在拷贝出来的树、`git archive` 导出、解压的 CI artifact 里它一篇文档都找不到，
+> 直接报 `FAIL - no markdown document found to check (is this a git checkout?)`
+> 并让 `verify.ps1` 以退出码 1 结束。这不是文档漂移，加 `-SkipDocDrift` 跳过即可。
+
 ### 4.6 持续集成（GitHub Actions）
 
 `.github/workflows/ci.yml` 在 push 到 `main` 与所有 PR 上运行，共 **三个 job**：
@@ -295,6 +301,30 @@ cmake --build build --config Debug --target pi_test_host_imgui
 
 用 `--config Release` 会因 Conan 生成的 `imgui` 包数据不匹配而报
 `无法打开包括文件: "imgui.h"`。
+
+### 5.9 改过根 `CMakeLists.txt` 后，`cmake --build` 长时间无任何输出
+
+根 `CMakeLists.txt` 一旦比 `build/CMakeFiles/generate.stamp.depend` 新，
+`cmake --build` 会先触发一次**嵌套的** CMake 重新生成；在部分环境里这一步会**静默停住**
+（不打印任何东西，十几分钟不推进），看起来像卡死在编译上。
+
+先看是谁更新：
+
+```powershell
+Get-Item CMakeLists.txt, build\CMakeFiles\generate.stamp.depend | Select-Object Name, LastWriteTime
+```
+
+规避办法是**先单独配置一次**（它能正常结束并打印 `-- Generating done`），再构建：
+
+```bash
+cmake -S . -B build      # 或 cmake --preset conan-debug
+cmake --build build --config Debug
+```
+
+> 这条来自一次自动化会话的实测（同一会话里 PowerShell 侧还另有两种环境噪音：
+> 从 Git Bash 给 MSBuild 传 `/开关` 会被当成路径、环境里大小写重复的 `Path` 会让
+> MSBuild 报 `MSB6001`）。普通终端里未必复现，但"改完根 CMake 先显式 configure 一次"
+> 这个习惯没有代价。
 
 ## 6. 下一步
 

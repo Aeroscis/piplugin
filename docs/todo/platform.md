@@ -78,6 +78,9 @@ Linux/macOS 上插件测试目标被跳过；`pi_qt_main.cpp` / `pi_imgui_main.c
 > `PI_INVALID_WINDOW` / `PI_IS_VALID_WINDOW` 行为正确（探针退出码 0）。
 > 32 位 Linux 上 `unsigned long` 与 XID 同为 4 字节，结论同样成立；
 > 结论只对「尺寸与转换」负责，不涉及 FUT-01 的嵌入实现。
+> 复现：`scripts/probe_x11_native_window.sh`（在 Linux 上跑，需 Xlib 头文件；
+> 用项目自己的 `-std=c11 -Wall -Wextra --pedantic-errors` 编译探针并断言尺寸与
+> 双向转换，没有 Xlib 时以退出码 2 跳过）——FUT-01 动 `PiNativeWindow` 前重跑一次。
 
 - Linux 下定义为 `unsigned long`；X11 上 `Window` 实际是 XID（`unsigned long` 通常兼容），
   建议在真实 Linux 构建中验证并视需要调整为 `uintptr_t` 或专门类型。

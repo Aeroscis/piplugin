@@ -154,6 +154,7 @@ cd bin\Debug
 | `examples/` | 可直接构建运行的最小示范（宿主 / imgui 插件 / Qt 插件 / 服务插件 / 特化 app / FFI / 插件发现…，见 [`examples/README.md`](examples/README.md)） |
 | `tests/` | 测试宿主、测试插件与单元测试 |
 | `docs/` | 设计文档与教程 |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | 文档分层、待办归档写法、语言分工与提交纪律 |
 
 ## 生态位对比
 
