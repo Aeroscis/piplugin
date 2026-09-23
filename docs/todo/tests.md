@@ -39,12 +39,42 @@
      然后断言 log 内容；
 - 接入 CI（见 `build.md` 第 2 条）。
 
-## 3. 内存 / 线程卫生验证 [P1] —— 已上收（W-03）
+## 3. 内存 / 线程卫生验证 [P1] —— 已完成（W-03）
 
-> **状态**：ASan/sanitizer 跑道仍未建立（roadmap §8 原计划「随 BLK-05 加」，落地时
-> 静默丢掉）。已上收为下一波工作 **W-03**（`docs/todo/parallel-improvements.md`
-> 派工板，CI/脚本线）：MSVC `/fsanitize=address` 先只跑 unit + headless，
-> 避开 DWM/GUI 噪音。
+> **状态**：sanitizer 跑道已落地，入口 `scripts/verify_asan.ps1`，CI 上是独立
+> job `asan`（`.github/workflows/ci.yml`）。它把**现有的构建树就地**重配
+> `/fsanitize=address`、跑非 GUI 的那部分 ctest、再把缓存变量改回去并重建
+> （`-SkipRestore` 给 CI：跑完即弃的机器不需要还回去）。
+>
+> 为什么就地和为什么不用 CMakeLists 开关：本仓库把每个测试二进制 POST_BUILD
+> 部署到 `<repo>/bin/<Config>`，另起一棵构建树会把别的构建的产物覆盖成插桩版，
+> 而那棵树的 ctest 还以为跑的是自己的；就地重配则让「树的配置」与「bin 里的
+> 二进制」始终一致。编译选项经 `-D` 注入缓存变量，不动根 `CMakeLists.txt` /
+> `cmake/`（并行线文件边界）。
+>
+> **已验证**（本地实跑，日志 `build/verify-asan.log`）：非 GUI 用例 **9/9 全绿**，
+> 含 `unit` / `unit_cpp` / `headless_host_*` / `descriptor_properties_*` /
+> `capability_gate_*` / `app_defined_host_service_*` / `version_gate_*`；
+> 反证：同一套开关编译一个故意越界的探针，ASan 报 `heap-buffer-overflow` 并以
+> 退出码 1 结束——跑道是有牙齿的，不是「跑绿即无事」。
+>
+> **三个实测结论**：
+> 1. **MSVC 的 ASan 在 Windows 上没有泄漏检测**——`detect_leaks=1` 会让运行时
+>    直接以 "detect_leaks is not supported on this platform" 死在 `main()` 之前。
+>    所以这条跑道覆盖**悬垂/越界/重复释放**，「无泄漏」那一半仍然由
+>    `unit_cpp` 的 `_CrtDumpMemoryLeaks()` 断言承担（脚本里写明，不会静默假装
+>    跑过泄漏检查）。
+> 2. **GUI 必须排除——这不是洁癖**：本机整跑 ctest（含两个 example 宿主）时，
+>    ASan 在一次窗口创建路径上从 `USER32` → `MSCTF` 抓到一个**第三方输入法
+>    （SogouPY.ime）内部的 heap-use-after-free**，与本仓库代码无关。跑道跑的是
+>    非 GUI 子集，正是为了不把这类报告算到我们头上。
+> 3. `-NoParallel` 是给「沙箱禁用 MSBuild 多节点命名管道」的环境用的开关；
+>    CI 不需要它。
+>
+> **遗留（如实记录）**：本轮执行环境无外网，`asan` job 在 GitHub runner 上的
+> 首次运行没有被观察到；本地证据是上面的日志与探针。job 依赖 runner 装有 VS 的
+> ASan 组件，脚本会先找 `clang_rt.asan*_dynamic*.dll`，找不到就带着「装哪个
+> 组件」的提示直接失败，而不是让一堆测试以「启动即 0xC0000135」收场。
 
 - 插件卸载顺序（view → plugin → factory → module → host）是最容易出错的地方；
   现有 unwrap 顺序在代码里手工维护。建议：
@@ -169,12 +199,51 @@
   用 `[System.IO.File]::Open(path, 'Open','Read','ReadWrite')` 可绕过
   （脚本内已实现，含重试）。
 
-## 8. 代码质量工具 [P2] —— clang-format 部分落地；其余已上收（W-13）
+## 8. 代码质量工具 [P2] —— 已完成（W-13；clang-format 的强制与否仍待维护者拍板）
 
-> **状态**：clang-format 已接入 `scripts/verify.ps1` 第 4 项——**只报告漂移、
-> 不拦截**（这是对 roadmap BLK-05 原定 `--dry-run --Werror` 强制检查的有意偏离，
-> 脚本注释有说明；是否升级为强制是待维护者拍板项，见派工板）。clang-tidy /
-> cppcheck 评估已上收为 **W-13**（派工板，CI/脚本线，含「文档-仓库 drift」lint）。
+> **状态**：
+>
+> **1. 文档-仓库漂移 lint 已落地并强制**：`scripts/verify.ps1` 第 5 项 + 规则表
+> `scripts/doc_drift_rules.json`。规则是**数据不是代码**，且只在特征真的存在时才生效
+> （`tests/unit/pi_unit_tests.c` 存在 ⇒ 任何"没有单元测试"的现行陈述非法），
+> 所以这张表不会腐烂成对"已经变了的仓库"的断言。
+>
+> - 扫描范围 = `git ls-files '*.md'`（未跟踪的临时派工板天然不在内）；
+>   `CHANGELOG.md` 显式排除——它讲的就是历史；
+> - 判定口径：**已完成章节里的原文不算"现行陈述"**。todo 的惯例是"状态块 + 保留原文"，
+>   所以标题带 已完成/已落地/已达成/已修复 的章节整段豁免（豁免沿标题层级向下继承），
+>   个别行还可以用 `<!-- doc-drift: ignore -->` 逐行豁免；
+> - 上下文过滤：规则可选要求陈述行**同时**含某关键词（现有唯一用处是 Linux 行），
+>   免得误伤"下一行的 macOS 仍然成立"这种平台行；
+> - 文档与规则都按 **UTF-8 显式读取**：两边都是中文，`Get-Content` 默认编码在
+>   Windows PowerShell 5.1 下会把它们一起解错，于是永远匹配不上（实测踩过）。
+>
+> **验收实测**（在隔离副本里做，改完还原）：故意把已完成项改回「未做」（去掉标题里的
+> 完成标记）→ lint 报
+> `docs/todo/tests.md:13: says '没有单元测试', but tests/unit/pi_unit_tests.c exists`
+> 并让 `verify.ps1` 以退出码 1 结束；改回后 **37 篇全绿、退出码 0**。
+>
+> **2. clang-format：仍然只报告、不拦截**，但第 4 项现在把**漂移清单逐条打印**
+> （上限 40 条 + 余量计数），这就是"报告 vs 强制"的拍板材料：强制化的第一步是对这批文件
+> 跑 `clang-format -i`，代价是一次覆盖全仓的格式化 diff——**没有擅自改为强制**。
+>
+> **3. clang-tidy / cppcheck 评估（只评估，结论如下）**：
+> - **cppcheck：本机与 Linux 机器上都没装**，任何接入都要先加安装步骤，暂不值得。
+> - **clang-tidy：本机（LLVM 19）与 Linux（LLVM 22）都有，但默认一个检查都不开**
+>   ——LLVM ≥ 17 起默认检查集为空，裸跑 `clang-tidy <file> -- <flags>` 直接以
+>   `Error: no checks enabled.` 退出（实测）。所以"接入 clang-tidy"的真身是**选检查集**，
+>   那是维护者口径，不该由写脚本的人顺手替它拍。
+> - **最小接入面（建议，未实施）**：挂在 **Linux job** 上最省事——(a) `compile_commands.json`
+>   只有 Makefile / Ninja 生成器能导出（Windows 用的 VS 生成器不行），而 Linux job 正是
+>   默认生成器；(b) ubuntu runner 自带 clang-tidy。加 `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON`
+>   与一步 `clang-tidy -p build-<cc> <core sources>` 即可，范围先限核心 + 宿主 kit。
+> - **实测数据**（LLVM 22，`--checks='-*,clang-diagnostic-*,bugprone-*,performance-*'`，
+>   `src/*.c`）：**4 warning / 0 error**，全部落在 `src/pi_plugin_host.c`
+>   ——`bugprone-multi-level-implicit-pointer-conversion` ×2、
+>   `bugprone-easily-swappable-parameters` ×1、
+>   `bugprone-reserved-identifier` ×1（命中的是 glibc 特性宏 `_DEFAULT_SOURCE`：这类
+>   "实现保留名、但由用户定义"的宏必须先加进允许表，否则一开就是误报）。
+>   结论：**值得接入，但先定检查集与允许表，再谈强制**。
 
 - 已配置 `.clang-format`（根目录），建议接入 CI 检查（`clang-format --dry-run --Werror`）；
 - 评估 clang-tidy / cppcheck（MSVC 环境下可用 clang-tidy 对翻译单元分析）。

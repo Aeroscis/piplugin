@@ -40,6 +40,78 @@ own.
 
 ### Added
 
+- **Linux is compiled by CI now, and getting there found four real defects (W-10).**
+  A `linux` job builds the core and both host kits with **gcc *and* clang** and runs the
+  C++ layer, which reports `checks=52 failures=0` under each. It does not run
+  `conan install`, and that is not an omission: with Qt and imgui off, nothing left
+  needs a third-party package. Four things stood between the repository and that green
+  run. `dlsym`'s object-pointer-to-function-pointer cast is an *error* under the flags
+  this project already sets for GNU compilers (`--pedantic-errors`), so the entry point
+  is fetched through a `memcpy` now; `strdup` and `syscall` are hidden behind glibc's
+  feature macros once `-std=c11` defines `__STRICT_ANSI__`, so `pi_plugin_host.c`
+  defines `_DEFAULT_SOURCE` before its first include; and `$<TARGET_PDB_FILE>` - an
+  MSVC-only generator expression that no `if(WIN32)` guards - failed at *generate*
+  time on Linux, so the deploy step is now a Windows and a non-Windows command in
+  `src/piplugin/CMakeLists.txt` and `adapters/qt/CMakeLists.txt`. Separately,
+  `PiNativeWindow`'s Linux `unsigned long` was verified against real Xlib headers
+  (`sizeof(Window) == sizeof(XID) == sizeof(PiNativeWindow)`, round trip through both
+  types, compiled with the project's own flags), which settles the suggestion to move
+  it to `uintptr_t`: unnecessary. What the job deliberately does **not** claim, recorded
+  in `docs/todo/platform.md` #3 together with the fix: `unit`, `unit_threads` and the
+  headless host call `nanosleep()` without those feature macros and do not compile on
+  Linux under gcc >= 14, every plugin target is still behind `if(NOT WIN32)` so there
+  is not a single loadable plugin, and `add_test` hardcodes a `.exe` suffix that ctest
+  cannot launch off Windows. The card asked for a headless smoke on Linux; rather than
+  paper over those three with an extra `-D`, the job says what it covers and the README
+  says the same thing.
+
+- **An AddressSanitizer track, and the three things measuring it on Windows taught us
+  (W-03).** `scripts/verify_asan.ps1` reconfigures an existing build tree with
+  `/fsanitize=address` *in place*, builds, runs the non-GUI part of the suite under it,
+  and then puts the cache values back and rebuilds, so `bin/<Config>` never disagrees
+  with the tree that owns it. In place, rather than in a second build tree, because
+  `pi_project.cmake` deploys every test binary into `<repo>/bin/<Config>`: a sibling tree
+  would overwrite those files with instrumented copies while the first tree still
+  believed they were its own, and the next `verify.ps1` would fail to even start them.
+  No `CMakeLists.txt` change was needed - the flags ride in as cache variables on the
+  configure command line - so the work stays inside the CI/script files. CI gained an
+  `asan` job that runs it with `-SkipRestore`. Measured rather than assumed: **MSVC's
+  AddressSanitizer implements no leak detection on Windows**, and asking for
+  `detect_leaks=1` kills the runtime before `main()` with "detect_leaks is not supported
+  on this platform", so the leak half of the check stays with the `_CrtDumpMemoryLeaks()`
+  assertion in `unit_cpp` and the script says so instead of implying otherwise; the GUI
+  cases are excluded for a reason that turned out to be concrete - a full `ctest` under
+  ASan reported a **heap-use-after-free inside a third-party input method**
+  (`SogouPY.ime`) reached through `USER32`/`MSCTF` from an example host creating its
+  window, which is not this project's bug and not something a sanitizer job should be
+  red about; and the track has teeth, which was checked by building a deliberately
+  out-of-bounds probe with the same flags - ASan reports `heap-buffer-overflow` with the
+  source line and exits 1. The nine non-GUI cases are green under it.
+
+- **The repository can no longer contradict itself in its own documentation (W-13).**
+  `scripts/verify.ps1` has a fifth check driven by `scripts/doc_drift_rules.json`: a
+  feature that exists makes a set of statements illegal (`tests/unit/pi_unit_tests.c`
+  exists, so nothing may still say there are no unit tests), and because a rule only
+  fires while its feature really is in the tree, the table cannot rot into assertions
+  about a repository that moved on. The documents come from `git ls-files '*.md'` - so
+  the temporary dispatch board, which is never committed, is naturally not part of the
+  check - and are read as UTF-8 explicitly. A section whose heading carries a done
+  marker is excused, because the todo files deliberately keep the original wording of a
+  finished item underneath its status note; a platform-specific claim can additionally
+  be required to sit on a line naming that platform, so the macOS row one line below a
+  Linux one is not dragged in. Verified by reintroducing a drift on purpose: dropping a
+  finished item's done marker makes the check report
+  `docs/todo/tests.md:13: says '没有单元测试', but tests/unit/pi_unit_tests.c exists`
+  and fail the run, and restoring it takes 37 documents back to green. The clang-format
+  check still reports instead of enforcing, but it now prints the drift list itself,
+  which is the material for that decision. clang-tidy and cppcheck were evaluated, not
+  adopted: cppcheck is installed nowhere here, and clang-tidy - which is - enables **no
+  checks at all by default** since LLVM 17 (a bare run exits with
+  `Error: no checks enabled.`), so adopting it means choosing a check set first; with a
+  conservative one (`clang-diagnostic-*`, `bugprone-*`, `performance-*`) the core
+  reports 4 warnings, one of them glibc's own `_DEFAULT_SOURCE` feature macro, which
+  says an allow-list is needed before any of this can be enforced.
+
 - **Windows binaries identify themselves now (W-07).** Every product DLL's property
   page showed empty version information: the `.rc` template had been "about to be
   provided" since the beginning (the `version_dll.rc.in 暂未提供` comments in the
@@ -381,6 +453,24 @@ own.
   No core file and no ABI changed.
 
 ### Fixed
+
+- **The core did not actually compile off Windows (W-10).** Three defects were only
+  visible once a real Linux build ran, and none of them needed a platform branch that
+  was missing - they needed the one that was there to be correct. `pi_module_load`
+  cast the result of `dlsym` straight to a function pointer, which ISO C forbids and
+  `--pedantic-errors` (already enabled for GNU compilers by `cmake/pi/pi_project.cmake`)
+  rejects outright, so the entry point now comes back through a `memcpy`; `strdup` and
+  `syscall` were implicit declarations because `-std=c11` defines `__STRICT_ANSI__` and
+  glibc hides both behind its feature macros, so `pi_plugin_host.c` defines
+  `_DEFAULT_SOURCE` before its first include (the Linux thread id in
+  `pi_host_services_create_ex` depends on `syscall`, so this was not cosmetic); and the
+  `POST_BUILD` deploy step used `$<TARGET_PDB_FILE>`, an MSVC-only generator expression
+  that no `if(WIN32)` protects and that fails during *generation* on any other platform
+  with `TARGET_PDB_FILE is not supported by the target linker`. Windows behaviour is
+  unchanged - the PDB copy is still there, now inside `if(WIN32)` - and the full Windows
+  `ctest` suite (21 cases) is green after the change. A fourth Linux-only fix rides
+  along in the same shape: `adapters/qt/CMakeLists.txt` had the same PDB deploy step,
+  which would have blocked the first Qt-on-Linux configuration.
 
 - **Two test plugins violated the frozen out-parameter rule.** Both returned
   `PI_E_NOINTERFACE` from `pi_create_instance` without clearing `*out`, which the

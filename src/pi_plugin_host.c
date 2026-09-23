@@ -5,6 +5,15 @@
  * and provides the default IPiHostServices implementation that hosts can
  * hand to plugins.
  */
+/* Linux/glibc 平台层可见性：本文件用到 strdup（POSIX 层）与 syscall（__USE_MISC 层），
+ * 而项目用 -std=c11 编译，会定义 __STRICT_ANSI__，glibc 就把这两层声明挡在 feature
+ * 门后（gcc 16 -std=c11 --pedantic-errors 实测：两者都是 implicit declaration）。
+ * _DEFAULT_SOURCE 同时打开这两层，且必须出现在**任何**系统头之前；MSVC 不认识这个
+ * 宏，定义它没有副作用。 */
+#ifndef _DEFAULT_SOURCE
+#  define _DEFAULT_SOURCE 1
+#endif
+
 #include "piplugin/pi_plugin_host.h"
 #include <stdlib.h>
 #include <string.h>
@@ -99,7 +108,12 @@ PI_EXPORT PiPluginModule* pi_module_load(const char* path)
 #if PI_PLATFORM_WINDOWS
     PiPluginEntryProc entry = (PiPluginEntryProc)GetProcAddress(handle, PI_PLUGIN_ENTRY_NAME);
 #else
-    PiPluginEntryProc entry = (PiPluginEntryProc)dlsym(handle, PI_PLUGIN_ENTRY_NAME);
+    /* POSIX 保证 dlsym 的 void* 可以当函数指针用，但 ISO C 禁止"对象指针 -> 函数
+     * 指针"的直接转换，--pedantic-errors 下是错误（实测 gcc 16 -Wpedantic）。
+     * 逐字节拷贝绕开这条转换规则，是 C 里取 dlsym 结果的标准写法。 */
+    void* symbol = dlsym(handle, PI_PLUGIN_ENTRY_NAME);
+    PiPluginEntryProc entry = NULL;
+    memcpy(&entry, &symbol, sizeof(entry));
 #endif
     if (!entry) {
         snprintf(g_load_error, sizeof(g_load_error),

@@ -47,11 +47,13 @@
 | 平台 | 框架核心 | UI 适配器套件 | UI 嵌入 | 本仓库是否验证过 |
 |---|---|---|---|---|
 | **Windows** | 完整支持 | 完整支持（imgui / Qt） | 完整支持（Win32 子窗口 + flip-model 交换链） | **是** —— `ctest` + 一致性验收 + 像素级缩放回归全绿 |
-| Linux | 预期可编译 | 预期可编译 | **未实现**（X11 XEmbed 属路线图 FUT-01） | **否**（无 CI、无人工验证） |
+| Linux | **CI 证明可编译**（核心 + 宿主 kit，gcc/clang） | 预期可编译（未构建） | **未实现**（X11 XEmbed 属路线图 FUT-01） | **部分** —— CI 的 `linux` job 构建核心与宿主 kit，并让 C++ 层用例在 Linux 上跑绿；插件 DLL 与 headless 宿主尚未非 Windows 构建（见 `docs/todo/platform.md` #3） |
 | macOS | 预期可编译 | 预期可编译 | **未实现**（NSView 属路线图 FUT-02） | **否**（无 CI、无人工验证） |
 
-**不做过度承诺**：v0.x 只有 Windows 是经过自动化验证的平台。"预期可编译"仅表示代码里已按平台
-分支处理（线程身份、动态库加载、符号可见性），**没有任何构建在本仓库跑过**。
+**不做过度承诺**：v0.x 只有 Windows 是经过**完整**自动化验证的平台。Linux 上 CI 目前只做
+核心与宿主 kit 的构建加 C++ 层用例（`.github/workflows/ci.yml` 的 `linux` job）：UI 适配器套件、
+插件 DLL 与 headless 宿主在 Linux 上尚未被构建过，"预期可编译"指的就是这些部分仍停留在
+代码里的平台分支（线程身份、动态库加载、符号可见性）。
 完整声明见 [`docs/design/interface-freeze-review.md`](docs/design/interface-freeze-review.md) 第 5 节。
 
 ## 快速开始

@@ -4,6 +4,17 @@
 # command can be run on a laptop before pushing, and changing the checks is then
 # reviewed like code. This workflow only installs dependencies and builds.
 #
+# Three jobs:
+#   verify - the normal Windows build, then scripts/verify.ps1 (ctest +
+#            conformance harness + FFI examples + format/drift checks).
+#   asan   - the same Windows build with AddressSanitizer compiled in, running
+#            only the non-GUI part of the suite (scripts/verify_asan.ps1). The
+#            GUI cases stay out on purpose: DWM composition and the
+#            input-method stack produce reports that are not ours to fix.
+#   linux  - core + host kits under gcc and clang (W-10), so that "expected to
+#            compile" on Linux is a fact about the core rather than a hope.
+#            See the job for exactly what it does and does not cover.
+#
 # Qt is deliberately off: Qt5 is a local install in this project (see
 # CMakeLists.txt) and the runner has none. imgui comes from Conan as usual, and
 # verify.ps1 discovers which test plugins actually exist, so the conformance
@@ -74,3 +85,130 @@ jobs:
             bin/Debug/*.log
             build/selftest.txt
           if-no-files-found: ignore
+
+  # W-03: the sanitizer track. It is its own job because it needs a different
+  # build of the same tree: scripts/verify_asan.ps1 reconfigures this checkout
+  # with /fsanitize=address and then runs the non-GUI cases only.
+  #
+  # -SkipRestore because nobody inherits this tree - the restore rebuild would
+  # only spend minutes putting the runner back the way it needs to be for a
+  # laptop, and ci.yml's other job is what checks the uninstrumented build.
+  #
+  # A failure here is reported as an artifact as well: verify_asan.ps1 tees ctest
+  # to build/verify-asan.log, and an ASan report is the whole point of the job.
+  asan:
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Install conan
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "conan>=2.0,<3"
+
+      - name: Conan profile
+        run: conan profile detect --force
+
+      - name: Conan install
+        run: >-
+          conan install . --build=missing -s build_type=Debug
+          -o PI_BUILD_ADAPTER_QT=False
+          -o PI_BUILD_TEST_HOST_QT=False
+          -o PI_BUILD_TEST_PLUGIN=False
+
+      - name: Configure
+        run: cmake --preset conan-default
+
+      - name: AddressSanitizer
+        run: pwsh -NoProfile -File scripts/verify_asan.ps1 -SkipRestore
+
+      - name: Upload the ASan report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: asan-log
+          path: build/verify-asan.log
+          if-no-files-found: ignore
+
+  # W-10: prove on Linux what the README used to call "expected to compile".
+  #
+  # No conan install here, and that is not an omission: with Qt and imgui off the
+  # remaining targets have no third-party dependency at all, so the configure is
+  # plain CMake. No -G either - the default generator is what the configuration
+  # below was verified with, and pulling in ninja buys nothing for a build this
+  # size. (Humans on a non-Windows machine have the repo preset `default-unix`.)
+  #
+  # What this job can and cannot cover today, all of it measured on a Linux box
+  # with gcc 16 and clang 22 before the job was written:
+  #
+  #   builds and runs  core (piplugin), host kits (piplugin_host, piplugin_events),
+  #                    unit_cpp - which is executed directly, not through ctest
+  #   does not build   unit / unit_threads / the headless host: those translation
+  #                    units call nanosleep() without the glibc feature macros,
+  #                    which gcc >= 14 rejects as an implicit declaration
+  #   does not build   every plugin: all plugin targets sit behind `if(NOT WIN32)`
+  #
+  # Those gaps are in tests/ and in the test hosts, which this line of work does
+  # not own - they are recorded in docs/todo/platform.md #3 with the fix, and
+  # this job is deliberately NOT papered over with an extra -D to make them
+  # disappear. A green run here therefore means exactly "the core and the host
+  # kits compile and the C++ layer passes on Linux", which is what the README's
+  # Linux row now claims.
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # gcc and clang both, because "compiles on Linux" is a claim about both
+      # (platform.md #4). Each round is its own build tree; they share the deploy
+      # directory, so each binary is run right after the round that built it.
+      - name: Build and run under gcc and clang
+        shell: bash
+        run: |
+          set -euo pipefail
+          for pair in "gcc:g++" "clang:clang++"; do
+            cc="${pair%%:*}"
+            cxx="${pair##*:}"
+            echo "::group::$cc"
+            "$cc" --version | head -1
+
+            cmake -S . -B "build-$cc" \
+              -DCMAKE_BUILD_TYPE=Debug \
+              -DCMAKE_C_COMPILER="$cc" \
+              -DCMAKE_CXX_COMPILER="$cxx" \
+              -DPI_BUILD_ADAPTERS=OFF \
+              -DPI_BUILD_HOST_KIT_QT=OFF \
+              -DPI_BUILD_HOST_KIT_DX11=OFF \
+              -DPI_BUILD_EXAMPLES=OFF \
+              -DPI_BUILD_TEST_HOST=OFF \
+              -DPI_BUILD_TEST_HOST_QT=OFF \
+              -DPI_BUILD_TEST_HOST_MULTI=OFF \
+              -DPI_BUILD_TEST_HOST_EVENTS=OFF \
+              -DPI_BUILD_TEST_PLUGIN=OFF \
+              -DPI_BUILD_TEST_PLUGIN_IMGUI=OFF \
+              -DPI_BUILD_TEST_PLUGIN_SERVICE=OFF \
+              -DPI_BUILD_TEST_PLUGIN_BADVERSION=OFF \
+              -DPI_BUILD_TEST_PLUGIN_GUIREQUIRED=OFF \
+              -DPI_BUILD_TEST_PLUGIN_EVENTS=OFF \
+              -DPI_BUILD_UNIT_TESTS=OFF \
+              -DPI_BUILD_UNIT_CPP_TESTS=ON \
+              -DPI_BUILD_HEADLESS_HOST=OFF
+
+            cmake --build "build-$cc" --parallel
+
+            # Exit code is the verdict: the binary prints "RESULT: PASS" and its
+            # own check/failure counts (52 checks today).
+            ./bin/Debug/pi_unit_cpp_tests
+
+            # bin/Debug holds what this round deployed; the next round overwrites it.
+            echo "deployed: $(ls -1 bin/Debug | tr '\n' ' ')"
+            echo "::endgroup::"
+          done

@@ -1,0 +1,65 @@
+{
+  "_comment": [
+    "Feature -> forbidden-claim table for the documentation drift check in",
+    "scripts/verify.ps1 (roadmap W-13).",
+    "",
+    "A claim is reported only when the feature it contradicts really exists in",
+    "the repository, so this table cannot rot into a list of stale assertions:",
+    "the check is driven by what the checkout contains, not by what the table",
+    "says about it.",
+    "",
+    "  feature   path that must exist for the claims below to be illegal.",
+    "  claims    substrings that must then not appear in a live document.",
+    "  context   optional. The claim only counts on a line that also contains",
+    "            one of these strings, for platform-specific wording that is",
+    "            still true for a different platform one line further down.",
+    "  note      what to write instead; printed next to the finding.",
+    "",
+    "A claim inside a section whose heading carries a done marker is excused.",
+    "The todo files keep the original wording of a finished item underneath its",
+    "status note, and that preserved text is history rather than a claim about",
+    "today - that is the one place this repository deliberately talks about the",
+    "past. A section is excused from its heading down to the next heading of the",
+    "same or a higher level. Anything else can be excused line by line with",
+    "ignore_marker.",
+    "",
+    "Keep this file small. A rule belongs here only when the paired feature is",
+    "something the repository can check for itself."
+  ],
+  "ignore_marker": "<!-- doc-drift: ignore -->",
+  "done_markers": ["已完成", "已落地", "已达成", "已修复"],
+  "exclude": ["CHANGELOG.md"],
+  "rules": [
+    {
+      "feature": "tests/unit/pi_unit_tests.c",
+      "claims": ["没有单元测试", "无单元测试", "缺少单元测试", "no unit tests"],
+      "note": "tests/unit/pi_unit_tests.c exists; describe what the suite covers instead"
+    },
+    {
+      "feature": "scripts/run_selftest.ps1",
+      "claims": ["没有自动化脚本", "无自动化脚本", "缺少自动化脚本", "no automated script"],
+      "note": "scripts/run_selftest.ps1 exists; docs/design/conformance.md section 7 has the split"
+    },
+    {
+      "feature": ".github/workflows/ci.yml",
+      "claims": ["无 CI 配置", "没有 CI 配置", "缺少 CI 配置", "no CI configuration"],
+      "note": ".github/workflows/ci.yml runs the checks on Windows"
+    },
+    {
+      "feature": ".github/workflows/ci.yml",
+      "claims": ["无 CI、无人工验证", "no CI, never run by hand"],
+      "context": ["Linux"],
+      "note": "the linux job in .github/workflows/ci.yml builds the core and the host kits on every push; say what it covers and what it does not"
+    },
+    {
+      "feature": ".github/workflows/ci.yml",
+      "claims": ["没有任何构建在本仓库跑过", "no build of this repository has ever run there"],
+      "note": "the linux job in .github/workflows/ci.yml is a build of this repository, on Linux, in CI"
+    },
+    {
+      "feature": "scripts/verify_asan.ps1",
+      "claims": ["sanitizer 跑道仍未建立", "没有 sanitizer 跑道", "无 sanitizer 跑道", "没有任何 sanitizer"],
+      "note": "scripts/verify_asan.ps1 is the sanitizer track"
+    }
+  ]
+}

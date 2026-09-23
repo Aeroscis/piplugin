@@ -9,6 +9,10 @@
 #   2. conformance harness  -- real plugin lifecycle + resize round trip (needs a GUI session)
 #   3. FFI examples         -- the C ABI consumed from Python / Rust / C# (skips missing toolchains)
 #   4. clang-format drift   -- reported, NOT enforced (see the note at check 4)
+#   5. documentation drift  -- the repository must not contradict itself (see check 5)
+#
+# The sanitizer track is not a check here: it needs its own instrumented build of
+# the same tree, so it is a separate entry point, scripts/verify_asan.ps1.
 #
 # Exit code 0 = every enforced check passed.
 #
@@ -23,7 +27,8 @@ param(
     [int]$Cycles      = 2,
     [switch]$SkipGui,
     [switch]$SkipFfi,
-    [switch]$SkipFormat
+    [switch]$SkipFormat,
+    [switch]$SkipDocDrift
 )
 
 $ErrorActionPreference = "Stop"
@@ -48,7 +53,7 @@ function Write-Section([string]$text) {
 # ---------------------------------------------------------------------------
 # 1. ctest: the non-GUI regression (unit suite + headless smoke + version gate)
 # ---------------------------------------------------------------------------
-Write-Section "1/4  ctest (-C $Config)"
+Write-Section "1/5  ctest (-C $Config)"
 & ctest --test-dir $BuildDir -C $Config --output-on-failure
 if ($LASTEXITCODE -ne 0) {
     $failures += "ctest"
@@ -68,7 +73,7 @@ if ($LASTEXITCODE -ne 0) {
 #    docs/design/adapter-spec.md works with an official host" (ECO-01), and it
 #    costs one more cycle per plugin.
 # ---------------------------------------------------------------------------
-Write-Section "2/4  conformance harness"
+Write-Section "2/5  conformance harness"
 $available = @()
 foreach ($name in 'pi_test_plugin_qt.dll', 'pi_test_plugin_imgui.dll',
                   'pi_example_plugin_imgui.dll', 'pi_example_plugin_qt.dll',
@@ -98,7 +103,7 @@ if ($SkipGui) {
 #    and skips a language whose toolchain is missing, so a machine without cargo
 #    still checks the other two. A toolchain that IS present must pass.
 # ---------------------------------------------------------------------------
-Write-Section "3/4  FFI examples (python / rust / c#)"
+Write-Section "3/5  FFI examples (python / rust / c#)"
 if ($SkipFfi) {
     Write-Host "SKIP - -SkipFfi was given" -ForegroundColor Yellow
 } else {
@@ -119,7 +124,7 @@ if ($SkipFfi) {
 #    only reports and never fails the run. To enforce it: add the drifted files
 #    to $failures, reformat first.
 # ---------------------------------------------------------------------------
-Write-Section "4/4  clang-format drift (informational)"
+Write-Section "4/5  clang-format drift (informational)"
 if ($SkipFormat) {
     Write-Host "SKIP - -SkipFormat was given" -ForegroundColor Yellow
 } elseif (-not (Get-Command clang-format -ErrorAction SilentlyContinue)) {
@@ -134,9 +139,123 @@ if ($SkipFormat) {
     }
     Write-Host ("checked {0} file(s); {1} would be reformatted" -f $files.Count, $drifted.Count)
     if ($drifted.Count -gt 0) {
+        # The decision material for "report or enforce" (W-13) is the list itself,
+        # so print it rather than only a count: enforcing this check starts with
+        # reformatting exactly these files, and the size of that diff is what the
+        # maintainer has to weigh. Kept as a report until that call is made.
+        $shown = 0
+        foreach ($f in $drifted) {
+            if ($shown -ge 40) {
+                Write-Host ("  ... and {0} more" -f ($drifted.Count - $shown))
+                break
+            }
+            Write-Host ("  would reformat: {0}" -f $f)
+            $shown++
+        }
         Write-Host "::warning::clang-format drift in $($drifted.Count)/$($files.Count) file(s); run 'clang-format -i' on them and then enforce this check"
     } else {
         Write-Host "clang-format: clean" -ForegroundColor Green
+    }
+}
+
+# ---------------------------------------------------------------------------
+# 5. documentation drift -- the repository must not contradict itself.
+#    The rules are data, not code: scripts/doc_drift_rules.json pairs a feature
+#    of the checkout with statements that stop being true once that feature
+#    exists ("tests/unit/pi_unit_tests.c exists" -> nothing may still say "there
+#    are no unit tests"). Enforced: a wrong sentence in a document is a defect
+#    like any other, and because a rule only fires while its feature really is in
+#    the tree, the table cannot rot into a list of assertions about a repository
+#    that moved on.
+#
+#    Documents and rules are read as UTF-8 explicitly - both are Chinese, and
+#    Get-Content's default encoding would mangle the patterns on Windows
+#    PowerShell 5.1.
+# ---------------------------------------------------------------------------
+Write-Section "5/5  documentation drift (feature -> forbidden claim)"
+if ($SkipDocDrift) {
+    Write-Host "SKIP - -SkipDocDrift was given" -ForegroundColor Yellow
+} else {
+    $rulesFile = Join-Path $PSScriptRoot "doc_drift_rules.json"
+    if (-not (Test-Path $rulesFile)) {
+        $failures += "documentation drift"
+        Write-Host ("FAIL - {0} is missing" -f $rulesFile) -ForegroundColor Red
+    } else {
+        $rules       = Get-Content -Path $rulesFile -Raw -Encoding UTF8 | ConvertFrom-Json
+        $doneMarkers = @($rules.done_markers)
+        $excluded    = @($rules.exclude)
+        $ignoreMark  = [string]$rules.ignore_marker
+        $documents   = @(git -C $repoRoot ls-files '*.md')
+        $findings    = @()
+        $scanned     = 0
+
+        foreach ($file in $documents) {
+            if ($excluded -contains $file) { continue }
+            $lines = @(Get-Content -Path (Join-Path $repoRoot $file) -Encoding UTF8)
+            $scanned++
+            # Excuse state per heading level. A section whose heading carries a
+            # done marker is excused - that is where the todo files keep the
+            # original wording of a finished item - and the excuse is inherited
+            # by deeper headings underneath it.
+            $excused = @($false, $false, $false, $false, $false, $false)
+            for ($i = 0; $i -lt $lines.Count; $i++) {
+                $line     = $lines[$i]
+                $previous = if ($i -gt 0) { $lines[$i - 1] } else { "" }
+
+                if ($line -match '^(#{1,6})\s') {
+                    $level  = $Matches[1].Length
+                    $isDone = $false
+                    foreach ($marker in $doneMarkers) {
+                        if ($line.Contains($marker)) { $isDone = $true; break }
+                    }
+                    $excused[$level - 1] = $isDone
+                    for ($j = $level; $j -lt 6; $j++) { $excused[$j] = $false }
+                    continue
+                }
+                if ($ignoreMark -and ($line.Contains($ignoreMark) -or $previous.Contains($ignoreMark))) { continue }
+                if ($excused -contains $true) { continue }
+
+                foreach ($rule in @($rules.rules)) {
+                    if (-not (Test-Path (Join-Path $repoRoot $rule.feature))) { continue }
+                    $context = @($rule.context | Where-Object { $_ })
+                    if ($context.Count -gt 0) {
+                        $inContext = $false
+                        foreach ($word in $context) {
+                            if ($line.Contains($word)) { $inContext = $true; break }
+                        }
+                        if (-not $inContext) { continue }
+                    }
+                    foreach ($claim in @($rule.claims)) {
+                        if ($line.Contains($claim)) {
+                            $findings += [pscustomobject]@{
+                                File    = $file
+                                Line    = $i + 1
+                                Claim   = $claim
+                                Feature = $rule.feature
+                                Note    = $rule.note
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if ($scanned -eq 0) {
+            $failures += "documentation drift"
+            Write-Host "FAIL - no markdown document found to check (is this a git checkout?)" -ForegroundColor Red
+        } elseif ($findings.Count -gt 0) {
+            $failures += "documentation drift"
+            Write-Host ("{0} claim(s) the repository contradicts:" -f $findings.Count) -ForegroundColor Red
+            foreach ($finding in $findings) {
+                Write-Host ("  {0}:{1}: says '{2}', but {3} exists" -f `
+                    $finding.File, $finding.Line, $finding.Claim, $finding.Feature) -ForegroundColor Red
+                Write-Host ("      {0}" -f $finding.Note)
+            }
+            Write-Host "documentation drift: FAIL" -ForegroundColor Red
+        } else {
+            Write-Host ("{0} document(s) checked; no claim contradicted by the repository" -f $scanned)
+            Write-Host "documentation drift: clean" -ForegroundColor Green
+        }
     }
 }
 

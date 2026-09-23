@@ -116,17 +116,31 @@ install(TARGETS ${TARGET_NAME}
 # ------- 部署 dll 到开发目录 bin/<CONFIG>（供可执行程序同目录运行；.lib 已随构建产出在 lib/） -------------
 # 用 POST_BUILD 而非绝对安装目标：构建该 target 即刷新 bin/<CONFIG>，不依赖 install 链，
 # 也不会在 install 阶段被前面（如 ${CMAKE_INSTALL_PREFIX}/lib/...）的失败连带跳过。
-# 注意 1：$<TARGET_PDB_FILE> 在 Release/RelWithDebInfo 下为空，必须用 $<IF:> 包一层，
+# 注意 1：$<TARGET_PDB_FILE> 只有 MSVC 链接器支持，而且它**不受 if(WIN32) 保护**——
+#         生成期就会在其它平台上直接报 "TARGET_PDB_FILE is not supported by the
+#         target linker"，所以 Windows 与其它平台各走一条部署命令（Linux 上没有
+#         PDB 可拷，只用 copy_if_different 把 .so 放进 bin/<CONFIG>）。
+# 注意 2：$<TARGET_PDB_FILE> 在 Release/RelWithDebInfo 下为空，必须用 $<IF:> 包一层，
 #         否则 cmake -E copy 会因源文件不存在而让整个构建失败（MSB3073）。
-# 注意 2：目标目录可能尚不存在，file(INSTALL) 与 copy 都不会递归建目录，故先 make_directory。
-add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "$<TARGET_FILE:${TARGET_NAME}>"
-        "$<IF:$<CONFIG:Debug>,$<TARGET_PDB_FILE:${TARGET_NAME}>,>"
-        "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
-    COMMENT "Deploy ${TARGET_NAME} -> ${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
-)
+# 注意 3：目标目录可能尚不存在，file(INSTALL) 与 copy 都不会递归建目录，故先 make_directory。
+if(WIN32)
+    add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:${TARGET_NAME}>"
+            "$<IF:$<CONFIG:Debug>,$<TARGET_PDB_FILE:${TARGET_NAME}>,>"
+            "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
+        COMMENT "Deploy ${TARGET_NAME} -> ${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
+    )
+else()
+    add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:${TARGET_NAME}>"
+            "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
+        COMMENT "Deploy ${TARGET_NAME} -> ${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
+    )
+endif()
 
 # ------- 生成并导出 CMake targets 文件 -------
 install(EXPORT ${FULL_NAME}Targets

@@ -50,12 +50,15 @@ Existing plugin schemes each tie you to one thing:
 | Platform | Core | UI adapter kits | UI embedding | Verified in this repo |
 |---|---|---|---|---|
 | **Windows** | full | full (imgui / Qt) | full (Win32 child window + flip-model swap chain) | **yes** — `ctest`, the conformance harness and the pixel-level resize regression all pass |
-| Linux | expected to compile | expected to compile | **not implemented** (X11 XEmbed is roadmap FUT-01) | **no** (no CI, never run by hand) |
+| Linux | **proven by CI** (core + host kits, gcc/clang) | expected to compile (never built) | **not implemented** (X11 XEmbed is roadmap FUT-01) | **partly** — the CI `linux` job builds the core and the host kits and runs the C++ layer on Linux; plugin DLLs and the headless host are not built off Windows yet (`docs/todo/platform.md` #3) |
 | macOS | expected to compile | expected to compile | **not implemented** (NSView is roadmap FUT-02) | **no** (no CI, never run by hand) |
 
-**No over-promising**: under v0.x only Windows is verified by automation. "Expected to compile"
-means the code carries the platform branches it needs (thread identity, dynamic loading, symbol
-visibility) and nothing more — no build of this repository has ever run there. The full statement is
+**No over-promising**: under v0.x only Windows is verified by automation *in full*. On Linux CI
+builds the core and the host kits and runs the C++ layer (the `linux` job in
+`.github/workflows/ci.yml`); the UI adapter kits, the plugin DLLs and the headless host have
+never been built there, and "expected to compile" is exactly about those parts — the code
+carries the platform branches it needs (thread identity, dynamic loading, symbol visibility)
+and nothing more. The full statement is
 in [`design/interface-freeze-review.md`](design/interface-freeze-review.md), section 5.
 
 ## Getting started

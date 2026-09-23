@@ -26,14 +26,25 @@
 > 注意：Qt 目前是本地安装（非 conan 依赖），套件打包时需处理 Qt 依赖传播
 > （要么要求消费方自行 find Qt，要么用 conan `qt` 包替代——见第 4 条）。
 
-## 2. CI 流水线 [P1] —— Windows 已完成（roadmap BLK-05）；Linux job 已上收（W-10）
+## 2. CI 流水线 [P1] —— 已完成（roadmap BLK-05；W-03、W-10 补齐另两条跑道）
 
-> **状态**：Windows 部分已落地：`.github/workflows/ci.yml` 是薄壳（装依赖 +
-> 构建），检查全部交给 `scripts/verify.ps1`（ctest + 一致性验收 + clang-format
-> 漂移报告），跑在 GitHub 镜像仓库上（双仓分工见 README）。原建议里的
-> **Linux job 没做**——已上收为下一波工作 **W-10**（`docs/todo/parallel-improvements.md`
-> 派工板，CI/脚本线）：ubuntu + gcc/clang + conan、Qt/imgui 关闭，把 README
-> 的「预期可编译」变成「CI 证明可编译」。
+> **状态**：`.github/workflows/ci.yml` 仍是薄壳（装依赖 + 构建），检查交给脚本；
+> 现在跑在 GitHub 镜像仓库上的是**三个 job**（双仓分工见 README）：
+> 1. `verify`（Windows，BLK-05）：`scripts/verify.ps1` —— ctest + 一致性验收 +
+>    FFI 示例 + clang-format 漂移报告 + **文档漂移检查**（W-13 新增第 5 项）；
+> 2. `asan`（Windows，W-03）：`scripts/verify_asan.ps1` —— 同一棵树就地重配
+>    `/fsanitize=address`，只跑非 GUI 子集（非 GUI 的理由与实测见 `tests.md` #3）；
+> 3. `linux`（ubuntu，W-10）：**gcc 与 clang 各一轮**，不用 conan（Qt/imgui 关掉后
+>    没有任何第三方依赖），构建核心 + 宿主 kit 并直接运行 `unit_cpp`
+>    （`checks=52 failures=0`）。job 里逐条写明了它**不**覆盖什么：`unit` /
+>    `unit_threads` / headless 宿主因 `nanosleep` 缺 glibc 平台层宏在 Linux 上编不过、
+>    所有插件目标都在 `if(NOT WIN32)` 后面、`add_test` 的 COMMAND 硬编码 `.exe`
+>    使 ctest 在 Linux 上无法启动用例 —— 三处都在 `tests/` 里（见 `platform.md` #3），
+>    有意**不**用额外 `-D` 把它们糊过去。
+>
+> 结论口径：Linux 行现在是「**核心与宿主 kit 由 CI 证明可编译**」，
+> 不是「Linux 全面可编译」。原建议里的 Qt 5.15.2 那条仍不成立（Qt 是本地安装，
+> runner 上没有，CI 里 Qt 目标整批自动禁用）。
 
 无 CI 配置。建议建立（GitHub Actions / Gitee Go 均可）：
 - Windows：VS2022 + conan + Qt 5.15.2，跑完整构建与测试宿主自动验证；

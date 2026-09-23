@@ -79,14 +79,27 @@ install(EXPORT pipluginQtAdapterTargets
 # ------- 部署套件 DLL 到开发目录 bin/<CONFIG>（构建该 target 即刷新） -------------
 # SHARED 之后，任何加载 Qt 插件的可执行程序都必须能找到这个 DLL；本仓库所有
 # 测试宿主都在 bin/<CONFIG> 里运行（插件 DLL 也在那里），故与核心库同一做法。
-add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "$<TARGET_FILE:${TARGET_NAME}>"
-        "$<IF:$<CONFIG:Debug>,$<TARGET_PDB_FILE:${TARGET_NAME}>,>"
-        "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
-    COMMENT "Deploy ${TARGET_NAME} -> ${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
-)
+# $<TARGET_PDB_FILE> 只有 MSVC 链接器支持且不受 if(WIN32) 保护（生成期即报
+# "TARGET_PDB_FILE is not supported by the target linker"），故按平台分两条命令 ——
+# 与 src/piplugin/CMakeLists.txt 同因同解（W-10 在 Linux 上实测到）。
+if(WIN32)
+    add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:${TARGET_NAME}>"
+            "$<IF:$<CONFIG:Debug>,$<TARGET_PDB_FILE:${TARGET_NAME}>,>"
+            "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
+        COMMENT "Deploy ${TARGET_NAME} -> ${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
+    )
+else()
+    add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:${TARGET_NAME}>"
+            "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
+        COMMENT "Deploy ${TARGET_NAME} -> ${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
+    )
+endif()
 
 # ------- Windows 版本资源（W-07） -------
 # 这个套件是 SHARED（APP-08），调用即生效：DLL 属性页「详细信息」显示 0.4.0、
