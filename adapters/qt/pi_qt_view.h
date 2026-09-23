@@ -66,14 +66,14 @@
  * CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS (see interface-freeze-review.md F1, where
  * that switch leaked CRT internals out of the core DLL).
  *
- * PIPLUGIN_QT_BUILDING is defined for the kit's own translation units only;
+ * PI_PLUGIN_QT_BUILDING is defined for the kit's own translation units only;
  * consumers see dllimport. Taking the address of a dllimport function is why
  * plugin code must not put framework functions straight into a vtable (the
  * C4232 note in docs/design/interfaces.md 5.3) - this header is not a vtable,
  * so the usual call sites are unaffected.
  * -------------------------------------------------------------------------- */
 #if defined(_WIN32) || defined(_WIN64)
-#  ifdef PIPLUGIN_QT_BUILDING
+#  ifdef PI_PLUGIN_QT_BUILDING
 #    define PI_QT_API __declspec(dllexport)
 #  else
 #    define PI_QT_API __declspec(dllimport)

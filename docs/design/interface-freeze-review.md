@@ -163,7 +163,7 @@ pi_host_services_create_default, pi_host_default_set_ui_window, pi_host_create_p
 > 这一条**不是**纯新增：`PiPluginDescriptor` 末尾追加了 `properties` /
 > `property_count`，是真正的**二进制布局变化**。0.x 允许（1.0 才承诺冻结），
 > 代价与处理方式：
-> - `PIPLUGIN_API_VERSION` minor 2 → 3（`tests/unit` 的版本 tripwire 因此失败过一次，
+> - `PI_PLUGIN_API_VERSION` minor 2 → 3（`tests/unit` 的版本 tripwire 因此失败过一次，
 >   那是设计如此：它是提醒同步这里与 CHANGELOG 的机制）；
 > - 版本门禁接受"更老的插件"（同 major、minor 更低），而老插件的结构体更短，
 >   所以 `pi_descriptor_find_property()` 用插件声明的 `api_version` 判布局

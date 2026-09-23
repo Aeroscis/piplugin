@@ -9,9 +9,9 @@
  */
 #include "piplugin/pi_plugin.h"
 
-/* 比当前 PIPLUGIN_API_VERSION 高一个 major：major 不同 = ABI 不兼容。
+/* 比当前 PI_PLUGIN_API_VERSION 高一个 major：major 不同 = ABI 不兼容。
  * 用 MAKE 宏表达，避免手写十六进制。 */
-#define BADVERSION_API_VERSION PIPLUGIN_API_VERSION_MAKE(2, 0)
+#define BADVERSION_API_VERSION PI_PLUGIN_API_VERSION_MAKE(2, 0)
 
 /* 完整随机的 128 位 UUID 风格 class GUID（不是框架那种小整数编号；
  * 判定按完整 128 位比较，见 docs/design/interfaces.md 5.1） */

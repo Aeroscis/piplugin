@@ -15,7 +15,7 @@ Semantic Versioning, in its pre-1.0 reading:
   [docs/design/interfaces.md](docs/design/interfaces.md) stops moving. From that
   point every vtbl is frozen: interfaces can only be added, never changed.
 
-`PIPLUGIN_API_VERSION` (`include/piplugin/pi_plugin_types.h`) carries the same
+`PI_PLUGIN_API_VERSION` (`include/piplugin/pi_plugin_types.h`) carries the same
 `major.minor`. It is what a host compares against a plugin's `api_version` before
 instantiating it, so bumping it here is also the statement: *plugins built
 against this version are accepted by hosts of this version and newer, within the
@@ -26,7 +26,20 @@ A release is one commit on `main` that bumps the version in `CMakeLists.txt` and
 
 ## [Unreleased]
 
+Nothing yet. Add entries here as work lands; they move under the next version
+when it is cut.
+
+## [0.4.0] - 2026-09-23
+
 ### Changed
+
+- **Source-level rename: the `PIPLUGIN_*` macros are now `PI_PLUGIN_*`.** The
+  framework's public macros all carry the same `PI_` prefix as the rest of the
+  library family (`PI_PLUGIN_ENTRY_DECL`, `PI_PLUGIN_EXPORT`, `PI_PLUGIN_API_VERSION`,
+  `PI_PLUGIN_BUILDING`, `PI_PLUGIN_QT_BUILDING`), so there is one prefix rule to
+  remember instead of two. Binaries are unaffected (a macro name is not part of the
+  ABI), but plugin sources must be updated; the build switches keep their
+  deliberate `PI_BUILD_*` group prefix.
 
 - **`PiPluginDescriptor` gained free-form metadata (APP-04) - a binary layout
   change.** Capabilities answer "what can this plugin do in the framework's
@@ -34,16 +47,14 @@ A release is one commit on `main` that bumps the version in `CMakeLists.txt` and
   homepage) had nowhere to go and were being squeezed into GUIDs. The struct now
   ends with `properties` / `property_count` (`PiPluginProperty { key, value }`,
   UTF-8, `pi.` prefix reserved for the framework) and
-  `pi_descriptor_find_property(desc, key)` reads it. `PIPLUGIN_API_VERSION` goes
+  `pi_descriptor_find_property(desc, key)` reads it. `PI_PLUGIN_API_VERSION` goes
   0.2 -> 0.3 because of the layout change (the unit suite's version tripwire
   fails on that bump by design - it is the reminder to update this file and
   interfaces.md 1.5). One subtlety worth knowing: the version gate REJECTS a
   plugin newer than the host but ACCEPTS an older one (same major), and an older
   module's descriptor is shorter - so `pi_descriptor_find_property()` decides the
   layout from the plugin's own `api_version` (`minor < 3` means "no properties")
-  instead of reading past the end of the object. The release version stays 0.2.0
-  until the next 0.x is cut; API and release version realign then (the events
-  interfaces in the entry below moved the API on to 0.4).
+  instead of reading past the end of the object.
 - **The Qt adapter kit is SHARED (APP-08).** `piplugin_qt` owns process-level
   state - the single `QApplication` and the live-view registry - so as a static
   library every Qt plugin DLL carried its own copy: a process that loaded two of
@@ -98,7 +109,7 @@ A release is one commit on `main` that bumps the version in `CMakeLists.txt` and
   its sink, a broadcast reaches the plugin's own subscription - and pins the
   no-reentrancy pump rule, strict unsubscribe semantics, the owner drop on unload,
   and the degradation path (a plugin with no sink loads fine, delivery returns
-  `PI_E_NOINTERFACE`). `PIPLUGIN_API_VERSION` 0.3 -> 0.4 (new interfaces; the unit
+  `PI_E_NOINTERFACE`). `PI_PLUGIN_API_VERSION` 0.3 -> 0.4 (new interfaces; the unit
   tripwire fails on that by design). Design and the D1-D9 decisions:
   `docs/design/events.md`.
 - **The conanfile's switch tree is complete again.** `PI_BUILD_HOST_KIT_EVENTS`,

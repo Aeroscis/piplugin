@@ -159,7 +159,7 @@ Community adapters and plugins are welcome in this table; what delivery has to s
 - Currently **0.x**: the API can still move. A `y` release only fixes; an `x` release may change
   behaviour or the API, and every one of those changes gets a line in [`CHANGELOG.md`](../CHANGELOG.md).
 - `1.0.0` is reserved for the moment the ABI is frozen: from then on vtables are only ever added to.
-- A plugin declares `PIPLUGIN_API_VERSION` in its descriptor and the host gates on it before
+- A plugin declares `PI_PLUGIN_API_VERSION` in its descriptor and the host gates on it before
   instantiating. The rule is in [`design/interfaces.md`](design/interfaces.md), section 1.5.
 
 ## License and third parties

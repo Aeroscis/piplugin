@@ -217,7 +217,7 @@ pi_event_deliver({type=REQUEST,
 
 - **不改任何现有 vtbl**（G4）：`IPiEventSink` / `IPiHostEvents` 是两个全新接口；
 - **数据面**：`PiEvent` 是新类型，不动 `PiPluginDescriptor`；
-- **版本**：按 pre-1.0 政策，新增接口 = minor 前进一位 → `PIPLUGIN_API_VERSION` 0.3 → **0.4**
+- **版本**：按 pre-1.0 政策，新增接口 = minor 前进一位 → `PI_PLUGIN_API_VERSION` 0.3 → **0.4**
   （0.3 已被 APP-04 的 descriptor 追加占用）；单测的版本 tripwire 会失败一次（设计如此）；
 - **涉及**（预估）：`include/piplugin/pi_plugin_events.h`（新）、
   `include/piplugin/pi_plugin.h`（加一行 include）、`src/pi_plugin_unknown.c`（两个新 IID）、

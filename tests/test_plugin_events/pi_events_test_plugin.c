@@ -417,7 +417,7 @@ PI_PLUGIN_ENTRY_DECL
         s_desc.vendor           = "piplugin";
         s_desc.version          = "1.0.0";
         s_desc.category         = "Test/Events";
-        s_desc.api_version      = PIPLUGIN_API_VERSION;
+        s_desc.api_version      = PI_PLUGIN_API_VERSION;
         s_desc.capabilities     = s_caps;
         s_desc.capability_count = 2;
 

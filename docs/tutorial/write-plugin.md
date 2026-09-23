@@ -40,7 +40,7 @@ public:
         m_descriptor.vendor = "Me";
         m_descriptor.version = "1.0.0";
         m_descriptor.category = "Demo";
-        m_descriptor.api_version = PIPLUGIN_API_VERSION;
+        m_descriptor.api_version = PI_PLUGIN_API_VERSION;
 
         // 能力声明（LV2 风格）：提供视图，可选使用宿主 GUI
         m_capabilities[0] = { PI_IID_PLUGIN_VIEW, PI_CAP_PROVIDES };

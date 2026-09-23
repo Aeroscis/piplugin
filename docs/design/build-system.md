@@ -14,7 +14,7 @@
 ```python
 class PiPluginConan(ConanFile):
     name = "piplugin"
-    version = "0.2.0"
+    version = "0.4.0"
     settings = "os", "compiler", "build_type", "arch"
     # 开关树：选项与 CMake 缓存选项同名（PI_BUILD_*），generate() 整批转发给 CMake
     options = {
@@ -62,7 +62,7 @@ cmake --build --preset conan-release
 
 ```cmake
 include(${CMAKE_CURRENT_LIST_DIR}/cmake/pi/pi.cmake)   # 引入 pi 模块
-project(piplugin VERSION 0.2.0 LANGUAGES C CXX)
+project(piplugin VERSION 0.4.0 LANGUAGES C CXX)
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     pi_init_glob_proj(CXX 17 C 11 REQUIRED)   # 顶层工程才做全局初始化

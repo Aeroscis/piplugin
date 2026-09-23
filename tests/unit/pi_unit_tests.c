@@ -158,7 +158,7 @@ static void TestDescriptorProperties(void)
     props[1].key = "com.example.blank";  props[1].value = "";          /* 空值合法 */
     props[2].key = "UTF8.\xE9\x94\xAE";  props[2].value = "\xE5\x80\xBC"; /* UTF-8 键与值 */
 
-    desc.api_version = PIPLUGIN_API_VERSION;
+    desc.api_version = PI_PLUGIN_API_VERSION;
 
     /* 0.2 时代的 descriptor（memset 出来的：没有 properties）要安全返回 NULL ——
      * 这也正是"追加密钥对是**追加**字段"的意义：老代码零初始化即为"没有元数据"。 */
@@ -184,7 +184,7 @@ static void TestDescriptorProperties(void)
      * （版本门禁接受更老的插件，所以这件事只能在这里判。） */
     {
         PiPluginDescriptor old_layout = desc;
-        old_layout.api_version = PIPLUGIN_API_VERSION_MAKE(0, 2);
+        old_layout.api_version = PI_PLUGIN_API_VERSION_MAKE(0, 2);
         CHECK(pi_descriptor_find_property(&old_layout, "com.example.kind") == NULL);
         old_layout.api_version = 0;              /* 完全没声明版本 */
         CHECK(pi_descriptor_find_property(&old_layout, "com.example.kind") == NULL);
@@ -205,7 +205,7 @@ static void TestDescriptorProperties(void)
         memset(rows, 0, sizeof(rows));
         rows[0].key = NULL;      rows[0].value = "ignored";
         rows[1].key = "com.x.k"; rows[1].value = "v";
-        d.api_version = PIPLUGIN_API_VERSION;
+        d.api_version = PI_PLUGIN_API_VERSION;
         d.properties = rows;
         d.property_count = 2;
         CHECK(pi_descriptor_find_property(&d, "com.x.k") != NULL);
@@ -220,7 +220,7 @@ static void TestDescriptorProperties(void)
         memset(rows, 0, sizeof(rows));
         rows[0].key = "k"; rows[0].value = "first";
         rows[1].key = "k"; rows[1].value = "second";
-        d.api_version = PIPLUGIN_API_VERSION;
+        d.api_version = PI_PLUGIN_API_VERSION;
         d.properties = rows;
         d.property_count = 2;
         CHECK(strcmp(pi_descriptor_find_property(&d, "k"), "first") == 0);
@@ -342,44 +342,44 @@ static void TestApiVersion(void)
     /* 当前 API 版本的 tripwire：改版本号时这里会失败，提醒同步
      * CHANGELOG.md 与 docs/design/interfaces.md 1.5 的 policy 说明。
      * 0.3 = APP-04（descriptor 追加 properties），0.4 = APP-06（新增事件接口）。 */
-    CHECK_EQ_INT(PIPLUGIN_API_VERSION_MAJOR(PIPLUGIN_API_VERSION), 0);
-    CHECK_EQ_INT(PIPLUGIN_API_VERSION_MINOR(PIPLUGIN_API_VERSION), 4);
-    CHECK_EQ_INT(PIPLUGIN_API_VERSION_MAKE(1, 0), 0x00010000);
-    CHECK_EQ_INT(PIPLUGIN_API_VERSION_MAKE(2, 5), 0x00020005);
-    CHECK_EQ_INT(PIPLUGIN_API_VERSION_MAJOR(PIPLUGIN_API_VERSION_MAKE(0xFFFF, 0xFFFF)), 0xFFFF);
-    CHECK_EQ_INT(PIPLUGIN_API_VERSION_MINOR(PIPLUGIN_API_VERSION_MAKE(0xFFFF, 0xFFFF)), 0xFFFF);
+    CHECK_EQ_INT(PI_PLUGIN_API_VERSION_MAJOR(PI_PLUGIN_API_VERSION), 0);
+    CHECK_EQ_INT(PI_PLUGIN_API_VERSION_MINOR(PI_PLUGIN_API_VERSION), 4);
+    CHECK_EQ_INT(PI_PLUGIN_API_VERSION_MAKE(1, 0), 0x00010000);
+    CHECK_EQ_INT(PI_PLUGIN_API_VERSION_MAKE(2, 5), 0x00020005);
+    CHECK_EQ_INT(PI_PLUGIN_API_VERSION_MAJOR(PI_PLUGIN_API_VERSION_MAKE(0xFFFF, 0xFFFF)), 0xFFFF);
+    CHECK_EQ_INT(PI_PLUGIN_API_VERSION_MINOR(PI_PLUGIN_API_VERSION_MAKE(0xFFFF, 0xFFFF)), 0xFFFF);
 
     /* 相等 -> 兼容 */
-    CHECK(pi_api_version_compatible(PIPLUGIN_API_VERSION, PIPLUGIN_API_VERSION) != 0);
+    CHECK(pi_api_version_compatible(PI_PLUGIN_API_VERSION, PI_PLUGIN_API_VERSION) != 0);
 
     /* major 不同 -> 两个方向都不兼容（ABI 已变） */
-    CHECK(pi_api_version_compatible(PIPLUGIN_API_VERSION, PIPLUGIN_API_VERSION_MAKE(2, 0)) == 0);
-    CHECK(pi_api_version_compatible(PIPLUGIN_API_VERSION_MAKE(2, 0), PIPLUGIN_API_VERSION) == 0);
-    CHECK(pi_api_version_compatible(PIPLUGIN_API_VERSION_MAKE(1, 9), PIPLUGIN_API_VERSION_MAKE(2, 0)) == 0);
+    CHECK(pi_api_version_compatible(PI_PLUGIN_API_VERSION, PI_PLUGIN_API_VERSION_MAKE(2, 0)) == 0);
+    CHECK(pi_api_version_compatible(PI_PLUGIN_API_VERSION_MAKE(2, 0), PI_PLUGIN_API_VERSION) == 0);
+    CHECK(pi_api_version_compatible(PI_PLUGIN_API_VERSION_MAKE(1, 9), PI_PLUGIN_API_VERSION_MAKE(2, 0)) == 0);
 
     /* 同 major、插件 minor 更高 -> 拒绝（插件可能用到宿主没有的接口） */
-    CHECK(pi_api_version_compatible(PIPLUGIN_API_VERSION_MAKE(1, 3), PIPLUGIN_API_VERSION_MAKE(1, 4)) == 0);
-    CHECK(pi_api_version_compatible(PIPLUGIN_API_VERSION_MAKE(1, 0), PIPLUGIN_API_VERSION_MAKE(1, 1)) == 0);
+    CHECK(pi_api_version_compatible(PI_PLUGIN_API_VERSION_MAKE(1, 3), PI_PLUGIN_API_VERSION_MAKE(1, 4)) == 0);
+    CHECK(pi_api_version_compatible(PI_PLUGIN_API_VERSION_MAKE(1, 0), PI_PLUGIN_API_VERSION_MAKE(1, 1)) == 0);
 
     /* 同 major、插件 minor 更低或相等 -> 接受 */
-    CHECK(pi_api_version_compatible(PIPLUGIN_API_VERSION_MAKE(1, 3), PIPLUGIN_API_VERSION_MAKE(1, 2)) != 0);
-    CHECK(pi_api_version_compatible(PIPLUGIN_API_VERSION_MAKE(1, 3), PIPLUGIN_API_VERSION_MAKE(1, 3)) != 0);
-    CHECK(pi_api_version_compatible(PIPLUGIN_API_VERSION_MAKE(1, 0), PIPLUGIN_API_VERSION_MAKE(1, 0)) != 0);
+    CHECK(pi_api_version_compatible(PI_PLUGIN_API_VERSION_MAKE(1, 3), PI_PLUGIN_API_VERSION_MAKE(1, 2)) != 0);
+    CHECK(pi_api_version_compatible(PI_PLUGIN_API_VERSION_MAKE(1, 3), PI_PLUGIN_API_VERSION_MAKE(1, 3)) != 0);
+    CHECK(pi_api_version_compatible(PI_PLUGIN_API_VERSION_MAKE(1, 0), PI_PLUGIN_API_VERSION_MAKE(1, 0)) != 0);
 
     /* major 0（未版本化）只与 major 0 相容 —— 用确定的 major 1 来验，不要用
-     * PIPLUGIN_API_VERSION 本身（它的 major 随发布版本走，改版时会变）。 */
+     * PI_PLUGIN_API_VERSION 本身（它的 major 随发布版本走，改版时会变）。 */
     CHECK(pi_api_version_compatible(0u, 0u) != 0);
-    CHECK(pi_api_version_compatible(0u, PIPLUGIN_API_VERSION_MAKE(1, 0)) == 0);
-    CHECK(pi_api_version_compatible(PIPLUGIN_API_VERSION_MAKE(1, 0), 0u) == 0);
+    CHECK(pi_api_version_compatible(0u, PI_PLUGIN_API_VERSION_MAKE(1, 0)) == 0);
+    CHECK(pi_api_version_compatible(PI_PLUGIN_API_VERSION_MAKE(1, 0), 0u) == 0);
 
     /* pre-1.0 语义（当前 API 0.4 / 发布 0.2.0）：同一 major 0 内，低 minor 兼容、
      * 高 minor 拒绝，所以插件应随宿主一起升级 —— 这正是 1.0 之前不承诺 ABI 的表现。 */
-    CHECK(pi_api_version_compatible(PIPLUGIN_API_VERSION_MAKE(0, 4), PIPLUGIN_API_VERSION_MAKE(0, 3)) != 0);
-    CHECK(pi_api_version_compatible(PIPLUGIN_API_VERSION_MAKE(0, 3), PIPLUGIN_API_VERSION_MAKE(0, 4)) == 0);
+    CHECK(pi_api_version_compatible(PI_PLUGIN_API_VERSION_MAKE(0, 4), PI_PLUGIN_API_VERSION_MAKE(0, 3)) != 0);
+    CHECK(pi_api_version_compatible(PI_PLUGIN_API_VERSION_MAKE(0, 3), PI_PLUGIN_API_VERSION_MAKE(0, 4)) == 0);
 
     /* 测试所用的负向插件常量：必须被判为不兼容（与 BLK-03 的 ctest 用例呼应） */
-    CHECK(pi_api_version_compatible(PIPLUGIN_API_VERSION, PIPLUGIN_API_VERSION_MAKE(2, 0)) == 0);
-    CHECK(pi_api_version_compatible(PIPLUGIN_API_VERSION_MAKE(0, 2), PIPLUGIN_API_VERSION_MAKE(2, 0)) == 0);
+    CHECK(pi_api_version_compatible(PI_PLUGIN_API_VERSION, PI_PLUGIN_API_VERSION_MAKE(2, 0)) == 0);
+    CHECK(pi_api_version_compatible(PI_PLUGIN_API_VERSION_MAKE(0, 2), PI_PLUGIN_API_VERSION_MAKE(2, 0)) == 0);
 }
 
 /* --------------------------------------------------------------------------

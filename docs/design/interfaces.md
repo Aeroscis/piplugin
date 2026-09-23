@@ -49,7 +49,7 @@ typedef struct PiPluginDescriptor {
     const char* vendor;      /* 厂商 */
     const char* version;     /* 语义化版本 "1.0.0" */
     const char* category;    /* 分类 */
-    uint32_t    api_version; /* PIPLUGIN_API_VERSION；宿主据此做兼容门禁（见 1.5） */
+    uint32_t    api_version; /* PI_PLUGIN_API_VERSION；宿主据此做兼容门禁（见 1.5） */
 
     const PiPluginCapability* capabilities;
     uint32_t                  capability_count;
@@ -82,12 +82,13 @@ typedef struct PiPluginProperty { const char* key; const char* value; } PiPlugin
 ### 1.5 api_version 协商策略
 
 `api_version` 是**插件编译时所用框架 API 的版本**，编码为 `major << 16 | minor`
-（用 `PIPLUGIN_API_VERSION_MAJOR` / `PIPLUGIN_API_VERSION_MINOR` / `PIPLUGIN_API_VERSION_MAKE` 读写）。
+（用 `PI_PLUGIN_API_VERSION_MAJOR` / `PI_PLUGIN_API_VERSION_MINOR` / `PI_PLUGIN_API_VERSION_MAKE` 读写）。
 
-**取值规则：`PIPLUGIN_API_VERSION` 的 `major.minor` 跟随发布版本**。当前状态是
-**API 0.4 / 发布 0.2.0**：0.3 来自 APP-04（给 descriptor 追加 `properties`，二进制布局
-变化），0.4 来自 APP-06（新增事件接口 `IPiEventSink` / `IPiHostEvents`，纯新增）。
-发布版本号与 CHANGELOG 在切下一个 0.x 时才跟上（发布是一次单独的 release 提交）。
+**取值规则：`PI_PLUGIN_API_VERSION` 的 `major.minor` 与发布版本始终一致**。
+当前 **API 0.4 = 发布 0.4.0**：0.3 来自 APP-04（给 descriptor 追加 `properties`，
+二进制布局变化），0.4 来自 APP-06（新增事件接口 `IPiEventSink` / `IPiHostEvents`，纯新增）。
+三处版本（`CMakeLists.txt` 的 `project(VERSION)`、`conanfile.py` 的 `version`、
+这里的 `major.minor`）必须一起改 —— 单测里的版本 tripwire 会拦住忘记同步的人。
 1.0 是"ABI 冻结承诺"的时刻：在那之前每个 `x` 版本都可以改 ABI，
 所以 pre-1.0 的插件应随宿主一起升级；1.0 之后 major 只在真正破坏 ABI 时才动，
 minor 递增表示"只新增接口"。
@@ -119,7 +120,7 @@ plugin api_version 0x00020000 (major 2, minor 0) is incompatible with host
 ```c
 const PiPluginDescriptor* desc = NULL;
 pi_factory_get_descriptor(factory, &desc);
-if (desc && !pi_api_version_compatible(PIPLUGIN_API_VERSION, desc->api_version))
+if (desc && !pi_api_version_compatible(PI_PLUGIN_API_VERSION, desc->api_version))
     return;   /* 拒绝：版本不兼容 */
 ```
 
@@ -540,7 +541,7 @@ static void DeclareCapabilities(void)
     s_desc.vendor = "me";
     s_desc.version = "1.0.0";
     s_desc.category = "worker";
-    s_desc.api_version = PIPLUGIN_API_VERSION;
+    s_desc.api_version = PI_PLUGIN_API_VERSION;
     s_desc.capabilities = s_caps;
     s_desc.capability_count = 1;
 }

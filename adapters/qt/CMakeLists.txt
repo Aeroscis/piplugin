@@ -42,7 +42,7 @@ target_sources(${TARGET_NAME}
 
 # 导出宏开关：本套件自己的翻译单元定义 PI_QT_API = dllexport，消费方（插件）
 # 看到的是 dllimport。刻意不开 CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS（见 F1）。
-target_compile_definitions(${TARGET_NAME} PRIVATE PIPLUGIN_QT_BUILDING)
+target_compile_definitions(${TARGET_NAME} PRIVATE PI_PLUGIN_QT_BUILDING)
 
 # self header（BUILD_INTERFACE/INSTALL_INTERFACE 拆分：两侧 #include "pi_qt_view.h" 写法一致）
 target_include_directories(${TARGET_NAME} PUBLIC

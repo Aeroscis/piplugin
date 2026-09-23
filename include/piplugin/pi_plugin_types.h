@@ -29,7 +29,7 @@ extern "C" {
  * -------------------------------------------------------------------------- */
 #if defined(_WIN32) || defined(_WIN64)
 #  define PI_PLATFORM_WINDOWS 1
-#  ifdef PIPLUGIN_BUILDING
+#  ifdef PI_PLUGIN_BUILDING
 #    define PI_EXPORT __declspec(dllexport)
 #  else
 #    define PI_EXPORT __declspec(dllimport)
@@ -209,21 +209,21 @@ PI_EXPORT const char* pi_descriptor_find_property(const PiPluginDescriptor* desc
  * 注意：这里管的是**框架 API** 版本，不覆盖 app 自己定义的接口 —— 后者的演进
  * 方式见 docs/design/interfaces.md 5.7。
  * -------------------------------------------------------------------------- */
-#define PIPLUGIN_API_VERSION_MAJOR(v) ((uint32_t)(((uint32_t)(v) >> 16) & 0xFFFFu))
-#define PIPLUGIN_API_VERSION_MINOR(v) ((uint32_t)((uint32_t)(v) & 0xFFFFu))
-#define PIPLUGIN_API_VERSION_MAKE(major, minor) \
+#define PI_PLUGIN_API_VERSION_MAJOR(v) ((uint32_t)(((uint32_t)(v) >> 16) & 0xFFFFu))
+#define PI_PLUGIN_API_VERSION_MINOR(v) ((uint32_t)((uint32_t)(v) & 0xFFFFu))
+#define PI_PLUGIN_API_VERSION_MAKE(major, minor) \
     ((uint32_t)((((uint32_t)(major) & 0xFFFFu) << 16) | ((uint32_t)(minor) & 0xFFFFu)))
 
-/* 本库自己的 API 版本，取值与发布版本的 major.minor 一致。
+/* 本库自己的 API 版本，**始终与发布版本一致**（当前发布 0.4.0 → API 0.4）。
  *
- * 当前状态：**API 0.4 / 发布 0.2.0** —— 0.3 来自 APP-04（descriptor 追加
- * properties）、0.4 来自 APP-06（新增事件接口 IPiEventSink / IPiHostEvents）。
- * 发布版本号与 CHANGELOG 在切下一个 0.x 时才跟上（发布是一条单独的 release 提交，
- * 见 CHANGELOG 顶部）。
+ * 历史：0.3 来自 APP-04（descriptor 追加 properties，二进制布局变化），
+ * 0.4 来自 APP-06（新增事件接口 IPiEventSink / IPiHostEvents）。
+ * 三处版本（CMakeLists 的 project(VERSION)、conanfile.py 的 version、这里的
+ * major.minor）必须一起改 —— 单测里的版本 tripwire 就是提醒这件事的机制。
  *
  * 1.0 是"ABI 冻结承诺"的时刻：在那之前每个 x 版本都可以改 ABI，
  * 所以插件应随宿主一起升级；升级时同步 CHANGELOG.md 与 interfaces.md 1.5。 */
-#define PIPLUGIN_API_VERSION PIPLUGIN_API_VERSION_MAKE(0, 4)
+#define PI_PLUGIN_API_VERSION PI_PLUGIN_API_VERSION_MAKE(0, 4)
 
 /* 宿主版本与插件版本是否兼容。返回非 0 = 可以加载。 */
 PI_EXPORT int pi_api_version_compatible(uint32_t host_version, uint32_t plugin_version);
@@ -240,7 +240,7 @@ PI_EXPORT int pi_api_version_compatible(uint32_t host_version, uint32_t plugin_v
 typedef PiResult (*PiPluginEntryProc)(IPiPluginFactory** out_factory);
 
 /* 插件侧导出宏：插件 DLL 永远是"导出方"，与 PI_EXPORT 相反 —— PI_EXPORT 在
- * 非 PIPLUGIN_BUILDING 的翻译单元里展开成 dllimport，直接拿它去**定义**
+ * 非 PI_PLUGIN_BUILDING 的翻译单元里展开成 dllimport，直接拿它去**定义**
  * 入口会编译失败（"definition of dllimport function not allowed"）。 */
 #if PI_PLATFORM_WINDOWS
 #  define PI_PLUGIN_EXPORT __declspec(dllexport)

@@ -103,7 +103,7 @@ target_sources(${TARGET_NAME}
 )
 
 # 预制宏定义
-target_compile_definitions(${TARGET_NAME} PRIVATE PIPLUGIN_BUILDING)
+target_compile_definitions(${TARGET_NAME} PRIVATE PI_PLUGIN_BUILDING)
 
 # self header
 target_include_directories(${TARGET_NAME} PUBLIC

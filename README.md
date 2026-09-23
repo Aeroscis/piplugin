@@ -155,7 +155,7 @@ CI（GitHub Actions，见 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
 - 当前为 **0.x**：接口仍可能变动。`y` 版本只修问题，`x` 版本可能改行为或 API，
   每次都会写进 [`CHANGELOG.md`](CHANGELOG.md)。
 - `1.0.0` 留给"ABI 冻结承诺"的时刻：从那时起 vtbl 只增不改。
-- 插件在自己的 descriptor 里声明 `PIPLUGIN_API_VERSION`；宿主据此在实例化前门禁。
+- 插件在自己的 descriptor 里声明 `PI_PLUGIN_API_VERSION`；宿主据此在实例化前门禁。
   规则见 [`docs/design/interfaces.md`](docs/design/interfaces.md) 1.5。
 
 ## 许可与第三方
