@@ -261,3 +261,54 @@ class MyPlugin {
   特化，或者 `qi_to<T>(my_iid)` 显式给 IID；
 - 宿主侧的模块加载用 `PiUniqueModule`（RAII `pi_module_unload`）；
 - 完整语义与理由见头文件注释，测试见 `tests/unit_cpp`（含 Debug CRT 泄漏判定）。
+
+## 6. 可选：事件（IPiEventSink / IPiHostEvents，API 0.4）
+
+插件有两种参与事件的方式，各自独立、都能缺席：
+
+**① 收：实现 `IPiEventSink`**（宿主按地址投递给你）
+
+```c
+static PiResult PI_CALL Sink_Deliver(void* self_ptr, const PiEvent* event)
+{
+    MyPlugin* me = ((MySink*)self_ptr)->owner;
+    if (event->topic && strcmp(event->topic, "com.example.host.welcome") == 0) {
+        const char* greeting = NULL;                       /* 读键值负载 */
+        for (uint32_t i = 0; i < event->payload_count; ++i)
+            if (strcmp(event->payload[i].key, "greeting") == 0) greeting = event->payload[i].value;
+        (void)greeting;
+        return PI_OK;                                      /* 已处理 */
+    }
+    return PI_E_NOTIMPL;      /* 不关心这个 topic —— 这不是错误，宿主会跳过 */
+}
+```
+
+在 descriptor 里声明 `PI_IID_EVENT_SINK` 为 `PI_CAP_PROVIDES`，
+并像 `IPiService` 那样在 `pi_query_interface` 里交出这个接口
+（不同接口要有自己的 vtbl 槽位，参照 `tests/test_plugin_service` 与
+`tests/test_plugin_events` 的 wrapper 写法）。
+
+**② 发/订阅：QI 宿主的 `IPiHostEvents`**
+
+```c
+/* initialize 里 */
+if (PI_SUCCEEDED(pi_host_events_query(host, &me->host_events))) {
+    PiEvent ev = { 0 };
+    ev.type = PI_EVENT_NOTIFY; ev.topic = "com.example.plugin.ready";
+    pi_host_events_publish(me->host_events, &ev);          /* 任意线程可发 */
+
+    /* owner = 自己的实例指针：卸载时宿主按它兜底退订，忘记退订也不会回调 */
+    pi_host_events_subscribe(me->host_events, "com.example.host.broadcast",
+                             (void*)me, &OnBroadcast, me, &me->subscription);
+}
+```
+
+要点：
+
+- **任何返回码都不是宿主的错误源**：`PI_E_NOTIMPL` / `PI_FAIL` 都只是你的表态；
+- sink 与订阅回调都在**宿主主线程**上跑（= `pi_initialize()` 那条线程），
+  所以可以直接碰 UI/句柄，**不需要锁**；但不要阻塞太久；
+- 事件与负载字符串**只在本次调用期间有效**（借用），要留就自己拷贝；
+- 事件是**尽力而为**的：可能丢、可能合并，不要拿它当可靠投递；
+- 主题是**字面名字**（`pi.` 前缀留给框架），框架不定义通配语法；
+- 只想"通知宿主一声"、内容很少？`pi_host_post_message()` 仍然够用（见 §1.3）。

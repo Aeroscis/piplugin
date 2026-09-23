@@ -41,8 +41,9 @@ A release is one commit on `main` that bumps the version in `CMakeLists.txt` and
   plugin newer than the host but ACCEPTS an older one (same major), and an older
   module's descriptor is shorter - so `pi_descriptor_find_property()` decides the
   layout from the plugin's own `api_version` (`minor < 3` means "no properties")
-  instead of reading past the end of the object. Note that the release version
-  stays 0.2.0 until 0.3.0 is cut; API and release version realign then.
+  instead of reading past the end of the object. The release version stays 0.2.0
+  until the next 0.x is cut; API and release version realign then (the events
+  interfaces in the entry below moved the API on to 0.4).
 - **The Qt adapter kit is SHARED (APP-08).** `piplugin_qt` owns process-level
   state - the single `QApplication` and the live-view registry - so as a static
   library every Qt plugin DLL carried its own copy: a process that loaded two of
@@ -62,6 +63,51 @@ A release is one commit on `main` that bumps the version in `CMakeLists.txt` and
 
 ### Added
 
+- **Events: a structured, two-way channel (APP-06).** `pi_host_post_message()`
+  carries three integers and nothing to route on, and the host -> plugin direction
+  only existed as the plugin's next `pi_on_idle()` poll - a plugin without a view
+  had no callback at all. Two optional interfaces fix that, without touching a
+  single published vtbl:
+  - `IPiEventSink` (plugin side): the host queries it after instantiation and
+    pushes ADDRESSED events into it with `pi_host_session_deliver_event()`;
+  - `IPiHostEvents` (host side): plugins query it on the host object and then
+    publish / subscribe by topic (`subscribe(topic, owner, cb, user, &handle)`,
+    `unsubscribe`, `drop_owner`).
+  An event is `{ type, topic, payload, payload_count, origin }`: `type` is the
+  framework's small vocabulary (`PI_EVENT_NOTIFY` / `PI_EVENT_REQUEST` plus an app
+  range), `topic` is a UTF-8 literal name (`pi.` reserved for the framework, and
+  the framework defines no wildcard syntax), and the payload reuses APP-04's
+  key/value strings - so an event is already serialisable for a future
+  out-of-process host (FUT-05). Contract highlights: `publish` may be called from
+  any thread and the host marshals everything - `pi_event_deliver`, subscription
+  callbacks, subscribe/unsubscribe/drop_owner - to its own main thread, so a
+  plugin sink needs no locking; delivery is BEST EFFORT (a host may merge or drop,
+  and the drops are countable in the router's stats); and a subscription is owned
+  by its `owner` token (the plugin instance), so a plugin that forgets to
+  unsubscribe still cannot leave a dangling callback behind.
+  The **host kit** does the bookkeeping the unload sequence makes easy to get
+  wrong: it queries each slot's sink at instantiation and, during teardown, drops
+  the owner's subscriptions BEFORE releasing the sink and unloading the module. A
+  ready-made router (`PiEventRouter`, static library `piplugin_events`, opt-in - a
+  host may implement the interface itself) supplies the subscription table, a
+  bounded queue, `pump()`, drop counters, and `pi_event_router_extra_qi()`, which
+  plugs straight into APP-01's `pi_host_services_create_ex()` hook.
+  Acceptance: `tests/test_host_events` (`ctest` case `events_two_way_loop`, 36
+  assertions, exit-code verdict) runs the whole loop - plugin publishes, host
+  subscribes and pushes into the sink by address, the plugin answers from inside
+  its sink, a broadcast reaches the plugin's own subscription - and pins the
+  no-reentrancy pump rule, strict unsubscribe semantics, the owner drop on unload,
+  and the degradation path (a plugin with no sink loads fine, delivery returns
+  `PI_E_NOINTERFACE`). `PIPLUGIN_API_VERSION` 0.3 -> 0.4 (new interfaces; the unit
+  tripwire fails on that by design). Design and the D1-D9 decisions:
+  `docs/design/events.md`.
+- **The conanfile's switch tree is complete again.** `PI_BUILD_HOST_KIT_EVENTS`,
+  `PI_BUILD_UNIT_CPP_TESTS`, `PI_BUILD_TEST_HOST_MULTI`,
+  `PI_BUILD_TEST_HOST_EVENTS`, `PI_BUILD_TEST_PLUGIN_SERVICE` and
+  `PI_BUILD_TEST_PLUGIN_EVENTS` were added by earlier commits without being
+  mirrored into `conanfile.py`, which claims the two trees are one-to-one. The
+  file also gained the matching adapter/host-kit dependency-table entries and the
+  `piplugin_events` package component.
 - **Descriptor properties, exercised end to end (APP-04).** All three test
   plugins declare properties (`com.example.kind`, the toolkit, a variant tag) and
   the headless test host lists them and looks one up by key; new `ctest` cases

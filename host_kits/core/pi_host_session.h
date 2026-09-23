@@ -100,9 +100,39 @@ IPiService*               pi_host_session_get_service(PiPluginHostSession* sessi
 const PiPluginDescriptor* pi_host_session_get_descriptor(const PiPluginHostSession* session, uint32_t slot);
 
 /* --------------------------------------------------------------------------
- * 嵌入（机制：attach + "已 attach"记账。容器是谁 / 在哪 / 多大 / 几个归宿主）
+ * 事件（roadmap APP-06，通道 C）
+ *
+ * 会话替宿主把"事件 sink 的记账与生命周期"做掉，理由和七步卸载序列一样：
+ * 顺序错了就是调用已卸载内存。
+ *
+ *   - 实例化后 QI 一次 PI_IID_EVENT_SINK，命中就持有到该槽位卸载为止；
+ *   - 卸载序列里**先**按 owner 退订（host_events 说的 owner 就是插件实例指针）、
+ *     **再**释放 sink，两者都在 terminate / 模块卸载之前；
+ *   - 宿主投递事件用 pi_host_session_deliver_event()：**投给谁、投什么**是宿主的策略，
+ *     本层只保证"路由到正确的槽位、且在正确的时机存在/销毁"。
+ *
+ * 本层不自带队列、不决定泵点、不定义路由策略（那是宿主的，或者用可选的
+ * piplugin_events 路由器）。宿主对象没有 PI_IID_HOST_EVENTS 时 host_events 为 NULL：
+ * 投递返回 PI_E_NOINTERFACE，订阅相关的一切都不发生，其余功能不受影响。
  * -------------------------------------------------------------------------- */
 
+/* 该槽位的插件是否实现了 IPiEventSink（1/0）。未实例化或未实现都为 0。 */
+int pi_host_session_has_event_sink(const PiPluginHostSession* session, uint32_t slot);
+
+/* 把一个事件投给该槽位插件的 sink（宿主主线程）。
+ * 返回 sink 自己的返回码；槽位不存在 / 插件没有 sink / 宿主没有事件接口时返回
+ * PI_E_NOINTERFACE —— 调用方据此静默跳过（这正是"未实现 sink 的插件优雅降级"）。
+ * event 为 NULL 返回 PI_E_INVALIDARG。 */
+PiResult pi_host_session_deliver_event(PiPluginHostSession* session, uint32_t slot,
+                                       const PiEvent* event);
+
+/* 宿主提供的事件接口（借用；所有权在 session，禁止 release）。宿主没有提供时返回
+ * NULL。宿主可以用它订阅/发布 —— 或者直接用自己那份路由器指针。 */
+IPiHostEvents* pi_host_session_get_host_events(PiPluginHostSession* session);
+
+/* --------------------------------------------------------------------------
+ * 嵌入（机制：attach + "已 attach"记账。容器是谁 / 在哪 / 多大 / 几个归宿主）
+ * -------------------------------------------------------------------------- */
 /* 把槽位的 view 嵌进 parent_window（宿主自己创建的容器）。
  * set_visible 非 0 时顺带 pi_view_set_visible(view, 1)。
  * 槽位没有 view（headless 插件）返回 PI_E_NOINTERFACE。 */

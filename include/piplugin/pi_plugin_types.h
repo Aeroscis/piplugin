@@ -216,13 +216,14 @@ PI_EXPORT const char* pi_descriptor_find_property(const PiPluginDescriptor* desc
 
 /* 本库自己的 API 版本，取值与发布版本的 major.minor 一致。
  *
- * 当前状态：**API 0.3 / 发布 0.2.0** —— APP-04 追加了 descriptor 字段
- * （二进制布局变化），按政策 minor 前进一位；发布版本号与 CHANGELOG 在切 0.3.0
- * 时才跟上（发布是一条单独的 release 提交，见 CHANGELOG 顶部）。
+ * 当前状态：**API 0.4 / 发布 0.2.0** —— 0.3 来自 APP-04（descriptor 追加
+ * properties）、0.4 来自 APP-06（新增事件接口 IPiEventSink / IPiHostEvents）。
+ * 发布版本号与 CHANGELOG 在切下一个 0.x 时才跟上（发布是一条单独的 release 提交，
+ * 见 CHANGELOG 顶部）。
  *
  * 1.0 是"ABI 冻结承诺"的时刻：在那之前每个 x 版本都可以改 ABI，
  * 所以插件应随宿主一起升级；升级时同步 CHANGELOG.md 与 interfaces.md 1.5。 */
-#define PIPLUGIN_API_VERSION PIPLUGIN_API_VERSION_MAKE(0, 3)
+#define PIPLUGIN_API_VERSION PIPLUGIN_API_VERSION_MAKE(0, 4)
 
 /* 宿主版本与插件版本是否兼容。返回非 0 = 可以加载。 */
 PI_EXPORT int pi_api_version_compatible(uint32_t host_version, uint32_t plugin_version);
@@ -288,6 +289,9 @@ extern PI_EXPORT const PiGuid PI_IID_PLUGIN_FACTORY;  /* IPiPluginFactory  */
 extern PI_EXPORT const PiGuid PI_IID_PLUGIN_BASE;     /* IPiPluginBase     */
 extern PI_EXPORT const PiGuid PI_IID_PLUGIN_VIEW;     /* IPiPluginView     */
 extern PI_EXPORT const PiGuid PI_IID_SERVICE;         /* IPiService        */
+/* 0.4 additions (roadmap APP-06, channel C) - interfaces first, nothing changed */
+extern PI_EXPORT const PiGuid PI_IID_EVENT_SINK;      /* IPiEventSink      */
+extern PI_EXPORT const PiGuid PI_IID_HOST_EVENTS;     /* IPiHostEvents     */
 
 #ifdef __cplusplus
 }

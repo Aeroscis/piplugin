@@ -1,11 +1,13 @@
 # 事件机制 mini-RFC（roadmap APP-06，通道 C 补全）
 
-> 状态：**待评审**（评审通过后才实现；roadmap 明确要求"先出 RFC 再实现"）
-> 作者：维护者 + 实现 agent
-> 目标读者：本仓库维护者（决策人）
-> 相关代码：`include/piplugin/pi_plugin_host_services.h`（`pi_host_post_message`）、
-> `include/piplugin/pi_plugin_view.h`（`pi_on_idle` 轮询）、
-> `docs/todo/framework.md` #2、`docs/release-roadmap.md` APP-06 / FUT-05
+> 状态：**已评审通过，并已按 §7 的决定实现（API 0.4）**。
+> 实现记录与草案的差异见 §8；本文保留草案与取舍过程，作为"为什么是现在这个样子"的依据。
+> 相关代码：`include/piplugin/pi_plugin_events.h`（接口）、
+> `host_kits/events/pi_event_router.{h,c}`（可选路由糖）、
+> `host_kits/core/pi_host_session.{h,c}`（sink 记账 + 卸载退订）、
+> `tests/test_plugin_events/` 与 `tests/test_host_events/`（验收）。
+> 相关文档：`docs/design/interfaces.md` §2.7/§2.8、`docs/design/architecture.md`、
+> `docs/tutorial/write-{host,plugin}.md`、`docs/todo/framework.md` #2、`docs/release-roadmap.md` APP-06 / FUT-05
 
 ## 1. 问题
 
@@ -157,13 +159,26 @@ typedef struct IPiHostEventsVtbl {
     IPiUnknownVtbl base;
     /* 插件发布；host 负责路由/入队/丢弃。origin 由宿主填入（发布者不便自称）。 */
     PiResult (PI_CALL *pi_host_events_publish)(void* this_ptr, const PiEvent* event);
-    /* 订阅一个 topic（精确匹配本期；前缀/通配留给将来）。回调在宿主主线程执行。 */
+    /* 订阅一个 topic（精确匹配本期；前缀/通配留给将来）。owner 是生命周期令牌
+     * （插件传自己的实例指针；NULL = 宿主自己）。回调在宿主主线程执行。 */
     PiResult (PI_CALL *pi_host_events_subscribe)(void* this_ptr, const char* topic,
-                                                 PiEventCallback cb, void* user_data,
+                                                 void* owner, PiEventCallback cb,
+                                                 void* user_data,
                                                  uint32_t* out_subscription);
     PiResult (PI_CALL *pi_host_events_unsubscribe)(void* this_ptr, uint32_t subscription);
+    /* "这个 owner 要走了"：摘掉它的全部订阅。host kit 在每个槽位卸载时调用。 */
+    PiResult (PI_CALL *pi_host_events_drop_owner)(void* this_ptr, void* owner);
 } IPiHostEventsVtbl;
 ```
+
+可选糖（`host_kits/events/`，静态库 `piplugin_events`，宿主可不用它）：`PiEventRouter`
+实现上面这套接口 —— 订阅表 + 有界队列（默认 256，满则丢新并计数）+ `pi_event_router_pump()`
++ `pi_event_router_stats()`，并直接提供 `pi_event_router_extra_qi()` 作为
+`pi_host_services_create_ex()` 的钩子（于是插件 QI 宿主对象就能拿到它，见 §8.2）。
+
+宿主 kit L0 侧只加三件事（机制，不含策略）：`pi_host_session_has_event_sink()`、
+`pi_host_session_deliver_event()`（投给某槽位 —— 投什么、投给谁是宿主的策略）、
+`pi_host_session_get_host_events()`（借用），外加卸载序列里的"退订 + 释放 sink"两步。
 
 既有机制如何"自动"覆盖需求（无需新 API）：
 
@@ -210,17 +225,48 @@ pi_event_deliver({type=REQUEST,
   `docs/design/interfaces.md`、`CHANGELOG.md`；
 - **不做**：跨进程、RPC、持久化、通配订阅、二进制负载。
 
-## 7. 请评审决定的事项
+## 7. 评审结论（2026，已实现）
 
-| # | 决策点 | 建议 | 备选 |
+| # | 决策点 | 结论 | 落地位置 |
 |---|---|---|---|
-| D1 | 本期是否两个方向都做 | 都做（roadmap 原案） | 先只做宿主→插件 sink，插件→宿主继续用 `post_message` |
-| D2 | topic 标识 | UTF-8 字符串 + `pi.` 保留区 | 128 位 GUID；或字符串 + 可选 GUID |
-| D3 | payload | 复用 `PiPluginProperty` 键值 | 追加二进制块（`data`/`size`） |
-| D4 | 投递线程 | 宿主 marshal 到自己的主线程（插件 sink 无需锁） | 发布者线程同步回调（插件必须线程安全） |
-| D5 | `type` 字段 | 保留 `NOTIFY`/`REQUEST` + 自定义区 | 去掉 `type`，只用 `topic` |
-| D6 | 路由实现放哪 | 接口进核心头；路由糖做成可选静态库 `piplugin_events` | 路由也进核心库（核心变大） |
-| D7 | 订阅匹配 | 本期只做精确匹配 | 前缀/通配（`com.example.*`） |
-| D8 | 是否给 `pi_on_idle` 加"事件泵"角色 | 不加（泵点仍归宿主，host kit 的 `drive_idle` 天然可复用） | 在 `session` 里加一个 `pi_host_session_pump_events()` |
+| D1 | 本期是否两个方向都做 | **两个方向都做**：插件 sink（寻址投递）+ 宿主事件（发布/订阅） | `IPiEventSink`、`IPiHostEvents` |
+| D2 | topic 标识 | **UTF-8 字符串**；`pi.` 框架保留、app 用自有前缀；字节比较、大小写敏感、无通配语法 | `pi_plugin_events.h` 顶部契约；`PI_EVENT_TOPIC_MAX`=128 |
+| D3 | payload | **复用 `PiPluginProperty` 键值**，不加二进制块 | `PiEvent.payload` |
+| D4 | 投递线程 | **宿主 marshal 到自己的主/owner 线程**；`publish()` 任意线程；sink 与订阅回调都在主线程，插件侧无需锁 | `pi_event_router_pump()` + 契约 3 条 |
+| D5 | `type` 字段 | **保留**：`PI_EVENT_NOTIFY` / `PI_EVENT_REQUEST` + `>= 0x80000000` 自定义区 | `PI_EVENT_*` |
+| D6 | 路由实现放哪 | **接口进核心头；路由糖做成可选静态库** `piplugin_events`（`host_kits/events/`）；宿主可不用它 | `pi_event_router.*`；开关 `PI_BUILD_HOST_KIT_EVENTS` |
+| D7 | 订阅匹配 | **本期只做精确匹配**，且明确"框架不定义任何通配语法" | `pi_host_events_subscribe` 契约；路由器 `strcmp` |
+| D8 | session 加事件泵 | **加，但只加机制**：按槽位记账 sink + 投递 + 卸载序列里释放；不持队列、不决定泵点与路由策略 | `pi_host_session_deliver_event()` / `has_event_sink()` / `get_host_events()` |
+| D9 | 订阅的生命周期归属（评审时补入） | **订阅带 owner，卸载自动退订**：`subscribe(topic, owner, cb, user, &handle)` + `drop_owner(owner)`；kit 在每个槽位卸载时调用 | 接口第 4 槽 + `SessionTearDownSlot` 步 2 |
 
-> 决定后我会按此 RFC 实现，并把"评审结论"追加到本节下方，作为实现依据。
+**不采纳的备选**（连同理由，避免将来重开）：GUID topic（可读性与"没有全局注册表"两点都不划算）、
+payload 加二进制块（生命周期/跨进程/定帧三件事本期都不想回答）、发布者线程同步回调
+（Qt 跨线程死锁的既有教训）、去掉 `type`（宿主将失去"不懂 app topic 也能路由"的能力）、
+路由进核心库（核心变胖并引入队列与锁策略）、通配订阅（框架不定义语法，
+宿主可以自己在回调里做前缀分流）。
+
+## 8. 实现记录（与草案的差异）
+
+1. **`subscribe` 多了 `owner`，`IPiHostEvents` 多了第 4 个槽位 `drop_owner`**（D9）；
+   草案里只有 publish/subscribe/unsubscribe。理由：插件卸载后路由表里残留的函数指针
+   会变成"调用已卸载内存"，而"谁卸载了"的权威来源正是 session 的 teardown。
+2. **`pi_event_router_extra_qi()` 直接作为 `pi_host_services_create_ex()` 的钩子**：
+   APP-01（通道 B）与 APP-06 在这里合成一件事 —— 宿主把路由器挂上，插件 QI 就拿到它，
+   session 也从同一个宿主对象 QI 到它（走的就是插件将来会走的那条路径）。
+3. **`PiEvent` 的字段集视为冻结**，不追加：与 `PiPluginDescriptor` 不同，
+   事件里没有 `api_version` 可判别布局，而插件在运行期无法知道宿主编译时的 API 版本，
+   所以 host→plugin 方向追加字段无法安全判定。将来要携带更多数据 → **新增接口**
+   （`IPiEventSink2` + `PiEvent2`），沿用"只增不改"的 COM 规则。
+4. **路由器的丢弃策略 = 丢最新**（队列满时丢新来的事件），并把 `dropped_full` 计数暴露出来；
+   契约只要求"宿主可丢，但必须可观测"。`pi_event_router_set_capacity()` 缩容时丢最旧。
+5. **pump 重入规则**被明确并写进头文件：在回调里 `publish()` 是允许的，
+   但它由**下一次 pump** 投递，绝不递归 —— 测试把这条规则断言了两遍
+   （宿主回调里发的事件、插件订阅回调里的回声）。
+6. **`PI_EVENT_TOPIC_MAX` = 128**（含终止符）：超长 topic 被判 `PI_E_INVALIDARG`，
+   便于宿主用定长缓冲拷贝。
+7. **取消 `origin` 的自报**：`publish` 传入的 `origin` 由宿主覆盖（防冒名），
+   宿主自己发布时为 NULL —— 与草案一致，这里只是明确它是**宿主填的**。
+8. 验收跑的是 `tests/test_host_events`（ctest `events_two_way_loop`，36 条断言、退出码判定），
+   覆盖：双向闭环、**按地址投递**与**按 topic 扇出**两条投递路径、
+   pump 重入规则、unsubscribe 真停止与非法 handle、D9 的卸载退订、
+   以及"无 sink 插件照常加载 + 投递返回 `PI_E_NOINTERFACE`"的优雅降级。

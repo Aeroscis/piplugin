@@ -14,8 +14,15 @@ _TEST_ADAPTER_NEEDS = {
     "PI_BUILD_TEST_HOST": None,            # imgui 测试宿主：直连 imgui(conan)，无需 adapter kit
     "PI_BUILD_TEST_HOST_QT": "IMGUI",      # qt 测试宿主：渲染 imgui 插件 -> 需要 imgui adapter kit
     "PI_BUILD_HEADLESS_HOST": None,        # headless 宿主：仅核心
+    "PI_BUILD_TEST_HOST_MULTI": None,      # 多插件同进程宿主（APP-08）：仅核心 + L0 kit
+    "PI_BUILD_TEST_HOST_EVENTS": None,     # 事件宿主（APP-06）：仅核心 + L0/events kit
     "PI_BUILD_TEST_PLUGIN": "QT",          # qt 测试插件：需要 qt adapter kit
     "PI_BUILD_TEST_PLUGIN_IMGUI": "IMGUI",  # imgui 测试插件：需要 imgui adapter kit
+    "PI_BUILD_TEST_PLUGIN_BADVERSION": None,   # 坏版本测试插件（BLK-03）：仅核心
+    "PI_BUILD_TEST_PLUGIN_SERVICE": None,      # 服务测试插件（APP-07）：仅核心
+    "PI_BUILD_TEST_PLUGIN_EVENTS": None,       # 事件测试插件（APP-06）：仅核心
+    "PI_BUILD_UNIT_TESTS": None,               # 核心单测（BLK-06）：仅核心
+    "PI_BUILD_UNIT_CPP_TESTS": None,           # C++ RAII 层测试（APP-05）：仅核心
 }
 
 # 各测试宿主对宿主 kit 的需求（三个测试宿主都已改用宿主 kit；
@@ -25,6 +32,8 @@ _TEST_HOST_KIT_NEEDS = {
     "PI_BUILD_TEST_HOST": ("CORE", "DX11"),     # imgui 宿主：L0 会话 + L1 dx11 交换链
     "PI_BUILD_TEST_HOST_QT": ("CORE", "QT"),    # qt 宿主：L0 会话 + L1 qt 嵌入区域
     "PI_BUILD_HEADLESS_HOST": ("CORE",),        # headless 宿主：仅 L0 会话
+    "PI_BUILD_TEST_HOST_MULTI": ("CORE",),      # 多插件宿主（APP-08）：仅 L0 会话
+    "PI_BUILD_TEST_HOST_EVENTS": ("CORE", "EVENTS"),  # 事件宿主（APP-06）：L0 会话 + 事件路由
 }
 
 
@@ -56,17 +65,23 @@ class PiPluginConan(ConanFile):
         # host kits（宿主侧 kit，产品部件，默认全开；无 conan 依赖）
         "PI_BUILD_HOST_KITS": [True, False],      # 总开关
         "PI_BUILD_HOST_KIT_CORE": [True, False],  # 分开关：L0 会话库（仅依赖核心）
+        "PI_BUILD_HOST_KIT_EVENTS": [True, False],  # 分开关：宿主侧事件路由 piplugin_events（APP-06）
         "PI_BUILD_HOST_KIT_QT": [True, False],    # 分开关：L1 Qt 嵌入区域（Qt5 本地安装 + L0）
         "PI_BUILD_HOST_KIT_DX11": [True, False],  # 分开关：L1 DX11 嵌入胶水（Windows）
         # tests（测试件，默认全开；conan create 打包时建议 -o PI_BUILD_TESTS=False）
         "PI_BUILD_TESTS": [True, False],          # 总开关
         "PI_BUILD_UNIT_TESTS": [True, False],     # 核心回归单测（ctest 的 unit 用例）
+        "PI_BUILD_UNIT_CPP_TESTS": [True, False],  # C++ RAII 层测试（ctest 的 unit_cpp 用例）
         "PI_BUILD_TEST_HOST": [True, False],      # imgui 测试宿主（依赖 imgui）
         "PI_BUILD_TEST_HOST_QT": [True, False],   # qt 测试宿主（依赖 Qt5 + imgui adapter kit）
         "PI_BUILD_HEADLESS_HOST": [True, False],  # headless 测试宿主（仅依赖核心）
+        "PI_BUILD_TEST_HOST_MULTI": [True, False],  # 多插件同进程验收宿主（仅依赖核心 + L0 kit）
+        "PI_BUILD_TEST_HOST_EVENTS": [True, False],  # 事件机制验收宿主（仅依赖核心 + L0/events kit）
         "PI_BUILD_TEST_PLUGIN": [True, False],     # qt 测试插件（依赖 Qt5 + qt adapter kit）
         "PI_BUILD_TEST_PLUGIN_IMGUI": [True, False],  # imgui 测试插件（依赖 imgui + imgui adapter kit）
         "PI_BUILD_TEST_PLUGIN_BADVERSION": [True, False],  # 声明不兼容 api_version 的测试插件（BLK-03 负向用例，仅依赖核心）
+        "PI_BUILD_TEST_PLUGIN_SERVICE": [True, False],  # 服务测试插件（APP-07，仅依赖核心）
+        "PI_BUILD_TEST_PLUGIN_EVENTS": [True, False],   # 事件测试插件（APP-06，仅依赖核心）
     }
     default_options = {
         "shared": True,
@@ -76,16 +91,22 @@ class PiPluginConan(ConanFile):
         "PI_BUILD_ADAPTER_IMGUI": True,
         "PI_BUILD_HOST_KITS": True,
         "PI_BUILD_HOST_KIT_CORE": True,
+        "PI_BUILD_HOST_KIT_EVENTS": True,
         "PI_BUILD_HOST_KIT_QT": True,
         "PI_BUILD_HOST_KIT_DX11": True,
         "PI_BUILD_TESTS": True,
         "PI_BUILD_UNIT_TESTS": True,
+        "PI_BUILD_UNIT_CPP_TESTS": True,
         "PI_BUILD_TEST_HOST": True,
         "PI_BUILD_TEST_HOST_QT": True,
         "PI_BUILD_HEADLESS_HOST": True,
+        "PI_BUILD_TEST_HOST_MULTI": True,
+        "PI_BUILD_TEST_HOST_EVENTS": True,
         "PI_BUILD_TEST_PLUGIN": True,
         "PI_BUILD_TEST_PLUGIN_IMGUI": True,
         "PI_BUILD_TEST_PLUGIN_BADVERSION": True,
+        "PI_BUILD_TEST_PLUGIN_SERVICE": True,
+        "PI_BUILD_TEST_PLUGIN_EVENTS": True,
     }
 
     exports_sources = "CMakeLists.txt", "cmake/*", "include/*", "src/*", "adapters/*", "host_kits/*", "tests/*"
@@ -224,6 +245,13 @@ class PiPluginConan(ConanFile):
             comp.libs = [f"piplugin_host_qt{suffix}"]
             comp.requires = ["piplugin", "piplugin_host"]
             comp.set_property("cmake_target_name", "pi::piplugin_host_qt")
+
+        # 宿主侧事件路由（APP-06；可选糖，仅依赖核心）
+        if self._host_kit_enabled("EVENTS"):
+            comp = self.cpp_info.components["piplugin_events"]
+            comp.libs = [f"piplugin_events{suffix}"]
+            comp.requires = ["piplugin"]
+            comp.set_property("cmake_target_name", "pi::piplugin_events")
 
         # 宿主 kit L1 DX11 嵌入胶水（仅 Windows；只依赖核心）
         if self._host_kit_enabled("DX11"):

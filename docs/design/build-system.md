@@ -156,8 +156,10 @@ SHARED 的 Qt 套件 DLL 与核心库一样在 POST_BUILD 阶段自动部署到 
 | `pi_test_host_qt` | Qt5 + imgui 套件 | exe（Win32） |
 | `pi_test_host_headless` | 仅核心 | exe（console，纯 C） |
 | `pi_test_host_multi` | 仅核心 + 宿主 kit L0 | exe（console，APP-08 多插件同进程验收） |
+| `pi_test_host_events` | 仅核心 + 宿主 kit L0/events | exe（console，APP-06 事件验收） |
 | `pi_test_plugin_qt` / `pi_test_plugin_qt2` | Qt5 + Qt 套件（SHARED） | dll（仅 Windows，同一份源码两个变体） |
 | `pi_test_plugin_service` | 仅核心 | dll（纯 C 服务插件，APP-07） |
+| `pi_test_plugin_events` | 仅核心 | dll（纯 C 事件插件，APP-06） |
 | `pi_test_plugin_imgui` | imgui + imgui 套件 | dll |
 
 Qt 运行时部署：宿主/插件构建后自动复制 `Qt5Core/Gui/Widgets.dll` + `platforms/qwindows.dll`

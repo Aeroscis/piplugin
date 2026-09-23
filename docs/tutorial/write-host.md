@@ -323,7 +323,59 @@ g_hostServices.reset();
 `PiPtr<T>::add_ref(p)`。参照实现：`tests/test_host_qt`（宿主服务对象）、
 `tests/unit_cpp`（语义 + Debug CRT 泄漏判定）。
 
-## 10. 宿主清单（Checklist）
+## 10. 事件：让插件收得到、也发得出（通道 C）
+
+两条投递路径，都建立在可选接口上（宿主没提供/插件没实现都照常跑）：
+
+| 想要 | 用什么 | 谁决定收件人 |
+|---|---|---|
+| 宿主通知**某个**插件 | 插件实现 `IPiEventSink`，宿主 `pi_host_session_deliver_event()` | 宿主（按地址） |
+| 按主题一对多 / 插件之间间接协作 | 宿主提供 `IPiHostEvents`，各方 `subscribe` | 订阅关系（按 topic） |
+
+最快接入方式（用本仓库自带的可选路由糖，见 `host_kits/events/`）：
+
+```c
+#include "piplugin/pi_plugin.h"
+#include "pi_host_session.h"
+#include "pi_event_router.h"
+
+static PiEventRouter* g_router;
+
+/* 1) 先建路由器，再用它当宿主对象的 extra_qi 钩子（通道 B）：插件 QI 就能拿到 */
+pi_event_router_create(&g_router);
+pi_host_services_create_ex(&MessageProc, NULL, window,
+                           &pi_event_router_extra_qi, g_router, &services);
+pi_host_session_create(services, &session);          /* session 也会 QI 到它 */
+
+/* 2) 宿主自己订阅（owner = NULL 表示"宿主自己"） */
+IPiHostEvents* events = pi_event_router_host_events(g_router);
+uint32_t h = 0;
+pi_host_events_subscribe(events, "com.example.plugin.ready", NULL, OnReady, ctx, &h);
+
+/* 3) 加载 + 投递（按地址；插件没有 sink 时返回 PI_E_NOINTERFACE，跳过即可） */
+pi_host_session_load(session, "my_plugin.dll", &slot);
+if (pi_host_session_has_event_sink(session, slot)) {
+    PiPluginProperty p = { "greeting", "hello" };
+    PiEvent ev = { 0 };
+    ev.type = PI_EVENT_REQUEST; ev.topic = "com.example.host.welcome";
+    ev.payload = &p; ev.payload_count = 1;
+    pi_host_session_deliver_event(session, slot, &ev);   /* 宿主主线程 */
+}
+
+/* 4) 主循环里泵一次：把插件发布的事件分发给订阅者（时机归宿主） */
+pi_event_router_pump(g_router);
+```
+
+规则（细则见 `docs/design/events.md` 与 `interfaces.md` 2.7/2.8）：
+
+- `publish` 任意线程可调；**投递与订阅回调都在宿主主线程**，所以插件 sink 不需要锁；
+- 事件是**尽力而为**的：可丢、可合并；`pi_event_router_stats()` 里的 `dropped_full`
+  就是"丢了几个"的可观测证据；
+- 订阅带 `owner`（插件传自己的实例指针）：插件**忘记退订也不会**在卸载后被回调，
+  session 的卸载序列会按 owner 清干净 —— 这条由 kit 保证，宿主不用手写；
+- topic 是**字面名字**（框架不定义通配），`pi.` 前缀留给框架。
+
+## 11. 宿主清单（Checklist）
 
 - [ ] 创建 `IPiHostServices`（GUI 传容器窗口 / headless 传 `PI_INVALID_WINDOW`）
 - [ ] 要给插件自己的服务时用 `pi_host_services_create_ex()` 装 extra-QI 钩子（§8）
@@ -333,4 +385,5 @@ g_hostServices.reset();
 - [ ] 主循环每帧 `pi_on_idle`
 - [ ] 尺寸变化转发 `pi_on_resize`
 - [ ] 卸载顺序：detach view → release view → terminate/release plugin → release factory → unload module → release host
+- [ ] 需要事件时：建路由器并当 extra_qi 钩子挂上，主循环里 `pi_event_router_pump()`（§10）
 - [ ] C++ 宿主：宿主服务对象与模块用 `PiPtr` / `PiUniqueModule` 持有，省掉手写 release（§9）

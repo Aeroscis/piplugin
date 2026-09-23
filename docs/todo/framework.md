@@ -9,14 +9,18 @@
 > stop 幂等、卸载序列再 stop 一次），ctest 用例 `headless_host_service_lifecycle`
 > 按退出码判定。场景矩阵（`tests.md` #4）已补上"headless + service"格。
 
-## 2. 事件/信号机制（框架级） [P2]
+## 2. 事件/信号机制（框架级） [P2] —— 已完成（roadmap APP-06）
 
-> **状态**：已上收为 roadmap APP-06，并按"先 RFC 后实现"的要求写了设计草案
-> **`docs/design/events.md`**（待维护者评审：§7 列出 8 个待决事项）。
-> 实现尚未开始 —— 评审通过后才动代码。
+> **状态**：已按 mini-RFC（`docs/design/events.md`，D1~D9 全部有结论）实现，API 0.4。
+> 现有：`IPiEventSink`（插件可选实现，宿主按地址投递）+ `IPiHostEvents`
+> （宿主可选提供：publish / subscribe(owner) / unsubscribe / drop_owner）；
+> 可选路由糖 `piplugin_events`（`host_kits/events/`）；宿主 kit L0 负责 sink 记账与
+> 卸载时的 owner 退订。验收：`tests/test_host_events`（ctest `events_two_way_loop`）。
+> **未做**（有意，写在 RFC 非目标里）：跨进程传输（FUT-05）、可靠投递、RPC、通配订阅、
+> 二进制负载。
 
-插件目前通过 `pi_host_post_message` 单向发消息给宿主。可扩展：
-- 宿主→插件的事件通道（目前只有 `pi_on_idle`/`pi_on_resize` 这类轮询/视图事件）；
+插件目前通过 `pi_host_post_message` 单向发消息给宿主。已扩展：
+- 宿主→插件的事件通道（原来只有 `pi_on_idle`/`pi_on_resize` 这类轮询/视图事件）；
 - 命名事件/信号订阅机制（类似 glib signals），让 GUI 宿主能监听插件的结构化事件。
 
 ## 3. 插件热重载 / 动态管理 [P2]

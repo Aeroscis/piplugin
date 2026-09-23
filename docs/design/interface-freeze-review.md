@@ -169,6 +169,18 @@ pi_host_services_create_default, pi_host_default_set_ui_window, pi_host_create_p
 >   所以 `pi_descriptor_find_property()` 用插件声明的 `api_version` 判布局
 >   （`minor < 3` → 报"没有属性"），**不**去读那截不存在的内存；
 > - 第 3 节列出的 7 个 vtbl / 26 个槽位一个都没动，全局约定（第 2 节）也未变。
+>
+> **发布后第三次（0.4）**：事件接口（roadmap APP-06）——
+> 新增 2 个 IID（`PI_IID_EVENT_SINK` = 0x30、`PI_IID_HOST_EVENTS` = 0x31）、
+> 2 个接口共 **5 个新槽位**（sink 1 + host 4）、1 个新公共数据结构 `PiEvent`
+> 与 6 个帮助函数。帮助函数全部是头文件里的 `static inline`（与 `pi_iunknown_*`
+> 系列同一做法），所以核心 DLL 的导出面只增加那 **2 个 IID 数据符号**：
+> **25 → 27**（`dumpbin /exports lib/Debug/piplugind.dll` 实测）。
+> 这一条是**纯新增**：既有 7 个 vtbl / 26 个槽位与描述符布局
+> 都未变，符合"只增不改"。路由糖 `piplugin_events` 是宿主侧 STATIC 库，不进核心导出面。
+> `PiEvent` 的字段集本身视为冻结（它没有 `api_version`
+> 可判别布局，插件在运行期不知道宿主的 API 版本），将来要携带更多数据走新接口
+> （`IPiEventSink2`），见 `docs/design/events.md` §8.3。
 
 ### 4.2 记录在案（不阻断发布，1.0 前需要结论）
 

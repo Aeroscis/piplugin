@@ -31,6 +31,7 @@ kit 把这段顺序收拢成一份实现，把「窗口长什么样」完整留�
 ```
 host_kits/
   core/    L0：piplugin_host       （STATIC，纯 C，零 GUI 依赖）
+  events/  宿主侧事件路由：piplugin_events（STATIC，纯 C；APP-06 的可选糖）
   qt/      L1：piplugin_host_qt    （STATIC，Qt5；依赖 L0）
   dx11/    L1：piplugin_host_dx11  （STATIC，仅 Windows；只依赖核心）
 ```
@@ -38,11 +39,19 @@ host_kits/
 开关树与 `adapters/` 同构（Conan 侧同名选项整批转发，见 `conanfile.py`）：
 
 - `PI_BUILD_HOST_KITS` —— 总开关；关死后所有宿主 kit 一律不编；
-- `PI_BUILD_HOST_KIT_CORE` / `PI_BUILD_HOST_KIT_QT` / `PI_BUILD_HOST_KIT_DX11` —— 分层分开关。
+- `PI_BUILD_HOST_KIT_CORE` / `PI_BUILD_HOST_KIT_EVENTS` / `PI_BUILD_HOST_KIT_QT` /
+  `PI_BUILD_HOST_KIT_DX11` —— 分层分开关。
 
 ## 当前状态
 
-- **L0（`core/`）已落地**：`piplugin_host`，API 见 `core/pi_host_session.h`。
+- **L0（`core/`）已落地**：`piplugin_host`，API 见 `core/pi_host_session.h`
+  （含 APP-06 的事件 sink 记账：`has_event_sink` / `deliver_event` / `get_host_events`，
+  以及卸载序列里的"按 owner 退订 + 释放 sink"两步）。
+- **事件路由（`events/`）已落地（APP-06，可选）**：`piplugin_events` ——
+  `IPiHostEvents` 的一个现成实现（订阅表 + 有界队列 + pump + owner 退订 + 丢弃计数），
+  `pi_event_router_extra_qi()` 可直接当 `pi_host_services_create_ex()` 的钩子。
+  **不用它完全没问题**：核心里的两个事件接口是零实现的契约，宿主可以自己实现；
+  验收见 `tests/test_host_events`（ctest `events_two_way_loop`）。
 - **L1（`qt/`、`dx11/`）已落地**：
   - `qt/`：`PiPluginEmbedArea` —— 容器包装 + attach + resize 转发 + idle 驱动（`driveIdle()`
     手动或 `setAutoIdleEnabled()` 内部 `QTimer(0)`，默认关闭）；
@@ -65,6 +74,8 @@ NULL，"忘掉清理"这个出错面被彻底消掉。宿主侧仍然只有一�
 
 - **L0 = 真库**（STATIC）：纯逻辑、无框架/工具包 ABI 耦合，库化零代价；session 是实例对象、
   没有进程级全局状态，因此不会重演 APP-08 那个「每 DLL 一份全局状态」的坑。
+- **事件路由 = 真库**（STATIC）：纯 C + 平台互斥量（非 Windows 链 `Threads::Threads`），
+  不碰任何 C++ ABI；它只是 `IPiHostEvents` 的一个实现，宿主可换可不用。
 - **L1 Qt = CMake 上是库 target、物理上是源码**：`PiPluginEmbedArea` 是 `QWidget` 子类、要跑 moc，
   预编译库会把宿主的 Qt 版本 + 编译器版本 + 运行库锁死——**那正是本框架用 C ABI 要消灭的
   C++ ABI 耦合，宿主 kit 自己不该把它引回来**。所以做成 STATIC target：宿主

@@ -85,9 +85,10 @@ typedef struct PiPluginProperty { const char* key; const char* value; } PiPlugin
 （用 `PIPLUGIN_API_VERSION_MAJOR` / `PIPLUGIN_API_VERSION_MINOR` / `PIPLUGIN_API_VERSION_MAKE` 读写）。
 
 **取值规则：`PIPLUGIN_API_VERSION` 的 `major.minor` 跟随发布版本**。当前状态是
-**API 0.3 / 发布 0.2.0**：APP-04 给 descriptor 追加了 `properties`（二进制布局变化），
-按政策 minor 前进一位；发布版本号与 CHANGELOG 在切 0.3.0 时才跟上（发布是一次单独的
-release 提交）。1.0 是"ABI 冻结承诺"的时刻：在那之前每个 `x` 版本都可以改 ABI，
+**API 0.4 / 发布 0.2.0**：0.3 来自 APP-04（给 descriptor 追加 `properties`，二进制布局
+变化），0.4 来自 APP-06（新增事件接口 `IPiEventSink` / `IPiHostEvents`，纯新增）。
+发布版本号与 CHANGELOG 在切下一个 0.x 时才跟上（发布是一次单独的 release 提交）。
+1.0 是"ABI 冻结承诺"的时刻：在那之前每个 `x` 版本都可以改 ABI，
 所以 pre-1.0 的插件应随宿主一起升级；1.0 之后 major 只在真正破坏 ABI 时才动，
 minor 递增表示"只新增接口"。
 
@@ -301,6 +302,64 @@ PiResult (PI_CALL *pi_service_get_status)(void* this_ptr, int32_t* out_status);
 - `pi_service_poll`：只在运行时返回 `PI_OK`；已停时返回 `PI_FAIL`，不要假装在工作；
 - `pi_service_get_status`：`out_status == NULL` 返回 `PI_E_INVALIDARG`；
 - 纯服务插件不必实现 `IPiPluginView`，`pi_get_view` 返回 `PI_E_NOINTERFACE`。
+
+### 2.7 IPiEventSink（pi_plugin_events.h，API 0.4）
+
+**插件可选实现**的事件接收口。宿主在实例化后 QI 一次，命中就按槽位持有，投递用
+`pi_host_session_deliver_event()`：
+
+```c
+typedef struct PiEvent {
+    uint32_t                 type;          /* PI_EVENT_NOTIFY / REQUEST / 自定义 */
+    const char*              topic;         /* UTF-8；`pi.` 保留给框架 */
+    const PiPluginProperty*  payload;       /* 可 NULL；键值对，借用 */
+    uint32_t                 payload_count;
+    const PiGuid*            origin;        /* 宿主填入（发布者）；宿主自己发布为 NULL */
+} PiEvent;
+
+PiResult (PI_CALL *pi_event_deliver)(void* this_ptr, const PiEvent* event);
+```
+
+帮助：`pi_event_deliver`（NULL 安全：无 sink 时返回 `PI_E_NOINTERFACE`）。
+
+契约要点：
+
+- **只在宿主主/owner 线程被调用**（就是调用 `pi_plugin_initialize()` 的那条线程），
+  因此插件 sink 里**不需要锁**，可以直接碰 UI/句柄；
+- 只在 `pi_initialize()` 之后、`pi_terminate()` 之前投递；
+- 返回 `PI_OK`（已处理）/ `PI_E_NOTIMPL`（不关心该 topic）/ `PI_FAIL`（处理出错）；
+  **任何返回码都不是宿主的错误条件** —— 事件是尽力而为，宿主不得重试或报错；
+- `event` 及其字符串**只在本次调用期间有效**，不得保存、不得阻塞过久。
+
+### 2.8 IPiHostEvents（pi_plugin_events.h，API 0.4）
+
+**宿主可选提供**的事件路由口：插件对它 QI（`pi_host_events_query(host, &events)`），
+然后发布/订阅。宿主通常用 `pi_host_services_create_ex()` 的 extra_qi 钩子把它挂上（见 2.2）。
+
+```c
+PiResult (PI_CALL *pi_host_events_publish)(void* this_ptr, const PiEvent* event);
+PiResult (PI_CALL *pi_host_events_subscribe)(void* this_ptr, const char* topic,
+                                             void* owner, PiEventCallback cb,
+                                             void* user_data, uint32_t* out_subscription);
+PiResult (PI_CALL *pi_host_events_unsubscribe)(void* this_ptr, uint32_t subscription);
+PiResult (PI_CALL *pi_host_events_drop_owner)(void* this_ptr, void* owner);
+```
+
+帮助：`pi_host_events_publish` / `_subscribe` / `_unsubscribe` / `_drop_owner` /
+`pi_host_events_query`。
+
+| 规则 | 内容 |
+|---|---|
+| 线程 | `publish` **任意线程**可调（宿主 marshal）；`subscribe` / `unsubscribe` / `drop_owner` 与**回调**都在宿主主线程 |
+| topic | UTF-8、字节精确、大小写敏感；`pi.` 保留给框架；app 用自有前缀；**框架不定义通配语法**；上限 `PI_EVENT_TOPIC_MAX` |
+| owner | 生命周期令牌：插件传自己的**实例指针**（与 `pi_qt_view_shutdown_owner` 同一约定）；`NULL` = 宿主自己，永不自动摘除 |
+| 退订 | 显式 `unsubscribe` 可以；**忘记也没关系** —— 宿主 kit 在每个槽位卸载时调用 `drop_owner`，保证卸载后回调绝不再触发 |
+| 尽力而为 | 可合并、可丢弃；`PI_OK` ≠ 已送达；丢弃必须可观测（路由器暴露 `dropped_full`） |
+| 重入 | 在回调里 `publish` 合法，但由**下一次 pump** 投递，绝不递归 |
+
+参照实现与验收：`host_kits/events/`（可选路由器 `PiEventRouter`）、
+`tests/test_host_events`（ctest `events_two_way_loop`）、
+设计取舍见 `docs/design/events.md`。
 
 ## 3. 宿主管理 API（pi_plugin_host.h）
 
@@ -590,6 +649,23 @@ pi_host_services_create_ex(&MessageProc, NULL, window,
 宿主侧推荐做法：把"本生态要求哪几个协议 IID"全部交给 `pi_host_session_require()`
 （见 5.4），不满足的插件在实例化之前就被拒绝。
 
+### 5.8 通道 C：消息还是事件？
+
+三条通道各有其位，别混用：
+
+| 手段 | 方向 | 结构 | 何时用 |
+|---|---|---|---|
+| `pi_host_post_message(msg, w, l)` | 插件 → 宿主 | 三个整数 | 最原始的拉杆：少量、临时的信号；宿主自己解释编码 |
+| `IPiEventSink` + `pi_host_session_deliver_event()` | 宿主 → **指定**插件 | `PiEvent`（type + topic + 键值） | 宿主知道该通知谁（"你的配置变了"）；**按地址投递** |
+| `IPiHostEvents`（publish / subscribe） | 双向，按 **topic** 扇出 | 同上 | 一对多、或"我不想关心谁在听"；插件之间通过宿主间接协作 |
+
+选型要点：
+
+- 目标明确、只有一个接收者 → sink；"谁关心谁来订阅" → topic；
+- 事件是**尽力而为**的：不要用它传必须可靠送达的东西；可靠语义要另设计（现在没有）；
+- 不要用 `pi.` 前缀发自己的 topic（框架保留区），也不要指望通配订阅（框架不定义语法）；
+- 事件负载是键值字符串，天生可序列化 —— 这是为 `FUT-05`（跨进程插件）留的路。
+
 ## 6. 线程模型总结
 
 | 组件 | 线程 |
@@ -599,6 +675,9 @@ pi_host_services_create_ex(&MessageProc, NULL, window,
 | Qt 套件 `create_widget` / 控件操作 | Qt 运行时线程（私有后台线程） |
 | Qt 套件 `pi_qt_view_post` | 任意线程可调，marshal 到 Qt 线程 |
 | `pi_host_post_message` | 任意插件线程可调（宿主负责 marshal） |
+| `pi_host_events_publish` | 任意线程可调（宿主 marshal 到自己的主线程） |
+| `pi_event_deliver` / 事件订阅回调 | 宿主主/owner 线程（= 调用 `pi_plugin_initialize()` 的那条）；插件侧无需加锁 |
+| `pi_host_events_subscribe` / `_unsubscribe` / `_drop_owner` | 宿主主线程 |
 | 引用计数 | 原子操作，任何线程安全 |
 
 ## 7. C++ RAII 层（可选，pi_cpp.h）

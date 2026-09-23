@@ -11,6 +11,7 @@
 # （见 conanfile.py 的开关树注释）。
 option(PI_BUILD_HOST_KITS "build host-side kits (master switch)" ON)
 option(PI_BUILD_HOST_KIT_CORE "build host kit L0 session library (piplugin_host)" ON)          # 依赖: 仅框架核心
+option(PI_BUILD_HOST_KIT_EVENTS "build host-side event router (piplugin_events)" ON)           # 依赖: 仅框架核心
 option(PI_BUILD_HOST_KIT_QT "build host kit L1 qt embed area (piplugin_host_qt)" ON)           # 依赖: Qt5 + L0
 option(PI_BUILD_HOST_KIT_DX11 "build host kit L1 dx11 embed glue (piplugin_host_dx11)" ON)     # 依赖: Windows SDK
 
@@ -21,6 +22,11 @@ endif ()
 # L0（L1 的 qt kit 依赖它，故先加）
 if (PI_BUILD_HOST_KIT_CORE)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/core)
+endif ()
+
+# 宿主侧事件路由（APP-06 的可选糖；不依赖 L0，L0 也不依赖它）
+if (PI_BUILD_HOST_KIT_EVENTS)
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/events)
 endif ()
 
 # L1 Qt 嵌入胶水

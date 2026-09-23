@@ -13,6 +13,7 @@
 #include "pi_plugin_base.h"
 #include "pi_plugin_view.h"
 #include "pi_plugin_service.h"
+#include "pi_plugin_events.h"
 #include "pi_plugin_host.h"
 
 #endif /* PI_PLUGIN_H */

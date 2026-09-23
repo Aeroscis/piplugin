@@ -341,9 +341,9 @@ static void TestApiVersion(void)
     /* 编码：高 16 位 major，低 16 位 minor */
     /* 当前 API 版本的 tripwire：改版本号时这里会失败，提醒同步
      * CHANGELOG.md 与 docs/design/interfaces.md 1.5 的 policy 说明。
-     * 0.3 = APP-04 给 descriptor 追加了 properties（二进制布局变化）。 */
+     * 0.3 = APP-04（descriptor 追加 properties），0.4 = APP-06（新增事件接口）。 */
     CHECK_EQ_INT(PIPLUGIN_API_VERSION_MAJOR(PIPLUGIN_API_VERSION), 0);
-    CHECK_EQ_INT(PIPLUGIN_API_VERSION_MINOR(PIPLUGIN_API_VERSION), 3);
+    CHECK_EQ_INT(PIPLUGIN_API_VERSION_MINOR(PIPLUGIN_API_VERSION), 4);
     CHECK_EQ_INT(PIPLUGIN_API_VERSION_MAKE(1, 0), 0x00010000);
     CHECK_EQ_INT(PIPLUGIN_API_VERSION_MAKE(2, 5), 0x00020005);
     CHECK_EQ_INT(PIPLUGIN_API_VERSION_MAJOR(PIPLUGIN_API_VERSION_MAKE(0xFFFF, 0xFFFF)), 0xFFFF);
@@ -372,10 +372,10 @@ static void TestApiVersion(void)
     CHECK(pi_api_version_compatible(0u, PIPLUGIN_API_VERSION_MAKE(1, 0)) == 0);
     CHECK(pi_api_version_compatible(PIPLUGIN_API_VERSION_MAKE(1, 0), 0u) == 0);
 
-    /* pre-1.0 语义（当前 API 0.3 / 发布 0.2.0）：同一 major 0 内，低 minor 兼容、
+    /* pre-1.0 语义（当前 API 0.4 / 发布 0.2.0）：同一 major 0 内，低 minor 兼容、
      * 高 minor 拒绝，所以插件应随宿主一起升级 —— 这正是 1.0 之前不承诺 ABI 的表现。 */
-    CHECK(pi_api_version_compatible(PIPLUGIN_API_VERSION_MAKE(0, 3), PIPLUGIN_API_VERSION_MAKE(0, 2)) != 0);
-    CHECK(pi_api_version_compatible(PIPLUGIN_API_VERSION_MAKE(0, 2), PIPLUGIN_API_VERSION_MAKE(0, 3)) == 0);
+    CHECK(pi_api_version_compatible(PIPLUGIN_API_VERSION_MAKE(0, 4), PIPLUGIN_API_VERSION_MAKE(0, 3)) != 0);
+    CHECK(pi_api_version_compatible(PIPLUGIN_API_VERSION_MAKE(0, 3), PIPLUGIN_API_VERSION_MAKE(0, 4)) == 0);
 
     /* 测试所用的负向插件常量：必须被判为不兼容（与 BLK-03 的 ctest 用例呼应） */
     CHECK(pi_api_version_compatible(PIPLUGIN_API_VERSION, PIPLUGIN_API_VERSION_MAKE(2, 0)) == 0);

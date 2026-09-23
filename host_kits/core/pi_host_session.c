@@ -20,6 +20,7 @@ typedef struct PiHostSessionSlot {
     IPiPluginBase*            plugin;       /* add-ref'd at instantiate       */
     IPiPluginView*            view;         /* add-ref'd; may be NULL         */
     IPiService*               service;      /* add-ref'd; may be NULL         */
+    IPiEventSink*             event_sink;   /* add-ref'd; may be NULL (APP-06) */
     const PiPluginDescriptor* descriptor;   /* borrowed from the factory      */
     PiNativeWindow            attach_window;
     int                       view_attached;
@@ -28,6 +29,7 @@ typedef struct PiHostSessionSlot {
 
 struct PiPluginHostSession {
     IPiHostServices*   services;            /* add-ref'd */
+    IPiHostEvents*     host_events;         /* add-ref'd; may be NULL (APP-06) */
     PiHostSessionSlot  slots[PI_HOST_SESSION_MAX_SLOTS];
     PiGuid             required[PI_HOST_SESSION_MAX_SLOTS];
     uint32_t           required_count;
@@ -94,7 +96,22 @@ static void SessionTearDownSlot(PiPluginHostSession* session, PiHostSessionSlot*
         slot->service = NULL;
     }
 
-    /* 2) 视图：detach 必须先于 release，且两者都必须先于模块卸载 */
+    /* 2) 事件（APP-06）：先让宿主按 owner 退订，再放掉 sink。
+     *
+     * 顺序是这一层存在的意义：owner 就是插件实例指针，退订必须在插件代码还映射着
+     * 的时候做完；sink 的引用也必须在模块卸载前放掉。两件事都由 kit 做，宿主
+     * 手写就会漏 —— 漏了就是"插件卸载后回调进已卸载内存"。 */
+    if (session->host_events && slot->plugin) {
+        SessionLog(session, "%s[%u]: drop event subscriptions", tag, index);
+        pi_host_events_drop_owner(session->host_events, (void*)slot->plugin);
+    }
+    if (slot->event_sink) {
+        SessionLog(session, "%s[%u]: release event sink", tag, index);
+        pi_iunknown_release((IPiUnknown*)slot->event_sink);
+        slot->event_sink = NULL;
+    }
+
+    /* 3) 视图：detach 必须先于 release，且两者都必须先于模块卸载 */
     if (slot->view) {
         if (slot->view_attached && !session->skip_detach) {
             SessionLog(session, "%s[%u]: detach view", tag, index);
@@ -109,7 +126,7 @@ static void SessionTearDownSlot(PiPluginHostSession* session, PiHostSessionSlot*
     slot->view_attached = 0;
     slot->attach_window = PI_INVALID_WINDOW;
 
-    /* 3) 插件实例：terminate 再 release —— 此刻插件代码必须仍然 mapped */
+    /* 4) 插件实例：terminate 再 release —— 此刻插件代码必须仍然 mapped */
     if (slot->plugin) {
         SessionLog(session, "%s[%u]: terminate plugin", tag, index);
         pi_plugin_terminate(slot->plugin);
@@ -117,20 +134,20 @@ static void SessionTearDownSlot(PiPluginHostSession* session, PiHostSessionSlot*
         slot->plugin = NULL;
     }
 
-    /* 4) 工厂 */
+    /* 5) 工厂 */
     if (slot->factory) {
         pi_iunknown_release((IPiUnknown*)slot->factory);
         slot->factory = NULL;
     }
 
-    /* 5) 模块 */
+    /* 6) 模块 */
     if (slot->module) {
         SessionLog(session, "%s[%u]: unload module", tag, index);
         pi_module_unload(slot->module);
         slot->module = NULL;
     }
 
-    /* 6) descriptor 属于模块，随模块失效 */
+    /* 7) descriptor 属于模块，随模块失效 */
     slot->descriptor = NULL;
     slot->in_use = 0;
 }
@@ -200,6 +217,14 @@ PiResult pi_host_session_create(IPiHostServices* services,
 
     session->services = services;
     pi_iunknown_add_ref((IPiUnknown*)services);
+
+    /* 宿主可选提供事件接口（APP-06）：有就持有（借给宿主用），没有就一直是 NULL。
+     * 宿主通常用 pi_host_services_create_ex() 的 extra_qi 钩子把路由器挂上（APP-01）——
+     * 这里走的就是插件将来会走的那条 QI 路径。（此处还没有 logger，故不写日志。） */
+    if (PI_FAILED(pi_host_events_query(services, &session->host_events))) {
+        session->host_events = NULL;
+    }
+
     *out_session = session;
     return PI_OK;
 }
@@ -211,11 +236,16 @@ void pi_host_session_destroy(PiPluginHostSession* session)
 
     for (i = 0; i < PI_HOST_SESSION_MAX_SLOTS; ++i) {
         PiHostSessionSlot* slot = &session->slots[i];
-        if (slot->in_use || slot->module || slot->plugin || slot->view) {
+        if (slot->in_use || slot->module || slot->plugin || slot->view ||
+            slot->event_sink) {
             SessionTearDownSlot(session, slot, i, "destroy");
         }
     }
 
+    if (session->host_events) {
+        pi_iunknown_release((IPiUnknown*)session->host_events);
+        session->host_events = NULL;
+    }
     if (session->services) {
         pi_iunknown_release((IPiUnknown*)session->services);
         session->services = NULL;
@@ -385,10 +415,20 @@ PiResult pi_host_session_instantiate(PiPluginHostSession* session, uint32_t slot
             slot->service = service;
         }
     }
+    {
+        /* 事件 sink（APP-06）：插件可选实现，没有就是没有 —— 与 view/service 一样
+         * 是能力协商的常态，不是错误。卸载序列会按正确的时机释放它。 */
+        IPiEventSink* sink = NULL;
+        if (PI_SUCCEEDED(pi_iunknown_query_interface((IPiUnknown*)slot->plugin,
+                                                     &PI_IID_EVENT_SINK, (void**)&sink))) {
+            slot->event_sink = sink;
+        }
+    }
 
-    SessionLog(session, "load[%u]: ready (view:%s service:%s)",
+    SessionLog(session, "load[%u]: ready (view:%s service:%s events:%s)",
                (unsigned)slot_index,
-               slot->view ? "Y" : "N", slot->service ? "Y" : "N");
+               slot->view ? "Y" : "N", slot->service ? "Y" : "N",
+               slot->event_sink ? "Y" : "N");
     return PI_OK;
 }
 
@@ -459,6 +499,38 @@ const PiPluginDescriptor* pi_host_session_get_descriptor(const PiPluginHostSessi
     if (!session || slot >= PI_HOST_SESSION_MAX_SLOTS) return NULL;
     if (!session->slots[slot].in_use) return NULL;
     return session->slots[slot].descriptor;
+}
+
+/* --------------------------------------------------------------------------
+ * Events (APP-06, channel C)
+ * -------------------------------------------------------------------------- */
+int pi_host_session_has_event_sink(const PiPluginHostSession* session, uint32_t slot)
+{
+    if (!session || slot >= PI_HOST_SESSION_MAX_SLOTS) return 0;
+    return session->slots[slot].event_sink ? 1 : 0;
+}
+
+PiResult pi_host_session_deliver_event(PiPluginHostSession* session, uint32_t slot,
+                                       const PiEvent* event)
+{
+    PiHostSessionSlot* s;
+
+    if (!session || !event) return PI_E_INVALIDARG;
+    s = SessionSlotAt(session, slot);
+    if (!s || !s->plugin) return PI_E_NOINTERFACE;
+    if (!s->event_sink) {
+        /* 插件没实现 sink：这是"优雅降级"的那条路径，调用方跳过即可，不是错误。
+         * 记一行日志便于诊断（有些宿主会想知道自己的事件没人收）。 */
+        SessionLog(session, "events[%u]: plugin has no sink, event '%s' skipped",
+                   (unsigned)slot, event->topic ? event->topic : "(null)");
+        return PI_E_NOINTERFACE;
+    }
+    return pi_event_deliver(s->event_sink, event);
+}
+
+IPiHostEvents* pi_host_session_get_host_events(PiPluginHostSession* session)
+{
+    return session ? session->host_events : NULL;
 }
 
 /* --------------------------------------------------------------------------

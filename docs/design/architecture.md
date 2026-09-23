@@ -62,6 +62,8 @@ piplugin 是一个 **跨平台、纯 C ABI 的插件框架**，采用 **COM 风�
 | `IPiService` | 插件 | headless 服务：`pi_service_start` / `stop` / `poll` / `get_status` |
 | `IPiHostServices` | 宿主 | 总是提供：内存分配、消息投递 |
 | `IPiHostUI` | 宿主(可选) | GUI 宿主能力：父窗口句柄、UI 线程 id |
+| `IPiEventSink` | 插件(可选) | 事件接收：宿主按地址投递 `PiEvent`（0.4，APP-06） |
+| `IPiHostEvents` | 宿主(可选) | 事件路由：发布 / 订阅 / 退订 / owner 退订（0.4，APP-06） |
 
 ### 3.2 已知 GUID
 
@@ -76,6 +78,8 @@ piplugin 是一个 **跨平台、纯 C ABI 的插件框架**，采用 **COM 风�
 | `0x00000010` | `PI_IID_HOST_SERVICES`（1.1.0 新增） |
 | `0x00000011` | `PI_IID_HOST_UI`（1.1.0 新增） |
 | `0x00000020` | `PI_IID_SERVICE`（1.1.0 新增） |
+| `0x00000030` | `PI_IID_EVENT_SINK`（0.4 新增，APP-06） |
+| `0x00000031` | `PI_IID_HOST_EVENTS`（0.4 新增，APP-06） |
 
 ## 4. 能力协商模型（LV2 风格）
 
@@ -165,6 +169,20 @@ typedef struct PiRefCountedBase {
 - `IPiHostUI` 用独立的轻量 wrapper 对象（COM 身份规则：不同接口需要独立 vtbl 槽位）返回，
   wrapper 内部 AddRef 持有 owner，避免悬垂。
 - `pi_host_default_set_ui_window()` 允许宿主在运行时切换嵌入窗口 / 切回 headless。
+
+### 6.1 事件通道（APP-06，API 0.4）
+
+宿主可选提供 `IPiHostEvents`（插件 QI 它发布/订阅），插件可选实现 `IPiEventSink`
+（宿主按地址投递）。**宿主是 broker**：插件之间从不互相认识，谁收到什么由宿主决定。
+
+- 分层：两个接口在**核心头** `pi_plugin_events.h`（零实现）；
+  可选的 `PiEventRouter`（`host_kits/events/`，STATIC）提供现成的订阅表 + 有界队列 + pump；
+  宿主 kit L0 负责**按槽位记账 sink** 并在七步卸载序列里"先按 owner 退订、再释放 sink"。
+- 典型接法：`pi_event_router_create()` → 用 `pi_event_router_extra_qi()` 当
+  `pi_host_services_create_ex()` 的钩子（通道 B）→ 宿主在主循环里 `pi_event_router_pump()`。
+- 线程：`publish` 任意线程；投递与回调都在宿主主线程，插件侧 sink 无需锁。
+- 生命周期：订阅带 `owner`（= 插件实例指针），插件**忘记退订也不会**在卸载后回调 ——
+  kit 兜底（详见 `docs/design/events.md` 的 D9）。
 
 ## 7. UI 适配器套件（Adapter Kits）
 
