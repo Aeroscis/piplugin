@@ -38,6 +38,11 @@ endif()
 #   - demo/插件构建到各自构建树，通过 install 部署到 <root>/bin/<CONFIG>（参考 xdcs-naspes-common）
 # 部署统一在 install 阶段完成（cmake --install --config <CONFIG> 或 --prefix 指定安装前缀）
 
+# CMake 包配置的安装子目录（ECO-04）：用**包名**而不是命名空间名。
+# find_package(<name>) 只搜索 <prefix>/lib/cmake/<name>*/，所以放在 cmake/pi/ 下的
+# 配置对 find_package(piplugin) 是不可见的；统一放到 cmake/piplugin/。
+# 旧的 find_package(pi) 入口保留一个转发配置，见 src/CMakeLists.txt。
+set(PI_CMAKE_PACKAGE_SUBDIR "cmake/piplugin" CACHE STRING "CMake package config install subdir")
 # Qt 本地安装路径（ECO-05：Qt 是本地安装，不是 conan 依赖，但仓库不再把某台机器上的
 # 绝对路径写死 —— 那样别人必须改仓库文件才能构建 Qt 相关目标）。
 #

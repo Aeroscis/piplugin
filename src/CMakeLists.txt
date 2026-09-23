@@ -17,9 +17,25 @@ endif ()
 
 
 # ------- 生成 CMake config 文件（伞配置，等价于 reference 中 dcsConfig.cmake） -------
+# ECO-04：伞配置以**包名** pipluginConfig.cmake 安装到 lib/cmake/piplugin/，
+# 于是 find_package(piplugin) 直接可用（Conan 侧生成的配置也是这个名字）。
+# 同时保留旧入口 find_package(pi)：在 lib/cmake/pi/ 放一个三行转发配置。
 include(CMakePackageConfigHelpers)
 configure_package_config_file(
     cmake/piConfig.cmake.in
+    "${CMAKE_CURRENT_BINARY_DIR}/pipluginConfig.cmake"
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/${PI_CMAKE_PACKAGE_SUBDIR}
+)
+
+write_basic_package_version_file(
+    "${CMAKE_CURRENT_BINARY_DIR}/pipluginConfigVersion.cmake"
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion
+)
+
+# 旧入口：find_package(pi) -> 转发到 piplugin 的伞配置（含版本文件）
+configure_package_config_file(
+    cmake/piForwardConfig.cmake.in
     "${CMAKE_CURRENT_BINARY_DIR}/piConfig.cmake"
     INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${NAMESPACE_NAME}
 )
@@ -31,6 +47,12 @@ write_basic_package_version_file(
 )
 
 # ------- 安装 CMake config 文件 -------
+install(FILES
+    "${CMAKE_CURRENT_BINARY_DIR}/pipluginConfig.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/pipluginConfigVersion.cmake"
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/${PI_CMAKE_PACKAGE_SUBDIR}
+)
+
 install(FILES
     "${CMAKE_CURRENT_BINARY_DIR}/piConfig.cmake"
     "${CMAKE_CURRENT_BINARY_DIR}/piConfigVersion.cmake"

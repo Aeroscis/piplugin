@@ -1,0 +1,10 @@
+@PACKAGE_INIT@
+
+# 兼容入口：find_package(pi) 转发到包名配置 find_package(piplugin)。
+#
+# ECO-04 把 CMake 包的规范位置定为 lib/cmake/piplugin/（包名 = piplugin，
+# 与 Conan 生成的配置同名）。这个文件只是让旧的 find_package(pi) 调用点继续可用，
+# 它本身不定义任何 target。
+include("${CMAKE_CURRENT_LIST_DIR}/../piplugin/pipluginConfig.cmake")
+
+set(pi_FOUND TRUE)

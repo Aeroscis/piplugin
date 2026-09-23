@@ -226,47 +226,68 @@ class PiPluginConan(ConanFile):
         cmake = CMake(self)
         cmake.install()
 
+    def _packaged(self, stem):
+        """该库是否真的进了包？
+
+        package_info() 必须描述**包里有什么**，而不是选项说了什么：CMake 侧可以
+        静默禁用某个 target（例如找不到 Qt5 时 Qt 系列目标整批禁用，见 ECO-05），
+        此时若仍然声明该组件，CMakeDeps 会给每个消费方报
+        "Library 'piplugin_host_qtd' not found in package" 而配置失败
+        —— 由 scripts/verify_package.ps1 的消费方用例抓出来。
+        """
+        folder = self.package_folder
+        if not folder:
+            return False
+        suffix = "d" if self.settings.build_type == "Debug" else ""
+        names = [f"{stem}{suffix}.lib", f"{stem}{suffix}.a",
+                 f"{stem}{suffix}.so", f"{stem}{suffix}.dylib",
+                 f"{stem}{suffix}.dll"]
+        for sub in (f"lib/{self.settings.build_type}", f"bin/{self.settings.build_type}"):
+            for name in names:
+                if os.path.exists(os.path.join(folder, sub, name)):
+                    return True
+        return False
+
     def package_info(self):
         # 产物布局与 install 规则一致：lib/<build_type>、bin/<build_type>；
         # Debug 构建的库名带全局 "d" 后缀（GLOBAL_PROJECT_BUILD_TYPE_SUFFIX）
         suffix = "d" if self.settings.build_type == "Debug" else ""
         self.cpp_info.libdirs = [f"lib/{self.settings.build_type}"]
         self.cpp_info.bindirs = [f"bin/{self.settings.build_type}"]
-
         # 与安装树导出的目标名对齐（NAMESPACE pi::），Conan 消费方与裸 CMake 消费方目标名一致
         core = self.cpp_info.components["piplugin"]
         core.libs = [f"piplugin{suffix}"]
         core.set_property("cmake_target_name", "pi::piplugin")
 
         # 宿主 kit L0（宿主侧机制库；仅依赖核心，无第三方依赖）
-        if self._host_kit_enabled("CORE"):
+        if self._host_kit_enabled("CORE") and self._packaged("piplugin_host"):
             comp = self.cpp_info.components["piplugin_host"]
             comp.libs = [f"piplugin_host{suffix}"]
             comp.requires = ["piplugin"]
             comp.set_property("cmake_target_name", "pi::piplugin_host")
 
         # 宿主 kit L1 Qt 嵌入区域（依赖 L0 + 本地安装的 Qt5，非 conan 依赖）
-        if self._host_kit_enabled("QT"):
+        if self._host_kit_enabled("QT") and self._packaged("piplugin_host_qt"):
             comp = self.cpp_info.components["piplugin_host_qt"]
             comp.libs = [f"piplugin_host_qt{suffix}"]
             comp.requires = ["piplugin", "piplugin_host"]
             comp.set_property("cmake_target_name", "pi::piplugin_host_qt")
 
         # 宿主侧事件路由（APP-06；可选糖，仅依赖核心）
-        if self._host_kit_enabled("EVENTS"):
+        if self._host_kit_enabled("EVENTS") and self._packaged("piplugin_events"):
             comp = self.cpp_info.components["piplugin_events"]
             comp.libs = [f"piplugin_events{suffix}"]
             comp.requires = ["piplugin"]
             comp.set_property("cmake_target_name", "pi::piplugin_events")
 
         # 宿主 kit L1 DX11 嵌入胶水（仅 Windows；只依赖核心）
-        if self._host_kit_enabled("DX11"):
+        if self._host_kit_enabled("DX11") and self._packaged("piplugin_host_dx11"):
             comp = self.cpp_info.components["piplugin_host_dx11"]
             comp.libs = [f"piplugin_host_dx11{suffix}"]
             comp.requires = ["piplugin"]
             comp.set_property("cmake_target_name", "pi::piplugin_host_dx11")
 
-        if self._adapter_enabled("IMGUI"):
+        if self._adapter_enabled("IMGUI") and self._packaged("piplugin_imgui"):
             comp = self.cpp_info.components["piplugin_imgui"]
             comp.libs = [f"piplugin_imgui{suffix}"]
             # 外部包引用必须写 包名::组件名；无组件的包用 包名::包名 兜底到根 cpp_info
@@ -276,9 +297,33 @@ class PiPluginConan(ConanFile):
             # imgui 仅为测试宿主拉取（adapter kit 未开启）：测试件不进包，但其依赖须在
             # 包信息中可见，否则 Conan 组件一致性检查会拒绝该变体
             self.cpp_info.requires = ["imgui::imgui"]
-        if self._adapter_enabled("QT"):
+        if self._adapter_enabled("QT") and self._packaged("piplugin_qt"):
             # 注意：Qt5 是本地安装（非 conan 依赖），消费方需自行保证 find_package(Qt5) 可达
             comp = self.cpp_info.components["piplugin_qt"]
             comp.libs = [f"piplugin_qt{suffix}"]
             comp.requires = ["piplugin"]
             comp.set_property("cmake_target_name", "pi::piplugin_qt")
+
+        # 组件**不继承**包级 libdirs/bindirs：必须逐个设置。否则 CMakeDeps 生成的是
+        # <pkg>/lib（默认值），而库里实际在 <pkg>/lib/Debug，消费方 find_package 时
+        # 直接报 "Library 'piplugin_host_qtd' not found in package" —— 由
+        # scripts/verify_package.ps1 的消费方用例抓出来（ECO-04）。
+        #
+        # includedirs 同理：Conan 消费方拿到的是 CMakeDeps 生成的 target（不是我们导出的
+        # target 文件），它的搜索路径只来自 cpp_info。各 kit 的头文件按 CMake 的
+        # INSTALL_INTERFACE 平铺在 include/piplugin/<host_kits|adapters>/<kit>/ 下，
+        # 所以要把这些目录逐个加到对应组件里，才能让消费方继续写
+        # #include "pi_host_session.h" / "pi_imgui_view.h"（与构建树写法一致）。
+        _kit_include_dirs = {
+            "piplugin_host": "include/piplugin/host_kits/core",
+            "piplugin_events": "include/piplugin/host_kits/events",
+            "piplugin_host_qt": "include/piplugin/host_kits/qt",
+            "piplugin_host_dx11": "include/piplugin/host_kits/dx11",
+            "piplugin_imgui": "include/piplugin/adapters/imgui",
+            "piplugin_qt": "include/piplugin/adapters/qt",
+        }
+        for _name, _comp in self.cpp_info.components.items():
+            _comp.libdirs = self.cpp_info.libdirs
+            _comp.bindirs = self.cpp_info.bindirs
+            _own = _kit_include_dirs.get(_name)
+            _comp.includedirs = ["include", _own] if _own else ["include"]

@@ -173,7 +173,38 @@ roadmap ECO-03：每个例子一个目录、一个 `CMakeLists.txt`、一份 REA
 `examples/ffi/`（ECO-06）不在 CMake 里：它是 Python / Rust / C# 三个独立工程，
 由 `scripts/verify_ffi.ps1` 驱动（`scripts/verify.ps1` 的第 3 项检查，缺工具链则 SKIP）。
 
-### 3.6 测试（tests/）
+### 3.6 打包与安装（roadmap ECO-04）
+
+两种分发形态，同一套目标名（`pi::piplugin` / `pi::piplugin_host` / `pi::piplugin_events` /
+`pi::piplugin_imgui` / `pi::piplugin_qt` / `pi::piplugin_host_qt` / `pi::piplugin_host_dx11`）：
+
+| 形态 | 产生方式 | 消费方入口 |
+|---|---|---|
+| **安装树** | `cmake --install build --prefix <前缀>` | `find_package(piplugin)`（旧入口 `find_package(pi)` 仍可用，见 `src/cmake/piForwardConfig.cmake.in`） |
+| **Conan 包** | `conan create .` | `conanfile.txt` 里写 `piplugin/<版本>` |
+
+要点（都是 ECO-04 修出来的真问题）：
+
+1. **配置放在包名目录**：`lib/cmake/piplugin/`。`find_package(<name>)` 只搜索
+   `<prefix>/lib/cmake/<name>*/`，放在 `cmake/pi/` 下的配置对 `find_package(piplugin)`
+   是不可见的（旧入口因此只保留一个转发文件）；
+2. **伞配置按组件按需导入**（`src/cmake/piConfig.cmake.in`）：消费方明确要求某组件时，
+   它的第三方依赖是硬 `find_dependency`；只是"恰好装在同一前缀里"的组件，仅在依赖已能找到时
+   顺手导入，否则打印 STATUS 跳过 —— 于是只想用核心库的消费方不会因为这台机器没装 Qt5 而配置失败；
+3. **`package_info()` 必须描述包里有什么**，而不是选项说了什么：CMake 侧可以静默禁用 target
+   （找不到 Qt5 时 Qt 系列整批禁用，见 ECO-05），此时若仍声明该组件，消费方会拿到
+   `Library 'xxx' not found in package`。`conanfile.py::_packaged()` 逐个核对产物；
+4. **组件不继承包级 `libdirs/bindirs/includedirs`**：组件必须各自设置，否则 CMakeDeps
+   生成 `<pkg>/lib`（库里在 `<pkg>/lib/Debug`）、且 kit 头文件目录缺失；
+5. **Qt5 是本地安装依赖**，不进 conan `requires`（否则等于强迫所有人用 conan 版 Qt）；
+   包只在组件被明确要求时才硬依赖它。
+
+验收脚本：`scripts/verify_package.ps1`（A 安装树 + B conan 包，各自 `find_package` → 构建 →
+**运行** `examples/conan_consumer/`）。已知待修项见
+[`examples/conan_consumer/README.md`](../../examples/conan_consumer/README.md)：
+conan 形态下 CMakeDeps 不传播 imgui 套件的外部 imgui 依赖（安装树形态没有这个问题）。
+
+### 3.7 测试（tests/）
 
 可选目标，各自做依赖自检，不满足即 `return()` 禁用（不影响整体构建）：
 

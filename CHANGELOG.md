@@ -28,6 +28,50 @@ A release is one commit on `main` that bumps the version in `CMakeLists.txt` and
 
 ### Added
 
+- **A packaged-consumer test, and the packaging bugs it found (ECO-04).**
+  `examples/conan_consumer/` is a consumer in the literal sense - it does not
+  `add_subdirectory` anything, it just does `find_package(piplugin)` and links the
+  official targets - and `scripts/verify_package.ps1` builds and RUNS it against
+  both shapes of the distribution: a `cmake --install` tree and a `conan create`
+  package. Unit tests and the conformance harness cannot answer "does somebody
+  else's project actually work against what we ship"; this can, and on its first
+  runs it failed three times:
+
+  1. **`find_package(piplugin)` could not find the install tree at all.** The CMake
+     configs were installed to `lib/cmake/pi/` - named after the namespace - but
+     `find_package(<name>)` only searches `<prefix>/lib/cmake/<name>*/`, so they
+     were invisible to `find_package(piplugin)`. They now live in
+     `lib/cmake/piplugin/` (matching the package name, and matching what CMakeDeps
+     generates), the core's component config is `pipluginCoreConfig.cmake` so it
+     does not collide with the umbrella's name, and `src/cmake/piForwardConfig.cmake.in`
+     keeps the old `find_package(pi)` entry point working. The umbrella is also
+     component-aware now: a component that is explicitly requested gets a hard
+     `find_dependency`, one that merely happens to be installed is pulled in only
+     if its dependency is already findable, and otherwise it is skipped with a
+     STATUS line - so a consumer that only wants the core no longer fails to
+     configure on a machine without Qt5.
+  2. **`package_info()` declared components that were not in the package.** CMake
+     can silently drop targets (a missing Qt5 disables all four Qt targets), but
+     the recipe declared the Qt host kit anyway, so every CMakeDeps consumer died
+     with "Library 'piplugin_host_qtd' not found in package". `_packaged()` now
+     checks the package folder for each library before describing it.
+  3. **Components do not inherit the package-level directories.** `libdirs`,
+     `bindirs` and `includedirs` set on `cpp_info` are not used for components:
+     CMakeDeps generated `<pkg>/lib` while the libraries are in `<pkg>/lib/Debug`,
+     and the kits' header directories were missing entirely. Both are now set per
+     component (the KIT headers are flattened into
+     `include/piplugin/<host_kits|adapters>/<kit>/`, so `#include "pi_host_session.h"`
+     keeps working for consumers exactly as it does in the build tree).
+
+  Result: install-tree consumer links core + host kit L0 + event router + imgui
+  adapter and runs; Conan consumer links core + host kits + event router and runs.
+  One honest gap is recorded rather than hidden: under Conan 2.10.1, CMakeDeps does
+  not propagate the imgui component's external `imgui::imgui` requirement
+  (`piplugin_FIND_DEPENDENCY_NAMES` is empty, the component's DEPENDENCIES list
+  contains only `pi::piplugin`), so `pi::piplugin_imgui` fails to LINK there - while
+  the install tree, whose exported target carries it, links fine. The evidence, the
+  workaround for consumers, and the reason the Conan phase passes
+  `-DPI_CONSUMER_LINK_IMGUI=OFF` are in `examples/conan_consumer/README.md`.
 - **FFI examples: the C ABI consumed from Python, Rust and C# (ECO-06).** "Pure C
   ABI" is a claim about *other* languages, so each example does the whole thing in
   its own language with no binding generator and no glue: load the framework DLL

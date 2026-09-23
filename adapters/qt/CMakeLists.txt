@@ -73,7 +73,7 @@ install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/pi_qt_view.h
 install(EXPORT pipluginQtAdapterTargets
     FILE pipluginQtAdapterTargets.cmake
     NAMESPACE ${NAMESPACE_NAME}:: # 消费方引用 ${NAMESPACE_NAME}::${TARGET_NAME}
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${NAMESPACE_NAME}
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/${PI_CMAKE_PACKAGE_SUBDIR}
 )
 
 # ------- 部署套件 DLL 到开发目录 bin/<CONFIG>（构建该 target 即刷新） -------------

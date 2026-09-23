@@ -71,5 +71,5 @@ install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/pi_host_embed_area.h
 install(EXPORT pipluginHostQtTargets
     FILE pipluginHostQtTargets.cmake
     NAMESPACE ${NAMESPACE_NAME}::
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${NAMESPACE_NAME}
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/${PI_CMAKE_PACKAGE_SUBDIR}
 )

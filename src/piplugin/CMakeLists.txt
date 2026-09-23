@@ -145,19 +145,21 @@ add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
 install(EXPORT ${FULL_NAME}Targets
     FILE ${FULL_NAME}Targets.cmake
     NAMESPACE ${NAMESPACE_NAME}:: # 此处需要带冒号，CMAKE遵循显式原则。外部库引用使用${NAMESPACE_NAME}::${TARGET_NAME}
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${NAMESPACE_NAME}
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/${PI_CMAKE_PACKAGE_SUBDIR}
 )
 
-# ------- 生成 CMake config 文件 -------
+# ------- 生成 CMake config 文件（核心组件） -------
+# 命名成 pipluginCoreConfig.cmake：包名那一份 pipluginConfig.cmake 由伞配置
+# （src/cmake/piConfig.cmake.in）占据，两者不能同名（ECO-04）。
 include(CMakePackageConfigHelpers)
 configure_package_config_file(
     cmake/${FULL_NAME}Config.cmake.in
-    "${CMAKE_CURRENT_BINARY_DIR}/${FULL_NAME}Config.cmake"
-    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${NAMESPACE_NAME}
+    "${CMAKE_CURRENT_BINARY_DIR}/${FULL_NAME}CoreConfig.cmake"
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/${PI_CMAKE_PACKAGE_SUBDIR}
 )
 
 # ------- 安装 CMake config 文件 -------
 install(FILES
-    "${CMAKE_CURRENT_BINARY_DIR}/${FULL_NAME}Config.cmake"
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${NAMESPACE_NAME}
+    "${CMAKE_CURRENT_BINARY_DIR}/${FULL_NAME}CoreConfig.cmake"
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/${PI_CMAKE_PACKAGE_SUBDIR}
 )

@@ -1,40 +1,104 @@
 @PACKAGE_INIT@
 
-# 包含组件 config（piplugin）
-include("${CMAKE_CURRENT_LIST_DIR}/pipluginConfig.cmake")
+# ---------------------------------------------------------------------------
+# piplugin umbrella config (install tree; Conan generates its own next to this
+# one from conanfile.py's package_info()).
+#
+# This file is installed as lib/cmake/piplugin/pipluginConfig.cmake, i.e. under the
+# PACKAGE name - find_package(<name>) only searches <prefix>/lib/cmake/<name>*/
+# directories, so a config living in cmake/pi/ is invisible to
+# find_package(piplugin). src/cmake/piForwardConfig.cmake.in keeps the historical
+# find_package(pi) entry point working.
+#
+# The core component config is pipluginCoreConfig.cmake (same directory), included
+# first; everything else is optional and handled by the policy below.
+# ---------------------------------------------------------------------------
 
-# -------------- 可选组件：host kits（宿主侧机制库） --------------
+# 包含组件 config（piplugin 核心）
+include("${CMAKE_CURRENT_LIST_DIR}/pipluginCoreConfig.cmake")
+
+# ---------------------------------------------------------------------------
+# 可选组件（roadmap ECO-04 的打包策略）
+#
+# 一个可选组件在两种情况下被 include：
+#   * 消费方**明确要求**它 —— find_package(piplugin REQUIRED COMPONENTS ...)：
+#     此时它的第三方依赖是硬性 find_dependency()，这是标准 CMake 契约；
+#   * 或者它存在于安装树里、且它的第三方依赖**本来就能找到** —— 顺势导入，方便使用。
+#
+# 其余情况只打印 STATUS 后跳过，绝不因此让整个 find_package() 失败。
+# 没有这条规则，只想用核心库的消费方会在没装 Qt5 的机器上配置失败 ——
+# Qt 适配器套件装在同一个前缀里，而无条件的 find_dependency(Qt5) 会直接中断。
+#
+# Qt5 是**本地安装**（不是 conan 依赖）：本包从不要求它，想用 pi::piplugin_qt 的
+# 消费方自己让 Qt5 可被找到（Qt5_DIR / CMAKE_PREFIX_PATH / PATH），
+# 与任何 Qt 工程的用法一致。imgui 相反：它是 conan 依赖，明确要求该组件时是硬依赖。
+# ---------------------------------------------------------------------------
 include(CMakeFindDependencyMacro)
 
-# L0 会话库（无第三方依赖）
-if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/pipluginHostCoreTargets.cmake")
-    include("${CMAKE_CURRENT_LIST_DIR}/pipluginHostCoreTargets.cmake")
-endif()
+set(_pi_prefix "${CMAKE_CURRENT_LIST_DIR}")
 
-# L1 DX11 嵌入胶水（仅 Windows，无第三方依赖）
-if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/pipluginHostDx11Targets.cmake")
-    include("${CMAKE_CURRENT_LIST_DIR}/pipluginHostDx11Targets.cmake")
-endif()
+# 组件名=targets 文件名；顺序即 include 顺序（依赖者排在被依赖者之后：
+# host_qt 链接 host 核心，imgui/qt 套件链接核心）。
+set(_pi_optional_components
+    "piplugin_host=pipluginHostCoreTargets.cmake"
+    "piplugin_host_dx11=pipluginHostDx11Targets.cmake"
+    "piplugin_events=pipluginEventsTargets.cmake"
+    "piplugin_host_qt=pipluginHostQtTargets.cmake"
+    "piplugin_imgui=pipluginImguiAdapterTargets.cmake"
+    "piplugin_qt=pipluginQtAdapterTargets.cmake"
+)
 
-# L1 Qt 嵌入区域（依赖 L0 + 本地安装的 Qt5，经 CMAKE_PREFIX_PATH 查找；
-# 须在 HostCore 之后 include，因为它 link 到 pi::piplugin_host）
-if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/pipluginHostQtTargets.cmake")
-    find_dependency(Qt5 COMPONENTS Widgets Core)
-    include("${CMAKE_CURRENT_LIST_DIR}/pipluginHostQtTargets.cmake")
-endif()
+foreach(_pi_entry IN LISTS _pi_optional_components)
+    string(REPLACE "=" ";" _pi_pair "${_pi_entry}")
+    list(GET _pi_pair 0 _pi_component)
+    list(GET _pi_pair 1 _pi_file)
 
-# -------------- 可选组件：adapter kits（安装树里存在才包含，各自先解决第三方依赖） --------------
+    if(NOT EXISTS "${_pi_prefix}/${_pi_file}")
+        continue()   # 这个包构建时没编该组件
+    endif()
 
-# imgui adapter kit（依赖 conan imgui；未安装该 kit 时自动跳过）
-if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/pipluginImguiAdapterTargets.cmake")
-    find_dependency(imgui)
-    include("${CMAKE_CURRENT_LIST_DIR}/pipluginImguiAdapterTargets.cmake")
-endif()
+    set(_pi_wanted FALSE)
+    if(_pi_component IN_LIST @NAMESPACE_NAME@_FIND_COMPONENTS)
+        set(_pi_wanted TRUE)
+    endif()
 
-# qt adapter kit（依赖本地安装的 Qt5，经 CMAKE_PREFIX_PATH 查找；未安装该 kit 时自动跳过）
-if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/pipluginQtAdapterTargets.cmake")
-    find_dependency(Qt5 COMPONENTS Widgets Core)
-    include("${CMAKE_CURRENT_LIST_DIR}/pipluginQtAdapterTargets.cmake")
-endif()
+    set(_pi_deps_ok TRUE)
+    if(_pi_component MATCHES "qt")
+        if(_pi_wanted)
+            find_dependency(Qt5 COMPONENTS Widgets Core)      # 明确要求 -> 硬依赖
+        else()
+            find_package(Qt5 COMPONENTS Widgets Core QUIET)
+            if(NOT Qt5_FOUND)
+                set(_pi_deps_ok FALSE)
+                message(STATUS "piplugin: ${_pi_component} is installed but Qt5 was not "
+                               "found -> not imported (set Qt5_DIR or CMAKE_PREFIX_PATH)")
+            endif()
+        endif()
+    elseif(_pi_component MATCHES "imgui")
+        if(_pi_wanted)
+            find_dependency(imgui)                            # 明确要求 -> 硬依赖
+        else()
+            find_package(imgui CONFIG QUIET)
+            if(NOT imgui_FOUND)
+                set(_pi_deps_ok FALSE)
+                message(STATUS "piplugin: ${_pi_component} is installed but imgui was not "
+                               "found -> not imported")
+            endif()
+        endif()
+    endif()
+
+    if(_pi_deps_ok)
+        include("${_pi_prefix}/${_pi_file}")
+        set(@NAMESPACE_NAME@_${_pi_component}_FOUND TRUE)
+    endif()
+endforeach()
+
+unset(_pi_optional_components)
+unset(_pi_entry)
+unset(_pi_pair)
+unset(_pi_component)
+unset(_pi_file)
+unset(_pi_wanted)
+unset(_pi_deps_ok)
 
 check_required_components(pi)
