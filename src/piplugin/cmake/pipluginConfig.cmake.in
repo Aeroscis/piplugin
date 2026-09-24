@@ -1,12 +1,14 @@
 @PACKAGE_INIT@
 
-# 包含导出的 targets 文件
-include("${CMAKE_CURRENT_LIST_DIR}/@FULL_NAME@Targets.cmake")
-
-# -------------- 依赖处理 --------------
 include(CMakeFindDependencyMacro)
 
-# 框架本体无第三方依赖（Windows 平台仅系统库 user32，无需 find_dependency）
+# 家族根层（pibase）：核心目标的链接接口里有 pi::base，所以消费者路径必须把它找出来。
+# 不调用的话，消费者 find_package(piplugin) 后在生成期直接报
+# "target pi::base was not found" —— 框架不是"无第三方依赖"，它依赖家族根层。
+find_dependency(pibase)
+
+# 包含导出的 targets 文件
+include("${CMAKE_CURRENT_LIST_DIR}/@FULL_NAME@Targets.cmake")
 
 # 设置组件找到标志
 set(@NAMESPACE_NAME@_@COMPONENT_NAME@_FOUND TRUE)

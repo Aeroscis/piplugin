@@ -268,6 +268,12 @@ class PiPluginConan(ConanFile):
         # 与安装树导出的目标名对齐（NAMESPACE pi::），Conan 消费方与裸 CMake 消费方目标名一致
         core = self.cpp_info.components["piplugin"]
         core.libs = [f"piplugin{suffix}"]
+        # 家族根层（pibase）：头文件来自它，核心的链接接口里也有 pi::base。
+        # 不声明的话，CMakeDeps 生成的 pi::plugin 既不带 pi::base，也不带它的
+        # include 目录，消费者会在 #include <pibase/pi_base.h> 处失败。
+        # 注意必须是 `pkg::pkg` 形式：裸名 "pibase" 会被当成**本包的内部组件**，
+        # conan create 直接报 "Internal components not found"。
+        core.requires = ["pibase::pibase"]
         core.set_property("cmake_target_name", "pi::plugin")
 
         # 宿主 kit L0（宿主侧机制库；仅依赖核心，无第三方依赖）

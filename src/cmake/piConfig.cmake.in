@@ -29,7 +29,7 @@ include("${CMAKE_CURRENT_LIST_DIR}/pipluginCoreConfig.cmake")
 # 没有这条规则，只想用核心库的消费方会在没装 Qt5 的机器上配置失败 ——
 # Qt 适配器套件装在同一个前缀里，而无条件的 find_dependency(Qt5) 会直接中断。
 #
-# Qt5 是**本地安装**（不是 conan 依赖）：本包从不要求它，想用 pi::piplugin_qt 的
+# Qt5 是**本地安装**（不是 conan 依赖）：本包从不要求它，想用 pi::plugin_qt 的
 # 消费方自己让 Qt5 可被找到（Qt5_DIR / CMAKE_PREFIX_PATH / PATH），
 # 与任何 Qt 工程的用法一致。imgui 相反：它是 conan 依赖，明确要求该组件时是硬依赖。
 # ---------------------------------------------------------------------------
