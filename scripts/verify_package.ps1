@@ -28,6 +28,13 @@
 #                        downloader's machine, which is the one failure this phase
 #                        exists to catch.
 #
+#                        The checkout in external\pibase must BE the pinned commit,
+#                        not merely exist: this phase calls fetch_pibase.ps1 with
+#                        -RequirePin, which moves a checkout that sits at some other
+#                        revision back to the pin (or re-fetches when the commit is
+#                        not in the clone). A pin is only worth something if every
+#                        green run was produced against it.
+#
 # Phase B is the slow one (it rebuilds the whole project inside Conan's cache),
 # and phase C builds the project a second time in its own tree. Use -SkipConan to
 # run A + C only, -SkipCpack to run A + B only.
@@ -273,13 +280,16 @@ if ($SkipCpack) {
     # PI_PLUGIN_PIBASE_PROVIDER=fetch: pibase comes in with add_subdirectory
     # and installs into the same prefix, headers and config included.
     $pibaseSrc = Join-Path $repoRoot "external\pibase"
-    if (-not (Test-Path (Join-Path $pibaseSrc "CMakeLists.txt"))) {
-        Write-Host "    fetching pibase sources (scripts\\fetch_pibase.ps1)"
-        Invoke-Native { powershell -NoProfile -File (Join-Path $repoRoot "scripts\fetch_pibase.ps1") }
-    }
+    # -RequirePin, not just "fetch when absent": the pin is compared against the
+    # checkout, and one sitting at some other revision is moved back (or re-fetched
+    # when the pin is not in that clone). Fetching only when the directory was
+    # missing meant this phase passed against whatever revision the machine
+    # happened to hold - the one thing a pin is there to rule out. The script also
+    # prints the revision it settled on, so the log names what was packaged.
+    Invoke-Native { powershell -NoProfile -File (Join-Path $repoRoot "scripts\fetch_pibase.ps1") -RequirePin }
     if (-not (Test-Path (Join-Path $pibaseSrc "CMakeLists.txt"))) {
         $failures += "pibase sources"
-        Write-Host "FAIL - external\pibase is missing; scripts\fetch_pibase.ps1 failed" -ForegroundColor Red
+        Write-Host "FAIL - external\pibase is missing, or not at the pin; scripts\fetch_pibase.ps1 failed" -ForegroundColor Red
     }
 
     $cpackTree = Join-Path $work "cpack-tree"
@@ -333,11 +343,20 @@ if ($SkipCpack) {
         Write-Host ("unpacked into {0}" -f $pkgRoot)
 
         # -- the archive promises a layout: assert it, do not eyeball it -------
+        # The base layer is in this list because its ABSENCE is the defect this
+        # phase was written for: added with EXCLUDE_FROM_ALL, pibase's install
+        # rules never ran (see src/piplugin/CMakeLists.txt), the ZIP held piplugin
+        # alone, and the downloader's build died on #include <pibase/pi_base.h>.
+        # The consumer below fails in that case too, but naming the missing
+        # artifact in the layout check says which one went missing instead of
+        # leaving it to a compiler error two steps later.
         $required = @(
             "bin\$Config\piplugin$libSuffix.dll",
             "lib\$Config\piplugin$libSuffix.lib",
             "include\piplugin\pi_plugin.h",
             "lib\cmake\piplugin\pipluginConfig.cmake",
+            "include\pibase\pi_base.h",
+            "lib\cmake\pibase\pibaseConfig.cmake",
             "LICENSE"
         )
         $missing = @()

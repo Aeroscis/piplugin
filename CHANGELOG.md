@@ -503,6 +503,27 @@ own.
 
 ### Fixed
 
+- **The package verification could go green without having tested the pin (ECO-04).**
+  Two things phase C of `scripts/verify_package.ps1` looked at that were not the thing it
+  claimed to prove. *The pin.* The phase fetched `external/pibase` only when the directory
+  was missing, and `scripts/fetch_pibase.ps1` answered success for any checkout that was
+  already there - so a machine still holding an older revision verified that older
+  revision while the file named a newer one. The fetch script now resolves the pin inside
+  the existing clone and compares it with `HEAD`, printing both when they differ instead of
+  claiming the pin, and phase C calls it with `-RequirePin`: the checkout is moved to the
+  pin (no network, when the commit is already in the clone) or re-fetched when it is not,
+  and the log names the revision that was packaged. *The archive layout.* The list of
+  artifacts the unpacked ZIP must contain did not include the base layer, so the one
+  regression this phase exists for - `pibase` missing from the archive - surfaced only as a
+  consumer's `#include <pibase/pi_base.h>` failure two steps later.
+  `include/pibase/pi_base.h` and `lib/cmake/pibase/pibaseConfig.cmake` are now asserted.
+  Both were checked by making them fail, not by making them pass: with the checkout moved
+  back to the previous pin, `fetch_pibase.ps1` reports the mismatch and `-RequirePin` moves
+  it back to the pin; with `EXCLUDE_FROM_ALL` put back on the base layer's
+  `add_subdirectory` - the defect entry below - phase C stops at
+  `FAIL - not in the archive: include\pibase\pi_base.h, lib\cmake\pibase\pibaseConfig.cmake`
+  instead of passing on an archive that holds `piplugin` alone.
+
 - **Neither distribution shape carried what it needs to stand on its own (ECO-04).**
   The Conan package left both of its dependencies behind, and the cpack archive left
   the base layer behind. `scripts/verify_package.ps1` - the script that asks what an
