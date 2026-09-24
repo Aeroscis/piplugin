@@ -14,29 +14,29 @@
 /* --------------------------------------------------------------------------
  * Internal types
  * -------------------------------------------------------------------------- */
-typedef struct PiHostSessionSlot {
+typedef struct PiPluginHostSessionSlot {
     PiPluginModule*           module;       /* loaded module (owns the code) */
     IPiPluginFactory*         factory;      /* add-ref'd at load              */
     IPiPluginBase*            plugin;       /* add-ref'd at instantiate       */
     IPiPluginView*            view;         /* add-ref'd; may be NULL         */
-    IPiService*               service;      /* add-ref'd; may be NULL         */
-    IPiEventSink*             event_sink;   /* add-ref'd; may be NULL (APP-06) */
+    IPiPluginService*               service;      /* add-ref'd; may be NULL         */
+    IPiPluginEventSink*             event_sink;   /* add-ref'd; may be NULL (APP-06) */
     const PiPluginDescriptor* descriptor;   /* borrowed from the factory      */
     PiNativeWindow            attach_window;
     int                       view_attached;
     int                       in_use;
-} PiHostSessionSlot;
+} PiPluginHostSessionSlot;
 
 struct PiPluginHostSession {
-    IPiHostServices*   services;            /* add-ref'd */
-    IPiHostEvents*     host_events;         /* add-ref'd; may be NULL (APP-06) */
-    PiHostSessionSlot  slots[PI_HOST_SESSION_MAX_SLOTS];
-    PiGuid             required[PI_HOST_SESSION_MAX_SLOTS];
+    IPiPluginHostServices*   services;            /* add-ref'd */
+    IPiPluginHostEvents*     host_events;         /* add-ref'd; may be NULL (APP-06) */
+    PiPluginHostSessionSlot  slots[PI_PLUGIN_HOST_SESSION_MAX_SLOTS];
+    PiGuid             required[PI_PLUGIN_HOST_SESSION_MAX_SLOTS];
     uint32_t           required_count;
     int                skip_detach;
-    PiHostSessionLogProc log;
+    PiPluginHostSessionLogProc log;
     void*              log_user;
-    char               last_error[PI_HOST_SESSION_ERROR_MAX];
+    char               last_error[PI_PLUGIN_HOST_SESSION_ERROR_MAX];
 };
 
 /* --------------------------------------------------------------------------
@@ -53,7 +53,7 @@ static void SessionSetError(PiPluginHostSession* session, const char* fmt, ...)
 
 static void SessionLog(PiPluginHostSession* session, const char* fmt, ...)
 {
-    char buf[PI_HOST_SESSION_ERROR_MAX + 192];
+    char buf[PI_PLUGIN_HOST_SESSION_ERROR_MAX + 192];
     va_list ap;
     if (!session || !session->log) return;
     va_start(ap, fmt);
@@ -68,22 +68,22 @@ static void SessionLog(PiPluginHostSession* session, const char* fmt, ...)
 static int SessionFindFreeSlot(const PiPluginHostSession* session)
 {
     uint32_t i;
-    for (i = 0; i < PI_HOST_SESSION_MAX_SLOTS; ++i) {
+    for (i = 0; i < PI_PLUGIN_HOST_SESSION_MAX_SLOTS; ++i) {
         if (!session->slots[i].in_use) return (int)i;
     }
     return -1;
 }
 
-static PiHostSessionSlot* SessionSlotAt(PiPluginHostSession* session, uint32_t slot)
+static PiPluginHostSessionSlot* SessionSlotAt(PiPluginHostSession* session, uint32_t slot)
 {
-    if (!session || slot >= PI_HOST_SESSION_MAX_SLOTS) return NULL;
+    if (!session || slot >= PI_PLUGIN_HOST_SESSION_MAX_SLOTS) return NULL;
     if (!session->slots[slot].in_use) return NULL;
     return &session->slots[slot];
 }
 
 /* 七步卸载序列（也用于加载失败时的就地回卷）。
  * 释放顺序不可调换：插件/视图的代码在模块里，任何一步先卸模块都是 UB。 */
-static void SessionTearDownSlot(PiPluginHostSession* session, PiHostSessionSlot* slot,
+static void SessionTearDownSlot(PiPluginHostSession* session, PiPluginHostSessionSlot* slot,
                                 uint32_t index, const char* tag)
 {
     if (!slot) return;
@@ -91,7 +91,7 @@ static void SessionTearDownSlot(PiPluginHostSession* session, PiHostSessionSlot*
     /* 1) 服务：可能还在别的线程上跑 I/O，先停再释放 */
     if (slot->service) {
         SessionLog(session, "%s[%u]: service stop", tag, index);
-        pi_service_stop(slot->service);
+        pi_plugin_service_stop(slot->service);
         pi_iunknown_release((IPiUnknown*)slot->service);
         slot->service = NULL;
     }
@@ -103,7 +103,7 @@ static void SessionTearDownSlot(PiPluginHostSession* session, PiHostSessionSlot*
      * 手写就会漏 —— 漏了就是"插件卸载后回调进已卸载内存"。 */
     if (session->host_events && slot->plugin) {
         SessionLog(session, "%s[%u]: drop event subscriptions", tag, index);
-        pi_host_events_drop_owner(session->host_events, (void*)slot->plugin);
+        pi_plugin_host_events_drop_owner(session->host_events, (void*)slot->plugin);
     }
     if (slot->event_sink) {
         SessionLog(session, "%s[%u]: release event sink", tag, index);
@@ -115,7 +115,7 @@ static void SessionTearDownSlot(PiPluginHostSession* session, PiHostSessionSlot*
     if (slot->view) {
         if (slot->view_attached && !session->skip_detach) {
             SessionLog(session, "%s[%u]: detach view", tag, index);
-            pi_view_detach(slot->view);
+            pi_plugin_view_detach(slot->view);
         } else if (slot->view_attached) {
             SessionLog(session, "%s[%u]: SKIPPING detach (diagnostic)", tag, index);
         }
@@ -143,7 +143,7 @@ static void SessionTearDownSlot(PiPluginHostSession* session, PiHostSessionSlot*
     /* 6) 模块 */
     if (slot->module) {
         SessionLog(session, "%s[%u]: unload module", tag, index);
-        pi_module_unload(slot->module);
+        pi_plugin_module_unload(slot->module);
         slot->module = NULL;
     }
 
@@ -157,7 +157,7 @@ static void SessionTearDownSlot(PiPluginHostSession* session, PiHostSessionSlot*
  * -------------------------------------------------------------------------- */
 
 /* 方向一：插件 REQUIRE 的能力，宿主必须有 —— 用 QI 探测宿主服务对象。
- * 通用化了测试宿主原先只探 PI_IID_HOST_UI 的一次性检查：任何 REQUIRED 能力
+ * 通用化了测试宿主原先只探 PI_PLUGIN_IID_HOST_UI 的一次性检查：任何 REQUIRED 能力
  * 宿主给不出，就拒绝实例化（headless 宿主拒绝 GUI 插件正是这条）。 */
 static PiResult SessionGatePluginRequirements(PiPluginHostSession* session,
                                               const PiPluginDescriptor* desc)
@@ -170,7 +170,7 @@ static PiResult SessionGatePluginRequirements(PiPluginHostSession* session,
         void* probe = NULL;
         PiResult hr;
 
-        if (!(cap->flags & PI_CAP_REQUIRED)) continue;
+        if (!(cap->flags & PI_PLUGIN_CAP_REQUIRED)) continue;
 
         hr = pi_iunknown_query_interface((IPiUnknown*)session->services, &cap->iid, &probe);
         if (PI_FAILED(hr) || !probe) {
@@ -191,7 +191,7 @@ static PiResult SessionGateHostRequirements(PiPluginHostSession* session,
 {
     uint32_t i;
     for (i = 0; i < session->required_count; ++i) {
-        if (!desc || !pi_descriptor_provides(desc, &session->required[i])) {
+        if (!desc || !pi_plugin_descriptor_provides(desc, &session->required[i])) {
             SessionSetError(session,
                             "plugin does not provide iid data1=0x%08X required by this host",
                             (unsigned)session->required[i].data1);
@@ -204,7 +204,7 @@ static PiResult SessionGateHostRequirements(PiPluginHostSession* session,
 /* --------------------------------------------------------------------------
  * Lifecycle
  * -------------------------------------------------------------------------- */
-PiResult pi_host_session_create(IPiHostServices* services,
+PiResult pi_plugin_host_session_create(IPiPluginHostServices* services,
                                 PiPluginHostSession** out_session)
 {
     PiPluginHostSession* session;
@@ -219,9 +219,9 @@ PiResult pi_host_session_create(IPiHostServices* services,
     pi_iunknown_add_ref((IPiUnknown*)services);
 
     /* 宿主可选提供事件接口（APP-06）：有就持有（借给宿主用），没有就一直是 NULL。
-     * 宿主通常用 pi_host_services_create_ex() 的 extra_qi 钩子把路由器挂上（APP-01）——
+     * 宿主通常用 pi_plugin_host_services_create_ex() 的 extra_qi 钩子把路由器挂上（APP-01）——
      * 这里走的就是插件将来会走的那条 QI 路径。（此处还没有 logger，故不写日志。） */
-    if (PI_FAILED(pi_host_events_query(services, &session->host_events))) {
+    if (PI_FAILED(pi_plugin_host_events_query(services, &session->host_events))) {
         session->host_events = NULL;
     }
 
@@ -229,13 +229,13 @@ PiResult pi_host_session_create(IPiHostServices* services,
     return PI_OK;
 }
 
-void pi_host_session_destroy(PiPluginHostSession* session)
+void pi_plugin_host_session_destroy(PiPluginHostSession* session)
 {
     uint32_t i;
     if (!session) return;
 
-    for (i = 0; i < PI_HOST_SESSION_MAX_SLOTS; ++i) {
-        PiHostSessionSlot* slot = &session->slots[i];
+    for (i = 0; i < PI_PLUGIN_HOST_SESSION_MAX_SLOTS; ++i) {
+        PiPluginHostSessionSlot* slot = &session->slots[i];
         if (slot->in_use || slot->module || slot->plugin || slot->view ||
             slot->event_sink) {
             SessionTearDownSlot(session, slot, i, "destroy");
@@ -253,7 +253,7 @@ void pi_host_session_destroy(PiPluginHostSession* session)
     free(session);
 }
 
-PiResult pi_host_session_require(PiPluginHostSession* session, const PiGuid* iid)
+PiResult pi_plugin_host_session_require(PiPluginHostSession* session, const PiGuid* iid)
 {
     uint32_t i;
     if (!session || !iid) return PI_E_INVALIDARG;
@@ -261,9 +261,9 @@ PiResult pi_host_session_require(PiPluginHostSession* session, const PiGuid* iid
     for (i = 0; i < session->required_count; ++i) {
         if (pi_guid_equal(&session->required[i], iid)) return PI_OK;   /* idempotent */
     }
-    if (session->required_count >= PI_HOST_SESSION_MAX_SLOTS) {
+    if (session->required_count >= PI_PLUGIN_HOST_SESSION_MAX_SLOTS) {
         SessionSetError(session, "too many host requirements (max %u)",
-                        (unsigned)PI_HOST_SESSION_MAX_SLOTS);
+                        (unsigned)PI_PLUGIN_HOST_SESSION_MAX_SLOTS);
         return PI_E_OUTOFMEMORY;
     }
     session->required[session->required_count++] = *iid;
@@ -273,23 +273,23 @@ PiResult pi_host_session_require(PiPluginHostSession* session, const PiGuid* iid
 /* --------------------------------------------------------------------------
  * Load / inspect / instantiate
  * -------------------------------------------------------------------------- */
-PiResult pi_host_session_inspect(PiPluginHostSession* session,
+PiResult pi_plugin_host_session_inspect(PiPluginHostSession* session,
                                  const char* dll_path,
                                  uint32_t* out_slot)
 {
     int index;
-    PiHostSessionSlot* slot;
+    PiPluginHostSessionSlot* slot;
     IPiPluginFactory* factory = NULL;
     const PiPluginDescriptor* desc = NULL;
     PiResult hr;
 
     if (!session || !dll_path || !out_slot) return PI_E_INVALIDARG;
-    *out_slot = PI_HOST_SESSION_INVALID_SLOT;
+    *out_slot = PI_PLUGIN_HOST_SESSION_INVALID_SLOT;
 
     index = SessionFindFreeSlot(session);
     if (index < 0) {
         SessionSetError(session, "session slot table is full (%u slots)",
-                        (unsigned)PI_HOST_SESSION_MAX_SLOTS);
+                        (unsigned)PI_PLUGIN_HOST_SESSION_MAX_SLOTS);
         return PI_E_UNEXPECTED;
     }
     slot = &session->slots[index];
@@ -299,27 +299,27 @@ PiResult pi_host_session_inspect(PiPluginHostSession* session,
 
     SessionLog(session, "load[%d]: %s", index, dll_path);
 
-    slot->module = pi_module_load(dll_path);
+    slot->module = pi_plugin_module_load(dll_path);
     if (!slot->module) {
-        SessionSetError(session, "pi_module_load failed: %s", pi_module_get_load_error());
+        SessionSetError(session, "pi_plugin_module_load failed: %s", pi_plugin_module_get_load_error());
         SessionTearDownSlot(session, slot, (uint32_t)index, "rollback");
         return PI_E_NOTFOUND;
     }
 
-    hr = pi_module_get_factory(slot->module, &factory);
+    hr = pi_plugin_module_get_factory(slot->module, &factory);
     if (PI_FAILED(hr) || !factory) {
-        SessionSetError(session, "pi_module_get_factory failed (hr=%d)", (int)hr);
+        SessionSetError(session, "pi_plugin_module_get_factory failed (hr=%d)", (int)hr);
         SessionTearDownSlot(session, slot, (uint32_t)index, "rollback");
         return PI_FAILED(hr) ? hr : PI_E_UNEXPECTED;
     }
     slot->factory = factory;
 
-    pi_factory_get_descriptor(slot->factory, &desc);
+    pi_plugin_factory_get_descriptor(slot->factory, &desc);
     slot->descriptor = desc;
 
     /* 版本门禁（roadmap BLK-03）：插件声明的 api_version 必须与宿主兼容。
      * 与能力门禁一样在**实例化之前**判定，所以不兼容的插件连实例都不会被创建。 */
-    if (desc && !pi_api_version_compatible(PI_PLUGIN_API_VERSION, desc->api_version)) {
+    if (desc && !pi_plugin_api_version_compatible(PI_PLUGIN_API_VERSION, desc->api_version)) {
         SessionSetError(session,
                         "plugin api_version 0x%08X (major %u, minor %u) is incompatible with host 0x%08X (major %u, minor %u); the plugin must not be newer than the host",
                         (unsigned)desc->api_version,
@@ -352,9 +352,9 @@ PiResult pi_host_session_inspect(PiPluginHostSession* session,
     return PI_OK;
 }
 
-PiResult pi_host_session_instantiate(PiPluginHostSession* session, uint32_t slot_index)
+PiResult pi_plugin_host_session_instantiate(PiPluginHostSession* session, uint32_t slot_index)
 {
-    PiHostSessionSlot* slot;
+    PiPluginHostSessionSlot* slot;
     PiGuid class_guid;
     uint32_t class_count;
     PiResult hr;
@@ -372,23 +372,23 @@ PiResult pi_host_session_instantiate(PiPluginHostSession* session, uint32_t slot
         return PI_E_UNEXPECTED;
     }
 
-    class_count = pi_factory_get_class_count(slot->factory);
+    class_count = pi_plugin_factory_get_class_count(slot->factory);
     if (class_count == 0) {
         SessionSetError(session, "plugin exposes no classes");
         SessionTearDownSlot(session, slot, slot_index, "rollback");
         return PI_E_NOTFOUND;
     }
 
-    hr = pi_factory_get_class_guid(slot->factory, 0, &class_guid);
+    hr = pi_plugin_factory_get_class_guid(slot->factory, 0, &class_guid);
     if (PI_FAILED(hr)) {
-        SessionSetError(session, "pi_factory_get_class_guid(0) failed (hr=%d)", (int)hr);
+        SessionSetError(session, "pi_plugin_factory_get_class_guid(0) failed (hr=%d)", (int)hr);
         SessionTearDownSlot(session, slot, slot_index, "rollback");
         return hr;
     }
 
-    hr = pi_factory_create_instance(slot->factory, &class_guid, session->services, &slot->plugin);
+    hr = pi_plugin_factory_create_instance(slot->factory, &class_guid, session->services, &slot->plugin);
     if (PI_FAILED(hr) || !slot->plugin) {
-        SessionSetError(session, "pi_factory_create_instance failed (hr=%d)", (int)hr);
+        SessionSetError(session, "pi_plugin_factory_create_instance failed (hr=%d)", (int)hr);
         SessionTearDownSlot(session, slot, slot_index, "rollback");
         return PI_FAILED(hr) ? hr : PI_E_UNEXPECTED;
     }
@@ -401,7 +401,7 @@ PiResult pi_host_session_instantiate(PiPluginHostSession* session, uint32_t slot
     }
 
     /* 视图与可选服务。取不到都不是错误：headless 插件本来就不该有 view，
-     * 而不实现 IPiService 的插件 QI 失败正是能力协商的常态。 */
+     * 而不实现 IPiPluginService 的插件 QI 失败正是能力协商的常态。 */
     {
         IPiPluginView* view = NULL;
         if (PI_SUCCEEDED(pi_plugin_get_view(slot->plugin, &view)) && view) {
@@ -409,18 +409,18 @@ PiResult pi_host_session_instantiate(PiPluginHostSession* session, uint32_t slot
         }
     }
     {
-        IPiService* service = NULL;
+        IPiPluginService* service = NULL;
         if (PI_SUCCEEDED(pi_iunknown_query_interface((IPiUnknown*)slot->plugin,
-                                                     &PI_IID_SERVICE, (void**)&service))) {
+                                                     &PI_PLUGIN_IID_SERVICE, (void**)&service))) {
             slot->service = service;
         }
     }
     {
         /* 事件 sink（APP-06）：插件可选实现，没有就是没有 —— 与 view/service 一样
          * 是能力协商的常态，不是错误。卸载序列会按正确的时机释放它。 */
-        IPiEventSink* sink = NULL;
+        IPiPluginEventSink* sink = NULL;
         if (PI_SUCCEEDED(pi_iunknown_query_interface((IPiUnknown*)slot->plugin,
-                                                     &PI_IID_EVENT_SINK, (void**)&sink))) {
+                                                     &PI_PLUGIN_IID_EVENT_SINK, (void**)&sink))) {
             slot->event_sink = sink;
         }
     }
@@ -432,23 +432,23 @@ PiResult pi_host_session_instantiate(PiPluginHostSession* session, uint32_t slot
     return PI_OK;
 }
 
-PiResult pi_host_session_load(PiPluginHostSession* session,
+PiResult pi_plugin_host_session_load(PiPluginHostSession* session,
                               const char* dll_path,
                               uint32_t* out_slot)
 {
-    uint32_t slot = PI_HOST_SESSION_INVALID_SLOT;
+    uint32_t slot = PI_PLUGIN_HOST_SESSION_INVALID_SLOT;
     PiResult hr;
 
     if (!session || !dll_path) return PI_E_INVALIDARG;
-    if (out_slot) *out_slot = PI_HOST_SESSION_INVALID_SLOT;
+    if (out_slot) *out_slot = PI_PLUGIN_HOST_SESSION_INVALID_SLOT;
 
-    hr = pi_host_session_inspect(session, dll_path, &slot);
+    hr = pi_plugin_host_session_inspect(session, dll_path, &slot);
     if (PI_FAILED(hr)) return hr;
 
-    hr = pi_host_session_instantiate(session, slot);
+    hr = pi_plugin_host_session_instantiate(session, slot);
     if (PI_FAILED(hr)) {
         /* instantiate 内部已回卷，这里只需把槽位下标还回去 */
-        if (out_slot) *out_slot = PI_HOST_SESSION_INVALID_SLOT;
+        if (out_slot) *out_slot = PI_PLUGIN_HOST_SESSION_INVALID_SLOT;
         return hr;
     }
 
@@ -459,44 +459,44 @@ PiResult pi_host_session_load(PiPluginHostSession* session,
 /* --------------------------------------------------------------------------
  * Slot queries
  * -------------------------------------------------------------------------- */
-uint32_t pi_host_session_count(const PiPluginHostSession* session)
+uint32_t pi_plugin_host_session_count(const PiPluginHostSession* session)
 {
     uint32_t i, n = 0;
     if (!session) return 0;
-    for (i = 0; i < PI_HOST_SESSION_MAX_SLOTS; ++i) {
+    for (i = 0; i < PI_PLUGIN_HOST_SESSION_MAX_SLOTS; ++i) {
         if (session->slots[i].in_use) ++n;
     }
     return n;
 }
 
-int pi_host_session_is_loaded(const PiPluginHostSession* session, uint32_t slot)
+int pi_plugin_host_session_is_loaded(const PiPluginHostSession* session, uint32_t slot)
 {
-    if (!session || slot >= PI_HOST_SESSION_MAX_SLOTS) return 0;
+    if (!session || slot >= PI_PLUGIN_HOST_SESSION_MAX_SLOTS) return 0;
     return session->slots[slot].in_use ? 1 : 0;
 }
 
-IPiPluginBase* pi_host_session_get_plugin(PiPluginHostSession* session, uint32_t slot)
+IPiPluginBase* pi_plugin_host_session_get_plugin(PiPluginHostSession* session, uint32_t slot)
 {
-    PiHostSessionSlot* s = SessionSlotAt(session, slot);
+    PiPluginHostSessionSlot* s = SessionSlotAt(session, slot);
     return s ? s->plugin : NULL;
 }
 
-IPiPluginView* pi_host_session_get_view(PiPluginHostSession* session, uint32_t slot)
+IPiPluginView* pi_plugin_host_session_get_view(PiPluginHostSession* session, uint32_t slot)
 {
-    PiHostSessionSlot* s = SessionSlotAt(session, slot);
+    PiPluginHostSessionSlot* s = SessionSlotAt(session, slot);
     return s ? s->view : NULL;
 }
 
-IPiService* pi_host_session_get_service(PiPluginHostSession* session, uint32_t slot)
+IPiPluginService* pi_plugin_host_session_get_service(PiPluginHostSession* session, uint32_t slot)
 {
-    PiHostSessionSlot* s = SessionSlotAt(session, slot);
+    PiPluginHostSessionSlot* s = SessionSlotAt(session, slot);
     return s ? s->service : NULL;
 }
 
-const PiPluginDescriptor* pi_host_session_get_descriptor(const PiPluginHostSession* session,
+const PiPluginDescriptor* pi_plugin_host_session_get_descriptor(const PiPluginHostSession* session,
                                                          uint32_t slot)
 {
-    if (!session || slot >= PI_HOST_SESSION_MAX_SLOTS) return NULL;
+    if (!session || slot >= PI_PLUGIN_HOST_SESSION_MAX_SLOTS) return NULL;
     if (!session->slots[slot].in_use) return NULL;
     return session->slots[slot].descriptor;
 }
@@ -504,16 +504,16 @@ const PiPluginDescriptor* pi_host_session_get_descriptor(const PiPluginHostSessi
 /* --------------------------------------------------------------------------
  * Events (APP-06, channel C)
  * -------------------------------------------------------------------------- */
-int pi_host_session_has_event_sink(const PiPluginHostSession* session, uint32_t slot)
+int pi_plugin_host_session_has_event_sink(const PiPluginHostSession* session, uint32_t slot)
 {
-    if (!session || slot >= PI_HOST_SESSION_MAX_SLOTS) return 0;
+    if (!session || slot >= PI_PLUGIN_HOST_SESSION_MAX_SLOTS) return 0;
     return session->slots[slot].event_sink ? 1 : 0;
 }
 
-PiResult pi_host_session_deliver_event(PiPluginHostSession* session, uint32_t slot,
-                                       const PiEvent* event)
+PiResult pi_plugin_host_session_deliver_event(PiPluginHostSession* session, uint32_t slot,
+                                       const PiPluginEvent* event)
 {
-    PiHostSessionSlot* s;
+    PiPluginHostSessionSlot* s;
 
     if (!session || !event) return PI_E_INVALIDARG;
     s = SessionSlotAt(session, slot);
@@ -525,10 +525,10 @@ PiResult pi_host_session_deliver_event(PiPluginHostSession* session, uint32_t sl
                    (unsigned)slot, event->topic ? event->topic : "(null)");
         return PI_E_NOINTERFACE;
     }
-    return pi_event_deliver(s->event_sink, event);
+    return pi_plugin_event_deliver(s->event_sink, event);
 }
 
-IPiHostEvents* pi_host_session_get_host_events(PiPluginHostSession* session)
+IPiPluginHostEvents* pi_plugin_host_session_get_host_events(PiPluginHostSession* session)
 {
     return session ? session->host_events : NULL;
 }
@@ -536,10 +536,10 @@ IPiHostEvents* pi_host_session_get_host_events(PiPluginHostSession* session)
 /* --------------------------------------------------------------------------
  * Embedding / per-frame pump
  * -------------------------------------------------------------------------- */
-PiResult pi_host_session_attach_view(PiPluginHostSession* session, uint32_t slot_index,
+PiResult pi_plugin_host_session_attach_view(PiPluginHostSession* session, uint32_t slot_index,
                                      PiNativeWindow parent_window, int set_visible)
 {
-    PiHostSessionSlot* slot;
+    PiPluginHostSessionSlot* slot;
     PiResult hr;
 
     if (!session) return PI_E_INVALIDARG;
@@ -556,31 +556,31 @@ PiResult pi_host_session_attach_view(PiPluginHostSession* session, uint32_t slot
         return PI_E_UNEXPECTED;
     }
 
-    hr = pi_view_attach(slot->view, parent_window);
+    hr = pi_plugin_view_attach(slot->view, parent_window);
     if (PI_FAILED(hr)) {
-        SessionSetError(session, "pi_view_attach failed (hr=%d)", (int)hr);
+        SessionSetError(session, "pi_plugin_view_attach failed (hr=%d)", (int)hr);
         return hr;
     }
     slot->view_attached = 1;
     slot->attach_window = parent_window;
 
-    if (set_visible) pi_view_set_visible(slot->view, 1);
+    if (set_visible) pi_plugin_view_set_visible(slot->view, 1);
 
     SessionLog(session, "attach[%u]: plugin window=0x%llx container=0x%llx",
                (unsigned)slot_index,
-               (unsigned long long)(uintptr_t)pi_view_get_native_window(slot->view),
+               (unsigned long long)(uintptr_t)pi_plugin_view_get_native_window(slot->view),
                (unsigned long long)(uintptr_t)parent_window);
     return PI_OK;
 }
 
-void pi_host_session_drive_idle(PiPluginHostSession* session)
+void pi_plugin_host_session_drive_idle(PiPluginHostSession* session)
 {
     uint32_t i;
     if (!session) return;
-    for (i = 0; i < PI_HOST_SESSION_MAX_SLOTS; ++i) {
-        PiHostSessionSlot* slot = &session->slots[i];
+    for (i = 0; i < PI_PLUGIN_HOST_SESSION_MAX_SLOTS; ++i) {
+        PiPluginHostSessionSlot* slot = &session->slots[i];
         if (slot->in_use && slot->view) {
-            pi_view_on_idle(slot->view);
+            pi_plugin_view_on_idle(slot->view);
         }
     }
 }
@@ -588,9 +588,9 @@ void pi_host_session_drive_idle(PiPluginHostSession* session)
 /* --------------------------------------------------------------------------
  * Unload
  * -------------------------------------------------------------------------- */
-PiResult pi_host_session_unload(PiPluginHostSession* session, uint32_t slot)
+PiResult pi_plugin_host_session_unload(PiPluginHostSession* session, uint32_t slot)
 {
-    PiHostSessionSlot* s;
+    PiPluginHostSessionSlot* s;
 
     if (!session) return PI_E_INVALIDARG;
     s = SessionSlotAt(session, slot);
@@ -605,11 +605,11 @@ PiResult pi_host_session_unload(PiPluginHostSession* session, uint32_t slot)
     return PI_OK;
 }
 
-void pi_host_session_unload_all(PiPluginHostSession* session)
+void pi_plugin_host_session_unload_all(PiPluginHostSession* session)
 {
     uint32_t i;
     if (!session) return;
-    for (i = 0; i < PI_HOST_SESSION_MAX_SLOTS; ++i) {
+    for (i = 0; i < PI_PLUGIN_HOST_SESSION_MAX_SLOTS; ++i) {
         if (session->slots[i].in_use || session->slots[i].module || session->slots[i].plugin) {
             SessionLog(session, "unload[%u]: begin", (unsigned)i);
             SessionTearDownSlot(session, &session->slots[i], i, "unload");
@@ -621,21 +621,21 @@ void pi_host_session_unload_all(PiPluginHostSession* session)
 /* --------------------------------------------------------------------------
  * Diagnostics
  * -------------------------------------------------------------------------- */
-void pi_host_session_set_logger(PiPluginHostSession* session,
-                                PiHostSessionLogProc log, void* user_data)
+void pi_plugin_host_session_set_logger(PiPluginHostSession* session,
+                                PiPluginHostSessionLogProc log, void* user_data)
 {
     if (!session) return;
     session->log = log;
     session->log_user = user_data;
 }
 
-void pi_host_session_set_skip_detach(PiPluginHostSession* session, int skip)
+void pi_plugin_host_session_set_skip_detach(PiPluginHostSession* session, int skip)
 {
     if (!session) return;
     session->skip_detach = skip ? 1 : 0;
 }
 
-const char* pi_host_session_last_error(const PiPluginHostSession* session)
+const char* pi_plugin_host_session_last_error(const PiPluginHostSession* session)
 {
     return session ? session->last_error : "";
 }

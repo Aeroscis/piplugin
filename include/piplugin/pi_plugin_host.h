@@ -23,22 +23,22 @@ typedef struct PiPluginModule PiPluginModule;
  * -------------------------------------------------------------------------- */
 
 /* Load a plugin from a shared library at the given path.
- * Returns NULL on failure (see pi_module_get_load_error). The module must
- * be unloaded with pi_module_unload(). */
-PI_EXPORT PiPluginModule* pi_module_load(const char* path);
+ * Returns NULL on failure (see pi_plugin_module_get_load_error). The module must
+ * be unloaded with pi_plugin_module_unload(). */
+PI_PLUGIN_API PiPluginModule* pi_plugin_module_load(const char* path);
 
 /* Unload a plugin module and release all associated resources. Make sure
  * all instances created from the module have been released first. */
-PI_EXPORT void pi_module_unload(PiPluginModule* module);
+PI_PLUGIN_API void pi_plugin_module_unload(PiPluginModule* module);
 
-/* Human-readable description of why the last pi_module_load failed
+/* Human-readable description of why the last pi_plugin_module_load failed
  * (e.g. "LoadLibrary failed (err=126)"). "no error" after a successful load.
  *
  * THREAD LOCALS (W-01): the string belongs to the CALLING THREAD, so a
  * multi-threaded host can diagnose several loads at once - each thread reads
  * back its own result instead of whichever thread wrote last. Valid until the
- * next pi_module_load ON THAT SAME THREAD; never NULL. */
-PI_EXPORT const char* pi_module_get_load_error(void);
+ * next pi_plugin_module_load ON THAT SAME THREAD; never NULL. */
+PI_PLUGIN_API const char* pi_plugin_module_get_load_error(void);
 
 /* Thread-safe variant of the above: copies the calling thread's current load
  * error into the caller's buffer (always NUL-terminated; truncated to `size`
@@ -46,11 +46,11 @@ PI_EXPORT const char* pi_module_get_load_error(void);
  * loads, which is what a host wants when it stores the reason for a failure.
  *
  * Returns PI_E_INVALIDARG when buf is NULL or size is 0. */
-PI_EXPORT PiResult pi_module_get_load_error_r(char* buf, size_t size);
+PI_PLUGIN_API PiResult pi_plugin_module_get_load_error_r(char* buf, size_t size);
 
 /* Get the factory from a loaded module. The factory is add-ref'd for the
  * caller; release it with ->pi_release(). */
-PI_EXPORT PiResult pi_module_get_factory(PiPluginModule* module,
+PI_PLUGIN_API PiResult pi_plugin_module_get_factory(PiPluginModule* module,
                                           IPiPluginFactory** out_factory);
 
 /* --------------------------------------------------------------------------
@@ -60,13 +60,13 @@ PI_EXPORT PiResult pi_module_get_factory(PiPluginModule* module,
  *
  * NOTE: the module is kept loaded for the lifetime of the plugin instance
  * (unloading the DLL while the plugin's code is on the stack anywhere is
- * undefined behavior). Destroy the plugin before calling pi_module_unload
+ * undefined behavior). Destroy the plugin before calling pi_plugin_module_unload
  * on any module you loaded yourself; the module returned via out_module
  * (if non-NULL) must be unloaded by the caller after releasing the plugin.
  */
-PI_EXPORT PiResult pi_host_create_plugin(const char* dll_path,
+PI_PLUGIN_API PiResult pi_plugin_host_create_plugin(const char* dll_path,
                                           const PiGuid* class_guid,
-                                          IPiHostServices* host,
+                                          IPiPluginHostServices* host,
                                           IPiPluginBase** out_plugin,
                                           PiPluginModule** out_module);
 

@@ -15,7 +15,7 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(
     HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 /* ==========================================================================
- * PiImGuiView - IPiPluginView implemented with Dear ImGui + D3D11
+ * PiPluginImGuiView - IPiPluginView implemented with Dear ImGui + D3D11
  *
  * Everything runs on the host's GUI thread; the object therefore needs
  * no locking. Lifecycle:
@@ -27,16 +27,16 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(
  * ======================================================================== */
 namespace {
 
-class PiImGuiView {
+class PiPluginImGuiView {
 public:
     PiRefCountedBase base;              /* MUST be first data member */
 
-    PiImGuiView(const PiImGuiViewDesc& desc)
+    PiPluginImGuiView(const PiPluginImGuiViewDesc& desc)
         : m_desc(desc), m_attached(false),
           m_hwnd(NULL), m_device(NULL), m_context(NULL),
           m_swapChain(NULL), m_rtv(NULL), m_imguiCtx(NULL) {}
 
-    PiImGuiViewDesc m_desc;
+    PiPluginImGuiViewDesc m_desc;
     bool            m_attached;
     HWND            m_hwnd;
     ID3D11Device*           m_device;
@@ -49,7 +49,7 @@ public:
     wchar_t         m_className[64];
 
     static const IPiPluginViewVtbl s_vtbl;
-    static PiImGuiView* from_iface(void* self_ptr) { return (PiImGuiView*)self_ptr; }
+    static PiPluginImGuiView* from_iface(void* self_ptr) { return (PiPluginImGuiView*)self_ptr; }
 
     bool create_resources(PiNativeWindow parent);
     void destroy_resources();
@@ -85,10 +85,10 @@ public:
  * its window, whatever the host does with the module.
  * ------------------------------------------------------------------------ */
 
-static LRESULT WINAPI PiImGuiViewWndProc(HWND hWnd, UINT msg,
+static LRESULT WINAPI PiPluginImGuiViewWndProc(HWND hWnd, UINT msg,
                                          WPARAM wParam, LPARAM lParam)
 {
-    PiImGuiView* view = (PiImGuiView*)GetWindowLongPtr(hWnd, GWLP_USERDATA);
+    PiPluginImGuiView* view = (PiPluginImGuiView*)GetWindowLongPtr(hWnd, GWLP_USERDATA);
     if (view) {
         /* Feed input into the plugin's ImGui Win32 backend. */
         ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam);
@@ -100,12 +100,12 @@ static LRESULT WINAPI PiImGuiViewWndProc(HWND hWnd, UINT msg,
     return DefWindowProcW(hWnd, msg, wParam, lParam);
 }
 
-static HMODULE pi_imgui_kit_module(void)
+static HMODULE pi_plugin_imgui_kit_module(void)
 {
     HMODULE module = NULL;
     GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
                        GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                       (LPCWSTR)&PiImGuiViewWndProc, &module);
+                       (LPCWSTR)&PiPluginImGuiViewWndProc, &module);
     return module;
 }
 
@@ -113,10 +113,10 @@ static HMODULE pi_imgui_kit_module(void)
  * Resource creation / destruction (host GUI thread only)
  * ------------------------------------------------------------------------ */
 
-bool PiImGuiView::create_resources(PiNativeWindow parent)
+bool PiPluginImGuiView::create_resources(PiNativeWindow parent)
 {
     HWND parentHwnd = (HWND)parent;
-    HMODULE module = pi_imgui_kit_module();
+    HMODULE module = pi_plugin_imgui_kit_module();
     WNDCLASSEXW wc = { sizeof(wc) };
 
     /* Unique per view: it cannot collide with another plugin's class, and
@@ -124,7 +124,7 @@ bool PiImGuiView::create_resources(PiNativeWindow parent)
     swprintf_s(m_className, _countof(m_className),
                L"PiImGuiViewWnd_%p", (void*)this);
     wc.style         = CS_CLASSDC;
-    wc.lpfnWndProc   = &PiImGuiViewWndProc;
+    wc.lpfnWndProc   = &PiPluginImGuiViewWndProc;
     wc.hInstance     = module;
     wc.lpszClassName = m_className;
     if (!RegisterClassExW(&wc)) {
@@ -189,7 +189,7 @@ bool PiImGuiView::create_resources(PiNativeWindow parent)
      * Save the host's context first. ImGui::CreateContext() alone would restore
      * it (it keeps the previous context if there was one), but this function
      * deliberately switches to ours and must therefore switch BACK before it
-     * returns: everything the host does after pi_attach() - its own ImGui frames,
+     * returns: everything the host does after pi_plugin_attach() - its own ImGui frames,
      * its own backend calls - belongs to the HOST's context. Leaving ours current
      * makes the host render its UI through the plugin's backend and device, which
      * is undefined behaviour (found by running examples/minimal_plugin_imgui
@@ -207,7 +207,7 @@ bool PiImGuiView::create_resources(PiNativeWindow parent)
     return true;
 }
 
-void PiImGuiView::resize_backbuffer()
+void PiPluginImGuiView::resize_backbuffer()
 {
     if (!m_swapChain) return;
     if (m_rtv) { m_rtv->Release(); m_rtv = NULL; }
@@ -221,7 +221,7 @@ void PiImGuiView::resize_backbuffer()
     }
 }
 
-void PiImGuiView::destroy_resources()
+void PiPluginImGuiView::destroy_resources()
 {
     if (!m_hwnd) return;   /* already torn down */
 
@@ -245,7 +245,7 @@ void PiImGuiView::destroy_resources()
 
     /* The class dies with its window: no process-wide name survives this module. */
     if (m_className[0])
-        UnregisterClassW(m_className, pi_imgui_kit_module());
+        UnregisterClassW(m_className, pi_plugin_imgui_kit_module());
 }
 
 /* --------------------------------------------------------------------------
@@ -255,8 +255,8 @@ void PiImGuiView::destroy_resources()
 PiResult PI_CALL piimgui_qi(void* self_ptr, const PiGuid* iid, void** out)
 {
     if (!out) return PI_E_INVALIDARG;
-    PiImGuiView* me = PiImGuiView::from_iface(self_ptr);
-    if (pi_guid_equal(iid, &PI_IID_UNKNOWN) || pi_guid_equal(iid, &PI_IID_PLUGIN_VIEW)) {
+    PiPluginImGuiView* me = PiPluginImGuiView::from_iface(self_ptr);
+    if (pi_guid_equal(iid, &PI_IID_UNKNOWN) || pi_guid_equal(iid, &PI_PLUGIN_IID_PLUGIN_VIEW)) {
         *out = me;
         me->base.unk.lpVtbl->pi_add_ref(self_ptr);
         return PI_OK;
@@ -268,7 +268,7 @@ PiResult PI_CALL piimgui_qi(void* self_ptr, const PiGuid* iid, void** out)
 PiResult PI_CALL piimgui_attach(void* self_ptr, PiNativeWindow parent)
 {
     if (!PI_IS_VALID_WINDOW(parent)) return PI_E_INVALIDARG;
-    PiImGuiView* me = PiImGuiView::from_iface(self_ptr);
+    PiPluginImGuiView* me = PiPluginImGuiView::from_iface(self_ptr);
     if (me->m_attached) return PI_FAIL;
 
     if (!me->create_resources(parent))
@@ -282,7 +282,7 @@ PiResult PI_CALL piimgui_attach(void* self_ptr, PiNativeWindow parent)
 
 PiResult PI_CALL piimgui_detach(void* self_ptr)
 {
-    PiImGuiView* me = PiImGuiView::from_iface(self_ptr);
+    PiPluginImGuiView* me = PiPluginImGuiView::from_iface(self_ptr);
     if (!me->m_attached) return PI_OK;
 
     me->m_attached = false;
@@ -294,13 +294,13 @@ PiResult PI_CALL piimgui_detach(void* self_ptr)
 
 PiNativeWindow PI_CALL piimgui_get_native_window(void* self_ptr)
 {
-    PiImGuiView* me = PiImGuiView::from_iface(self_ptr);
+    PiPluginImGuiView* me = PiPluginImGuiView::from_iface(self_ptr);
     return (PiNativeWindow)me->m_hwnd;
 }
 
 PiResult PI_CALL piimgui_on_resize(void* self_ptr, int32_t w, int32_t h)
 {
-    PiImGuiView* me = PiImGuiView::from_iface(self_ptr);
+    PiPluginImGuiView* me = PiPluginImGuiView::from_iface(self_ptr);
     if (!me->m_attached || !me->m_hwnd) return PI_OK;
     SetWindowPos(me->m_hwnd, NULL, 0, 0, w, h,
                  SWP_NOZORDER | SWP_NOACTIVATE);
@@ -309,7 +309,7 @@ PiResult PI_CALL piimgui_on_resize(void* self_ptr, int32_t w, int32_t h)
 
 PiResult PI_CALL piimgui_on_idle(void* self_ptr)
 {
-    PiImGuiView* me = PiImGuiView::from_iface(self_ptr);
+    PiPluginImGuiView* me = PiPluginImGuiView::from_iface(self_ptr);
     if (!me->m_attached || !me->m_imguiCtx) return PI_OK;
 
     me->with_own_context([me]() {
@@ -340,13 +340,13 @@ PiResult PI_CALL piimgui_get_preferred_size(void* self_ptr, int32_t* w, int32_t*
 
 PiResult PI_CALL piimgui_set_visible(void* self_ptr, int32_t visible)
 {
-    PiImGuiView* me = PiImGuiView::from_iface(self_ptr);
+    PiPluginImGuiView* me = PiPluginImGuiView::from_iface(self_ptr);
     if (!me->m_hwnd) return PI_OK;
     ShowWindow(me->m_hwnd, visible ? SW_SHOW : SW_HIDE);
     return PI_OK;
 }
 
-const IPiPluginViewVtbl PiImGuiView::s_vtbl = {
+const IPiPluginViewVtbl PiPluginImGuiView::s_vtbl = {
     { &piimgui_qi, &pi_refcounted_add_ref, &pi_refcounted_release },
     &piimgui_attach,
     &piimgui_detach,
@@ -359,7 +359,7 @@ const IPiPluginViewVtbl PiImGuiView::s_vtbl = {
 
 static void piimgui_view_destroy(void* self_ptr)
 {
-    PiImGuiView* me = PiImGuiView::from_iface(self_ptr);
+    PiPluginImGuiView* me = PiPluginImGuiView::from_iface(self_ptr);
     /* Synchronous model: same thread, no pending work - just tear down
      * whatever is still alive and free the object. */
     if (me->m_attached) {
@@ -377,16 +377,16 @@ static void piimgui_view_destroy(void* self_ptr)
  * Public API
  * ======================================================================== */
 
-PiResult pi_imgui_view_create(const PiImGuiViewDesc* desc, IPiPluginView** out_view)
+PiResult pi_plugin_imgui_view_create(const PiPluginImGuiViewDesc* desc, IPiPluginView** out_view)
 {
     if (!desc || !desc->draw || !out_view)
         return PI_E_INVALIDARG;
     *out_view = NULL;
 
-    PiImGuiView* view = new PiImGuiView(*desc);
+    PiPluginImGuiView* view = new PiPluginImGuiView(*desc);
     if (!view) return PI_E_OUTOFMEMORY;
     pi_refcounted_init_with_destroy(&view->base,
-                                    (const IPiUnknownVtbl*)&PiImGuiView::s_vtbl,
+                                    (const IPiUnknownVtbl*)&PiPluginImGuiView::s_vtbl,
                                     &piimgui_view_destroy);
     *out_view = (IPiPluginView*)&view->base;
     return PI_OK;

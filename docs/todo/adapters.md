@@ -6,10 +6,10 @@
 
 ## 1. Qt 套件改为 SHARED 并共享运行时 [P1] —— 已完成（roadmap APP-08）
 
-> **结论**：`piplugin_qt` 现在是 **SHARED** 库（导出宏 `PI_QT_API`，部署到
+> **结论**：`piplugin_qt` 现在是 **SHARED** 库（导出宏 `PI_PLUGIN_QT_API`，部署到
 > `bin/<CONFIG>/`），进程级状态（唯一 `QApplication`、活视图登记表）全进程一份，因此
-> 同一进程可以同时加载多个 Qt 插件 DLL。配套：`pi_qt_view_shutdown_owner(owner)` 只拆
-> 本插件的视图（不带 owner 的 `pi_qt_view_shutdown()` 保留为进程级大锤）；
+> 同一进程可以同时加载多个 Qt 插件 DLL。配套：`pi_plugin_qt_view_shutdown_owner(owner)` 只拆
+> 本插件的视图（不带 owner 的 `pi_plugin_qt_view_shutdown()` 保留为进程级大锤）；
 > `QApplication` 由最后一个销毁的视图析构。改回 STATIC 时第二个 attach 会撞上 Qt 的
 > `"there should be only one application object"` 断言。
 > **复核**：ctest `multi_plugin_qt_in_one_process`（`tests/test_host_multi`）；判定口诀与
@@ -28,9 +28,9 @@ X11 嵌入。README（`adapters/qt/README.md`）已预留此方向。
 
 > **结论**：这类组合**不可用**（而不是"能用但不完美"）——套件的 `attach()` 在
 > `piqt_app_create()` 就失败，因为进程里已存在宿主的 `QApplication`，套件的
-> `PI_QT_VIEW_TRACE=1` 表现为日志只到 `attach: enter` 一行。正确姿势是宿主直连插件的
+> `PI_PLUGIN_QT_VIEW_TRACE=1` 表现为日志只到 `attach: enter` 一行。正确姿势是宿主直连插件的
 > `QWidget*`（插件不链接 `piplugin_qt`），并用能力门禁把走错路的插件在实例化**之前**
-> 挡下（`pi_host_session_require()` → `plugin does not provide iid ...`）。
+> 挡下（`pi_plugin_host_session_require()` → `plugin does not provide iid ...`）。
 > **复核**：教程 `docs/tutorial/qt-host-direct.md`（症状与判定、宿主×插件选型表、
 > 四条硬规则、常见错误对照表）；可运行示例 `examples/qt_host_direct/`，其
 > `--self-test` 程序化点击插件按钮 → 断言消息到达宿主 → 按顺序卸载 → 退出码判定。

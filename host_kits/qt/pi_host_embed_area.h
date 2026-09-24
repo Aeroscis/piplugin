@@ -18,8 +18,8 @@
  *   session 会返回 NULL，本类自动"忘掉"它 —— 从根上消灭了"控件还握着一个
  *   已释放的 view，下一次 resize 就崩"的悬垂指针问题。
  */
-#ifndef PI_HOST_EMBED_AREA_H
-#define PI_HOST_EMBED_AREA_H
+#ifndef PI_PLUGIN_HOST_EMBED_AREA_H
+#define PI_PLUGIN_HOST_EMBED_AREA_H
 
 #include "piplugin/pi_plugin.h"
 #include "pi_host_session.h"
@@ -41,7 +41,7 @@ public:
     PiResult attach(PiPluginHostSession* session, uint32_t slot, bool set_visible = true);
 
     /* 只解除本控件的绑定，不触碰 session 的卸载序列。
-     * 宿主在执行 pi_host_session_unload() 之前调用它即可。 */
+     * 宿主在执行 pi_plugin_host_session_unload() 之前调用它即可。 */
     void detachBinding();
 
     /* 当前绑定的 view（借用指针，可能为 NULL；禁止 release）。 */
@@ -64,4 +64,4 @@ private:
     QTimer*              m_idleTimer;
 };
 
-#endif /* PI_HOST_EMBED_AREA_H */
+#endif /* PI_PLUGIN_HOST_EMBED_AREA_H */

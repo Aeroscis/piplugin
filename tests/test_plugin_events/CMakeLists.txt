@@ -1,7 +1,7 @@
 # ./tests/test_plugin_events/CMakeLists.txt
 #
 # roadmap APP-06 的验收件：一个纯 C 的"事件插件"——同时是 sink（宿主可寻址投递）
-# 与发布者/订阅者（走宿主的 IPiHostEvents）。协议常量与宿主共用 tests/common。
+# 与发布者/订阅者（走宿主的 IPiPluginHostEvents）。协议常量与宿主共用 tests/common。
 cmake_minimum_required(VERSION 3.23)
 
 # target name

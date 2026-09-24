@@ -3,11 +3,11 @@
  *
  * Demonstrates:
  *   1. Loading a plugin DLL at runtime
- *   2. Creating an IPiHostServices object (with optional IPiHostUI
+ *   2. Creating an IPiPluginHostServices object (with optional IPiPluginHostUI
  *      capability) and handing it to the plugin
  *   3. Inspecting the plugin's LV2-style capability declarations
  *   4. Embedding the plugin Qt widget inside the host window
- *   5. Pumping the plugin event loop via pi_on_idle() each frame
+ *   5. Pumping the plugin event loop via pi_plugin_on_idle() each frame
  */
 #include "piplugin/pi_plugin.h"
 #include "pi_host_session.h"
@@ -37,13 +37,13 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg
 /* 宿主 kit L1（piplugin_host_dx11）持有"可嵌入子窗口的 D3D11 设备 +
  * flip-model 交换链"的创建参数与 resize 策略（含 DXGI_SCALING_NONE 降级路径）。
  * 本宿主只决定"窗口长什么样、画什么、什么时候画"。 */
-static PiHostDx11Device* g_dx = NULL;
+static PiPluginHostDx11Device* g_dx = NULL;
 
 /* 宿主 kit L0（piplugin_host）持有全部插件生命周期机制：
  * 加载 / 双向能力门禁 / 实例化 / 七步卸载序列。 */
-static IPiHostServices*     g_hostServices = NULL;
+static IPiPluginHostServices*     g_hostServices = NULL;
 static PiPluginHostSession* g_session      = NULL;
-static uint32_t             g_slot         = PI_HOST_SESSION_INVALID_SLOT;
+static uint32_t             g_slot         = PI_PLUGIN_HOST_SESSION_INVALID_SLOT;
 static char                 g_status[256]  = "No plugin loaded";
 static char                 g_lastMessage[128] = "(none)";
 
@@ -145,8 +145,8 @@ static double NowMs()
  * 全部通过则退出码 0，任一环节失败则退出码 2。这是 ECO-02 的 conformance
  * harness：任何插件 DLL（含社区适配器产出的）都能拿官方宿主验收一次。
  * -------------------------------------------------------------------------- */
-#define PI_SELFTEST_MAX_PLUGINS  16
-#define PI_SELFTEST_RESIZE_FRAMES 4
+#define PI_PLUGIN_SELFTEST_MAX_PLUGINS  16
+#define PI_PLUGIN_SELFTEST_RESIZE_FRAMES 4
 
 static int      g_selfTestCycles      = 0;   /* 0 = disabled */
 static int      g_selfTestCycleIndex  = 0;   /* 当前插件内的轮次 */
@@ -154,7 +154,7 @@ static unsigned g_selfTestIdleFrames  = 20;
 static const char* g_pluginOverride   = NULL;
 static bool     g_selfTestFailed      = false;
 
-static char     g_selfTestPlugins[PI_SELFTEST_MAX_PLUGINS][MAX_PATH];
+static char     g_selfTestPlugins[PI_PLUGIN_SELFTEST_MAX_PLUGINS][MAX_PATH];
 static int      g_selfTestPluginCount = 0;
 static int      g_selfTestPluginIndex = 0;
 static bool     g_selfTestDone        = false;   /* 全部跑完（用于退出码） */
@@ -163,8 +163,8 @@ static bool     g_selfTestAborted     = false;   /* 出现失败：跑完当前�
 /* 尺寸往返用的原始窗口矩形，以及宿主自己的窗口（resize 要真的作用在它上面） */
 static HWND     g_hostWindow   = NULL;
 static RECT     g_selfTestRect = { 0, 0, 0, 0 };
-/* Self-test option: skip pi_view_detach() and let the plugin's own
- * pi_terminate() do the teardown - exercises the "host just drops the
+/* Self-test option: skip pi_plugin_view_detach() and let the plugin's own
+ * pi_plugin_terminate() do the teardown - exercises the "host just drops the
  * module" path that used to crash. */
 static bool     g_skipDetach         = false;
 /* --screenshot <file>: after a few rendered frames with the plugin loaded,
@@ -180,7 +180,7 @@ static char       g_log[2048];
 /* 宿主自己的"收到多少条插件消息"计数，经 app 自定义宿主服务暴露给插件
  * （通道 B / roadmap APP-01，见 tests/common/pi_test_host_service.h）。 */
 static uint32_t   g_pluginMessages = 0;
-static PiTestHostServiceImpl g_extraService;
+static PiPluginTestHostServiceImpl g_extraService;
 
 /* --------------------------------------------------------------------------
  * Forward declarations
@@ -218,7 +218,7 @@ static void LogStatus(const char* fmt, ...)
         std::string s(logPath, len > 0 && len < MAX_PATH ? len : 0);
         size_t slash = s.find_last_of("\\/");
         if (slash != std::string::npos) s = s.substr(0, slash + 1);
-        s += "pi_test_host.log";
+        s += "pi_plugin_test_host.log";
         fopen_s(&f, s.c_str(), "a");
         if (!f) return;
     }
@@ -253,7 +253,7 @@ static void Dx11LogProc(void* user_data, const char* message)
  * 没有插件、插件是 headless、或槽位已卸载时返回 NULL。 */
 static IPiPluginView* CurrentView(void)
 {
-    return pi_host_session_get_view(g_session, g_slot);
+    return pi_plugin_host_session_get_view(g_session, g_slot);
 }
 
 /* --------------------------------------------------------------------------
@@ -287,8 +287,8 @@ static void HostMessageProc(void* user_data, uint32_t msg,
  * -------------------------------------------------------------------------- */
 static bool RenderFrame(bool resizeFrame, bool present, unsigned overrideW, unsigned overrideH)
 {
-    ID3D11RenderTargetView* rtv = g_dx ? pi_host_dx11_render_target(g_dx) : NULL;
-    ID3D11DeviceContext*    ctx = g_dx ? pi_host_dx11_context(g_dx) : NULL;
+    ID3D11RenderTargetView* rtv = g_dx ? pi_plugin_host_dx11_render_target(g_dx) : NULL;
+    ID3D11DeviceContext*    ctx = g_dx ? pi_plugin_host_dx11_context(g_dx) : NULL;
     if (g_renderingFrame || !g_dx || !rtv || !ctx)
         return false;
     g_renderingFrame = true;
@@ -327,8 +327,8 @@ static bool RenderFrame(bool resizeFrame, bool present, unsigned overrideW, unsi
 
         ImGui::Separator();
 
-        if (g_session && g_slot != PI_HOST_SESSION_INVALID_SLOT) {
-            const PiPluginDescriptor* desc = pi_host_session_get_descriptor(g_session, g_slot);
+        if (g_session && g_slot != PI_PLUGIN_HOST_SESSION_INVALID_SLOT) {
+            const PiPluginDescriptor* desc = pi_plugin_host_session_get_descriptor(g_session, g_slot);
             if (desc) {
                 ImGui::Text("Plugin: %s", desc->name);
                 ImGui::Text("Vendor: %s", desc->vendor);
@@ -342,13 +342,13 @@ static bool RenderFrame(bool resizeFrame, bool present, unsigned overrideW, unsi
                     for (uint32_t i = 0; i < desc->capability_count; ++i) {
                         const PiPluginCapability* cap = &desc->capabilities[i];
                         const char* kind =
-                            (cap->flags & PI_CAP_PROVIDES) ? "provides" :
-                            (cap->flags & PI_CAP_REQUIRED) ? "requires" : "optional";
+                            (cap->flags & PI_PLUGIN_CAP_PROVIDES) ? "provides" :
+                            (cap->flags & PI_PLUGIN_CAP_REQUIRED) ? "requires" : "optional";
                         uint32_t id = cap->iid.data1;
                         const char* what =
-                            pi_guid_equal(&cap->iid, &PI_IID_PLUGIN_VIEW) ? "PLUGIN_VIEW" :
-                            pi_guid_equal(&cap->iid, &PI_IID_HOST_UI)    ? "HOST_UI"    :
-                            pi_guid_equal(&cap->iid, &PI_IID_SERVICE)    ? "SERVICE"    : "?";
+                            pi_guid_equal(&cap->iid, &PI_PLUGIN_IID_PLUGIN_VIEW) ? "PLUGIN_VIEW" :
+                            pi_guid_equal(&cap->iid, &PI_PLUGIN_IID_HOST_UI)    ? "HOST_UI"    :
+                            pi_guid_equal(&cap->iid, &PI_PLUGIN_IID_SERVICE)    ? "SERVICE"    : "?";
                         ImGui::BulletText("%s %s (iid=%08X)", kind, what, id);
                     }
                 }
@@ -373,9 +373,9 @@ static bool RenderFrame(bool resizeFrame, bool present, unsigned overrideW, unsi
 
             ImGui::Separator();
             ImGui::Text("Has GUI view:   %s",
-                        pi_host_session_get_view(g_session, g_slot) ? "yes" : "no");
+                        pi_plugin_host_session_get_view(g_session, g_slot) ? "yes" : "no");
             ImGui::Text("Has service:    %s",
-                        pi_host_session_get_service(g_session, g_slot) ? "yes" : "no");
+                        pi_plugin_host_session_get_service(g_session, g_slot) ? "yes" : "no");
 
             ImGui::Separator();
             ImGui::Text("Last plugin message: %s", g_lastMessage);
@@ -403,7 +403,7 @@ static bool RenderFrame(bool resizeFrame, bool present, unsigned overrideW, unsi
      * the previous frame, which SCALING_NONE clips 1:1 - shape-safe by
      * construction. */
     if (present)
-        pi_host_dx11_present(g_dx, resizeFrame ? 0u : 1u);
+        pi_plugin_host_dx11_present(g_dx, resizeFrame ? 0u : 1u);
 
     g_renderingFrame = false;
     return true;
@@ -427,7 +427,7 @@ static void PrepareFrameFor(unsigned w, unsigned h)
     double t0 = NowMs();
     ++g_resizeFrames;
 
-    if (!pi_host_dx11_prepare_size(g_dx, w, h))
+    if (!pi_plugin_host_dx11_prepare_size(g_dx, w, h))
         return;   /* 渲染目标不可用：这一帧画不出来 */
 
     RenderFrame(/*resizeFrame=*/true, /*present=*/false, w, h);
@@ -453,7 +453,7 @@ static void ResizeContainerAndPlugin(unsigned clientW, unsigned clientH)
         /* resize 转发：容器归宿主、尺寸也归宿主，故由宿主发起 */
         IPiPluginView* view = CurrentView();
         if (view && w > 0 && h > 0)
-            pi_view_on_resize(view, w, h);
+            pi_plugin_view_on_resize(view, w, h);
     }
 }
 
@@ -481,7 +481,7 @@ static void RunSizeLoop(HWND hWnd, UINT hitTest)
 
     const int minClientW = 520, minClientH = 360;
     g_resizeFrames = 0;
-    pi_host_dx11_reset_resize_stats(g_dx);   /* 计数在 L1 kit 里，这里清零 */
+    pi_plugin_host_dx11_reset_resize_stats(g_dx);   /* 计数在 L1 kit 里，这里清零 */
     g_presentTotalMs = g_presentMaxMs = 0.0;
     g_prepareTotalMs = g_prepareMaxMs = 0.0;
     g_sizeMoveActive = true;
@@ -535,7 +535,7 @@ static void RunSizeLoop(HWND hWnd, UINT hitTest)
          *    Present waits here, and every frame the screen shows in the
          *    meantime - old or new - is clipped 1:1, never scaled */
         double p0 = NowMs();
-        pi_host_dx11_present(g_dx, 0);
+        pi_plugin_host_dx11_present(g_dx, 0);
         double pms = NowMs() - p0;
         g_presentTotalMs += pms;
         if (pms > g_presentMaxMs) g_presentMaxMs = pms;
@@ -556,7 +556,7 @@ static void RunSizeLoop(HWND hWnd, UINT hitTest)
     g_sizeMoveActive = false;
     LogStatus("resize: host size loop ended after %u steps (failures=%u) "
               "present avg=%.2fms max=%.2fms  prepare avg=%.2fms max=%.2fms",
-              g_resizeFrames, pi_host_dx11_resize_failures(g_dx),
+              g_resizeFrames, pi_plugin_host_dx11_resize_failures(g_dx),
               g_resizeFrames ? g_presentTotalMs / g_resizeFrames : 0.0, g_presentMaxMs,
               g_resizeFrames ? g_prepareTotalMs / g_resizeFrames : 0.0, g_prepareMaxMs);
 }
@@ -587,10 +587,10 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPSTR, _In
      * WS_CLIPCHILDREN 是必需的（否则每次 Present 都会擦掉内嵌插件的像素）；
      * 这个"必须带上的风格位"由 L1 kit 提供，宿主仍旧自己创建、自己摆位。 */
     WNDCLASSEXW wc = { sizeof(wc), CS_CLASSDC, WndProc, 0L, 0L, hInstance,
-                       NULL, NULL, NULL, NULL, L"PiTestHost", NULL };
+                       NULL, NULL, NULL, NULL, L"PiPluginTestHost", NULL };
     ::RegisterClassExW(&wc);
     HWND hwnd = ::CreateWindowW(wc.lpszClassName, L"piplugin — Test Host (imgui)",
-                                WS_OVERLAPPEDWINDOW | pi_host_dx11_top_level_style(),
+                                WS_OVERLAPPEDWINDOW | pi_plugin_host_dx11_top_level_style(),
                                 100, 100, 1280, 720,
                                 NULL, NULL, wc.hInstance, NULL);
     if (!hwnd) return 1;
@@ -599,7 +599,7 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPSTR, _In
      * 交换链的创建参数（flip model / DXGI_SCALING_NONE / 帧延迟等待对象 / 背景色）
      * 全部由 L1 kit 固化；宿主只提供自己的 HWND 与清屏色。 */
     {
-        PiHostDx11Desc dxdesc;
+        PiPluginHostDx11Desc dxdesc;
         memset(&dxdesc, 0, sizeof(dxdesc));
         dxdesc.background[0] = 0.15f;   /* 与 RenderFrame 的清屏色一致 */
         dxdesc.background[1] = 0.15f;
@@ -607,7 +607,7 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPSTR, _In
         dxdesc.background[3] = 1.0f;
         dxdesc.log           = &Dx11LogProc;
         dxdesc.log_user_data = NULL;
-        if (PI_FAILED(pi_host_dx11_create((PiNativeWindow)hwnd, &dxdesc, &g_dx))) {
+        if (PI_FAILED(pi_plugin_host_dx11_create((PiNativeWindow)hwnd, &dxdesc, &g_dx))) {
             ::UnregisterClassW(wc.lpszClassName, wc.hInstance);
             return 1;
         }
@@ -622,23 +622,23 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPSTR, _In
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     ImGui::StyleColorsDark();
     ImGui_ImplWin32_Init(hwnd);
-    ImGui_ImplDX11_Init(pi_host_dx11_device(g_dx), pi_host_dx11_context(g_dx));
+    ImGui_ImplDX11_Init(pi_plugin_host_dx11_device(g_dx), pi_plugin_host_dx11_context(g_dx));
 
     /* Create embed container for plugin views */
     CreateEmbedContainer(hwnd);
 
     /* Create the host services object. Because we pass a valid embed
-     * window it exposes IPiHostUI; a headless host would pass
+     * window it exposes IPiPluginHostUI; a headless host would pass
      * PI_INVALID_WINDOW instead.
      *
      * create_ex (roadmap APP-01) additionally installs an extra-QI hook, so
      * this host can offer its plugins a service of its own on top of the
      * framework's. A host that needs none calls create_default() and the
      * behaviour is identical. */
-    PiTestHostServiceImpl_Init(&g_extraService, "imgui-test-host", &g_pluginMessages);
-    if (PI_FAILED(pi_host_services_create_ex(&HostMessageProc, NULL,
+    PiPluginTestHostServiceImpl_Init(&g_extraService, "imgui-test-host", &g_pluginMessages);
+    if (PI_FAILED(pi_plugin_host_services_create_ex(&HostMessageProc, NULL,
                                              (PiNativeWindow)g_embedContainer,
-                                             &PiTestHostServiceImpl_ExtraQi, &g_extraService,
+                                             &PiPluginTestHostServiceImpl_ExtraQi, &g_extraService,
                                              &g_hostServices))) {
         g_hostServices = NULL;
     }
@@ -646,11 +646,11 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPSTR, _In
     /* 宿主 kit L0：会话对象持有加载 / 双向门禁 / 实例化 / 七步卸载序列。
      * 本宿主只负责"容器是哪个窗口、怎么渲染、尺寸策略如何"。 */
     if (g_hostServices) {
-        if (PI_FAILED(pi_host_session_create(g_hostServices, &g_session))) {
+        if (PI_FAILED(pi_plugin_host_session_create(g_hostServices, &g_session))) {
             g_session = NULL;
             LogStatus("startup: host session unavailable (load/unload disabled)");
         } else {
-            pi_host_session_set_logger(g_session, &SessionLogProc, NULL);
+            pi_plugin_host_session_set_logger(g_session, &SessionLogProc, NULL);
         }
     }
 
@@ -692,10 +692,10 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPSTR, _In
     }
     /* --skip-detach 是诊断开关，交给 kit 的卸载序列执行 */
     if (g_skipDetach && g_session)
-        pi_host_session_set_skip_detach(g_session, 1);
+        pi_plugin_host_session_set_skip_detach(g_session, 1);
 
-    LogStatus("startup: present-model=%s ffi=%s", pi_host_dx11_present_model(g_dx),
-              pi_host_dx11_is_flip_model(g_dx) ? "yes" : "no");
+    LogStatus("startup: present-model=%s ffi=%s", pi_plugin_host_dx11_present_model(g_dx),
+              pi_plugin_host_dx11_is_flip_model(g_dx) ? "yes" : "no");
     LogStatus("startup: self-test-cycles=%d idle-frames=%u plugins=%d",
               g_selfTestCycles, g_selfTestIdleFrames,
               g_selfTestCycles > 0 ? g_selfTestPluginCount : 0);
@@ -715,7 +715,7 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPSTR, _In
 
         /* Pump plugin events each frame（每帧 pump 的时机归宿主，kit 只提供机制） */
         if (g_session) {
-            pi_host_session_drive_idle(g_session);
+            pi_plugin_host_session_drive_idle(g_session);
         }
 
         if (g_selfTestCycles > 0)
@@ -731,7 +731,7 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPSTR, _In
             /* Also grab the plugin's own HWND: proves what Qt itself painted,
              * independent of DWM composition. */
             std::string pluginShot = std::string(g_screenshotPath) + ".plugin.bmp";
-            HWND pluginHwnd = (HWND)(uintptr_t)pi_view_get_native_window(CurrentView());
+            HWND pluginHwnd = (HWND)(uintptr_t)pi_plugin_view_get_native_window(CurrentView());
             unsigned tries = 0;
             while (pluginHwnd && ++tries < 30) {
                 if (CaptureHwndClientBmp(pluginHwnd, pluginShot.c_str())) {
@@ -748,13 +748,13 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPSTR, _In
 
     /* Cleanup */
     UnloadPlugin();
-    if (g_session) { pi_host_session_destroy(g_session); g_session = NULL; }
+    if (g_session) { pi_plugin_host_session_destroy(g_session); g_session = NULL; }
     if (g_hostServices) { pi_iunknown_release((IPiUnknown*)g_hostServices); g_hostServices = NULL; }
 
     ImGui_ImplDX11_Shutdown();
     ImGui_ImplWin32_Shutdown();
     ImGui::DestroyContext();
-    pi_host_dx11_destroy(g_dx); g_dx = NULL;
+    pi_plugin_host_dx11_destroy(g_dx); g_dx = NULL;
     ::DestroyWindow(hwnd);
     ::UnregisterClassW(wc.lpszClassName, wc.hInstance);
     ::OleUninitialize();
@@ -794,14 +794,14 @@ static void LoadPlugin(const char* dllPath)
 
     /* 加载 + 双向能力门禁 + 实例化 + 初始化：机制全在 kit 里，
      * 门禁在 create_instance 之前跑（顺序由 kit 保证，不再由宿主手抄）。 */
-    uint32_t slot = PI_HOST_SESSION_INVALID_SLOT;
-    PiResult hr = pi_host_session_load(g_session, dllPath, &slot);
+    uint32_t slot = PI_PLUGIN_HOST_SESSION_INVALID_SLOT;
+    PiResult hr = pi_plugin_host_session_load(g_session, dllPath, &slot);
     if (PI_FAILED(hr)) {
-        /* 失败原因（pi_module_load 的错误描述、双向门禁的拒绝理由）由 kit 给出 */
+        /* 失败原因（pi_plugin_module_load 的错误描述、双向门禁的拒绝理由）由 kit 给出 */
         if (hr == PI_E_MISSINGCAPABILITY)
-            SetStatus("Rejected: %s", pi_host_session_last_error(g_session));
+            SetStatus("Rejected: %s", pi_plugin_host_session_last_error(g_session));
         else
-            SetStatus("Load failed: %s", pi_host_session_last_error(g_session));
+            SetStatus("Load failed: %s", pi_plugin_host_session_last_error(g_session));
         return;
     }
     g_slot = slot;
@@ -823,11 +823,11 @@ static void LoadPlugin(const char* dllPath)
 
     /* 嵌入：容器是本宿主创建并摆位的，kit 只接收它并记账 */
     if (CurrentView() && g_embedContainer) {
-        PiResult ahr = pi_host_session_attach_view(g_session, g_slot,
+        PiResult ahr = pi_plugin_host_session_attach_view(g_session, g_slot,
                                                   (PiNativeWindow)g_embedContainer, 1);
         if (PI_FAILED(ahr))
             LogStatus("attach failed (hr=%d): %s", (int)ahr,
-                      pi_host_session_last_error(g_session));
+                      pi_plugin_host_session_last_error(g_session));
     }
 
     if (g_selfTestCycles > 0 && !CurrentView()) {
@@ -836,12 +836,12 @@ static void LoadPlugin(const char* dllPath)
     }
 
     {
-        const PiPluginDescriptor* desc = pi_host_session_get_descriptor(g_session, g_slot);
+        const PiPluginDescriptor* desc = pi_plugin_host_session_get_descriptor(g_session, g_slot);
         if (desc) {
             SetStatus("Loaded: %s %s (view:%s service:%s)",
                       desc->name, desc->version,
                       CurrentView() ? "Y" : "N",
-                      pi_host_session_get_service(g_session, g_slot) ? "Y" : "N");
+                      pi_plugin_host_session_get_service(g_session, g_slot) ? "Y" : "N");
 
             /* Free-form metadata (APP-04), read by key: the log line is the
              * evidence an automated run can assert on. */
@@ -854,8 +854,8 @@ static void LoadPlugin(const char* dllPath)
                 }
             }
             LogStatus("property com.example.kind = %s",
-                      pi_descriptor_find_property(desc, "com.example.kind")
-                          ? pi_descriptor_find_property(desc, "com.example.kind")
+                      pi_plugin_descriptor_find_property(desc, "com.example.kind")
+                          ? pi_plugin_descriptor_find_property(desc, "com.example.kind")
                           : "(absent)");
         } else {
             SetStatus("Loaded (no descriptor)");
@@ -866,7 +866,7 @@ static void LoadPlugin(const char* dllPath)
 static void UnloadPlugin()
 {
     LogStatus("unload: begin (thread=%lu)", (unsigned long)GetCurrentThreadId());
-    if (g_session && g_slot != PI_HOST_SESSION_INVALID_SLOT) {
+    if (g_session && g_slot != PI_PLUGIN_HOST_SESSION_INVALID_SLOT) {
         DWORD t0 = GetTickCount();
         /* Watchdog：整个卸载序列（含 kit 内部的 detach/terminate）超出预算就
          * break 进调试器，而不是无声卡死。kit 每一步都写日志，故"卡在哪一步"
@@ -874,8 +874,8 @@ static void UnloadPlugin()
         if (!g_skipDetach)
             CreateThread(NULL, 0, DetachWatchdog, (LPVOID)(uintptr_t)t0, 0, NULL);
 
-        pi_host_session_unload(g_session, g_slot);   /* 七步序列，顺序由 kit 保证 */
-        g_slot = PI_HOST_SESSION_INVALID_SLOT;
+        pi_plugin_host_session_unload(g_session, g_slot);   /* 七步序列，顺序由 kit 保证 */
+        g_slot = PI_PLUGIN_HOST_SESSION_INVALID_SLOT;
         LogStatus("unload: sequence returned after %lu ms",
                   (unsigned long)(GetTickCount() - t0));
     }
@@ -891,7 +891,7 @@ static void CreateEmbedContainer(HWND parent)
     /* 位置与大小由本宿主决定（左侧 410px 留给控制面板，其余给插件）；
      * "以正确的方式成为 embed host"（子窗口风格 + WS_CLIPCHILDREN/WS_CLIPSIBLINGS）
      * 由 L1 kit 固化 —— 少了它宿主自己的 D3D 帧会盖掉插件的像素。 */
-    g_embedContainer = (HWND)pi_host_dx11_create_embed_container(
+    g_embedContainer = (HWND)pi_plugin_host_dx11_create_embed_container(
         (PiNativeWindow)parent, 410, 0, rect.right - 410, rect.bottom);
 }
 
@@ -1047,7 +1047,7 @@ static void SelfTestParsePlugins(const char* list)
         while (n > 0 && (p[0] == ' ' || p[0] == '\t')) { ++p; --n; }
         while (n > 0 && (p[n - 1] == ' ' || p[n - 1] == '\t')) --n;
 
-        if (n > 0 && g_selfTestPluginCount < PI_SELFTEST_MAX_PLUGINS) {
+        if (n > 0 && g_selfTestPluginCount < PI_PLUGIN_SELFTEST_MAX_PLUGINS) {
             if (n >= MAX_PATH) n = MAX_PATH - 1;
             memcpy(g_selfTestPlugins[g_selfTestPluginCount], p, n);
             g_selfTestPlugins[g_selfTestPluginCount][n] = 0;
@@ -1109,12 +1109,12 @@ static void SelfTestStep()
         case 1:   /* idle 结束 -> 拉伸窗口，验证 resize 转发 */
             SelfTestResize(/*grow=*/1);
             s_state = 2;
-            s_framesLeft = PI_SELFTEST_RESIZE_FRAMES;
+            s_framesLeft = PI_PLUGIN_SELFTEST_RESIZE_FRAMES;
             return;
         case 2:   /* 拉伸结束 -> 恢复原尺寸 */
             SelfTestResize(/*grow=*/0);
             s_state = 3;
-            s_framesLeft = PI_SELFTEST_RESIZE_FRAMES;
+            s_framesLeft = PI_PLUGIN_SELFTEST_RESIZE_FRAMES;
             return;
         case 3:   /* 尺寸往返结束 -> 卸载 */
             LogStatus("selftest: [%d/%d] cycle %d/%d unload",
@@ -1216,7 +1216,7 @@ static LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
         /* 缓冲/渲染目标的调整策略在 L1 kit 里：SCALING_NONE 生效时缓冲只增不减
          * （下一帧按新客户区布局，DWM 在缓冲覆盖之前 1:1 裁剪），否则精确跟随。 */
         if (g_dx && wParam != SIZE_MINIMIZED) {
-            pi_host_dx11_prepare_size(g_dx, g_clientW, g_clientH);
+            pi_plugin_host_dx11_prepare_size(g_dx, g_clientW, g_clientH);
         }
         /* Container/plugin after the D3D resize: Qt repaints its child window
          * synchronously and that costs milliseconds (the plugin is composited

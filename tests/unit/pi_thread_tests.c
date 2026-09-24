@@ -7,13 +7,13 @@
  * 便于 `ctest -R unit_threads` 反复跑（压测要的不是"跑过"，是"跑很多遍不抖"）。
  *
  * 覆盖：
- *   1. 插件子线程调用 pi_host_post_message —— 宿主按 marshal 约定收到
+ *   1. 插件子线程调用 pi_plugin_host_post_message —— 宿主按 marshal 约定收到
  *      （宿主回调必须真的在**子线程**上被调到，然后由宿主自己的队列搬到主线程；
  *       断言不丢、不重、payload 正确、主线程上恰好投递一次）
  *   2. 并发 AddRef/Release 压力 —— 计数归零、destroy 恰好一次
  *      （帮助函数与 vtbl 槽位两条路径都压）
  *
- * 第三个场景（Qt 套件 pi_qt_view_post 跨线程）需要真 Qt 插件与宿主，在
+ * 第三个场景（Qt 套件 pi_plugin_qt_view_post 跨线程）需要真 Qt 插件与宿主，在
  * tests/test_host_multi（ctest `qt_view_post_from_worker_thread`）。
  */
 #include "piplugin/pi_plugin.h"
@@ -71,9 +71,9 @@ static unsigned long CurrentThreadId(void)
 }
 
 /* ==========================================================================
- * 场景 1：插件子线程调 pi_host_post_message，宿主按 marshal 约定收到
+ * 场景 1：插件子线程调 pi_plugin_host_post_message，宿主按 marshal 约定收到
  *
- * 契约（interfaces.md §6 / pi_plugin_host_services.h）：`pi_host_post_message`
+ * 契约（interfaces.md §6 / pi_plugin_host_services.h）：`pi_plugin_host_post_message`
  * **任意线程可调**，宿主自己决定怎么 marshal 到自己的事件循环。所以这里的
  * "宿主"照契约做一遍：回调可能在任意线程上被调到 —— 把消息连同调用线程 id
  * 记进一把锁保护的队列，再由主线程（模拟事件循环）取出来投递。
@@ -93,7 +93,7 @@ typedef struct PostedMessage {
     unsigned long caller_thread;
 } PostedMessage;
 
-static PiTestMutex   g_post_mutex;
+static PiPluginTestMutex   g_post_mutex;
 static PostedMessage g_post_queue[POST_QUEUE_MAX];
 static int           g_post_queued    = 0;   /* 宿主回调收到的条数（任意线程） */
 static int           g_post_overflow  = 0;   /* 队列不够用（计数/容量有 bug） */
@@ -103,7 +103,7 @@ static unsigned long g_post_main_thread = 0;
 static int           g_post_seen[POST_THREADS][POST_PER_THREAD];
 
 /* 线程体要拿到宿主服务对象：模块级指针，线程启动前写好 */
-static IPiHostServices* g_post_services = NULL;
+static IPiPluginHostServices* g_post_services = NULL;
 
 /* 宿主侧消息回调：**可能在任意线程上**被调到（这就是契约的全部意思） */
 static void HostPostProc(void* user_data, uint32_t msg,
@@ -112,7 +112,7 @@ static void HostPostProc(void* user_data, uint32_t msg,
     unsigned long caller = CurrentThreadId();
     (void)user_data; (void)lparam;
 
-    PiTestMutexLock(&g_post_mutex);
+    PiPluginTestMutexLock(&g_post_mutex);
     if (g_post_queued < POST_QUEUE_MAX) {
         PostedMessage* slot = &g_post_queue[g_post_queued++];
         slot->msg           = msg;
@@ -121,14 +121,14 @@ static void HostPostProc(void* user_data, uint32_t msg,
     } else {
         ++g_post_overflow;
     }
-    PiTestMutexUnlock(&g_post_mutex);
+    PiPluginTestMutexUnlock(&g_post_mutex);
 }
 
 /* "主线程事件循环"：把队列里的消息搬出去投递（宿主真正要写的那一步） */
 static void DrainPostedMessagesOnMainThread(void)
 {
     int i;
-    PiTestMutexLock(&g_post_mutex);
+    PiPluginTestMutexLock(&g_post_mutex);
     for (i = 0; i < g_post_queued; ++i) {
         PostedMessage* m = &g_post_queue[i];
         unsigned thread_index = (unsigned)(m->wparam / POST_PER_THREAD);
@@ -142,7 +142,7 @@ static void DrainPostedMessagesOnMainThread(void)
             g_post_seen[thread_index][seq] += 1;
         ++g_post_delivered;
     }
-    PiTestMutexUnlock(&g_post_mutex);
+    PiPluginTestMutexUnlock(&g_post_mutex);
 }
 
 typedef struct PostWorker {
@@ -157,18 +157,18 @@ static void PostWorkerThread(void* user_data)
     w->thread_id = CurrentThreadId();
     for (i = 0; i < POST_PER_THREAD; ++i) {
         /* wparam 同时编码"哪个线程的第几条"，便于断言不丢不重 */
-        pi_host_post_message(g_post_services,
+        pi_plugin_host_post_message(g_post_services,
                              0x4000u + w->index,
                              (uintptr_t)(w->index * POST_PER_THREAD + i),
                              0);
-        if ((i % 16) == 0) PiTestThreadYield();   /* 让线程真的交错 */
+        if ((i % 16) == 0) PiPluginTestThreadYield();   /* 让线程真的交错 */
     }
 }
 
 static void TestCrossThreadPostMessage(void)
 {
-    IPiHostServices* services = NULL;
-    PiTestThread     threads[POST_THREADS];
+    IPiPluginHostServices* services = NULL;
+    PiPluginTestThread     threads[POST_THREADS];
     PostWorker       workers[POST_THREADS];
     unsigned         i, t;
     int              distinct_callers = 0;
@@ -176,13 +176,13 @@ static void TestCrossThreadPostMessage(void)
     int              duplicates       = 0;
     int              total_seen       = 0;
 
-    Section("W-04/1 插件子线程 pi_host_post_message：宿主 marshal 后主线程收到");
+    Section("W-04/1 插件子线程 pi_plugin_host_post_message：宿主 marshal 后主线程收到");
 
     g_post_main_thread = CurrentThreadId();
-    PiTestMutexInit(&g_post_mutex);
+    PiPluginTestMutexInit(&g_post_mutex);
     memset(g_post_seen, 0, sizeof(g_post_seen));
 
-    CHECK_EQ_INT(pi_host_services_create_default(&HostPostProc, NULL,
+    CHECK_EQ_INT(pi_plugin_host_services_create_default(&HostPostProc, NULL,
                                                  PI_INVALID_WINDOW, &services), PI_OK);
     CHECK(services != NULL);
     if (!services) return;
@@ -192,9 +192,9 @@ static void TestCrossThreadPostMessage(void)
     for (i = 0; i < POST_THREADS; ++i) {
         memset(&workers[i], 0, sizeof(workers[i]));
         workers[i].index = i;
-        CHECK_EQ_INT(PiTestThreadStart(&threads[i], &PostWorkerThread, &workers[i]), 0);
+        CHECK_EQ_INT(PiPluginTestThreadStart(&threads[i], &PostWorkerThread, &workers[i]), 0);
     }
-    for (i = 0; i < POST_THREADS; ++i) PiTestThreadJoin(&threads[i]);
+    for (i = 0; i < POST_THREADS; ++i) PiPluginTestThreadJoin(&threads[i]);
 
     /* a) 回调必须真的在**子线程**上被调到：否则"跨线程 post"根本没被测到 */
     for (i = 0; i < POST_THREADS; ++i) {
@@ -207,11 +207,11 @@ static void TestCrossThreadPostMessage(void)
     CHECK_EQ_INT(g_post_overflow, 0);
     CHECK_EQ_INT(g_post_queued, POST_THREADS * POST_PER_THREAD);
 
-    PiTestMutexLock(&g_post_mutex);
+    PiPluginTestMutexLock(&g_post_mutex);
     for (i = 0; i < (unsigned)g_post_queued; ++i) {
         if (g_post_queue[i].caller_thread != g_post_main_thread) ++worker_calls;
     }
-    PiTestMutexUnlock(&g_post_mutex);
+    PiPluginTestMutexUnlock(&g_post_mutex);
     CHECK_EQ_INT(worker_calls, POST_THREADS * POST_PER_THREAD);
 
     /* c) 主线程投递一遍：payload/消息码/投递线程逐条核对，且不重 */
@@ -227,7 +227,7 @@ static void TestCrossThreadPostMessage(void)
     CHECK_EQ_INT(duplicates, 0);
     CHECK_EQ_INT(total_seen, POST_THREADS * POST_PER_THREAD);
 
-    PiTestMutexDestroy(&g_post_mutex);
+    PiPluginTestMutexDestroy(&g_post_mutex);
     CHECK_EQ_INT(pi_iunknown_release((IPiUnknown*)services), 0);
 }
 
@@ -259,15 +259,15 @@ static void TestCrossThreadPostMessage(void)
 #define REF_INC_ROUNDS  2000
 
 static int          g_ref_destroy_calls = 0;
-static PiTestMutex  g_ref_mutex;
+static PiPluginTestMutex  g_ref_mutex;
 static volatile int g_ref_go = 0;
 
 static void RefCountedDestroy(void* self_ptr)
 {
     /* destroy 可能发生在任意一条线程上（这里就是并发归零那一次），故计数加锁 */
-    PiTestMutexLock(&g_ref_mutex);
+    PiPluginTestMutexLock(&g_ref_mutex);
     ++g_ref_destroy_calls;
-    PiTestMutexUnlock(&g_ref_mutex);
+    PiPluginTestMutexUnlock(&g_ref_mutex);
     free(self_ptr);
 }
 
@@ -306,7 +306,7 @@ static void RefPairWorkerThread(void* user_data)
 static void RefReleaseWorkerThread(void* user_data)
 {
     RefWorker* w = (RefWorker*)user_data;
-    while (!g_ref_go) PiTestThreadYield();   /* 一起出发，最大化并发归零的窗口 */
+    while (!g_ref_go) PiPluginTestThreadYield();   /* 一起出发，最大化并发归零的窗口 */
     if (w->use_vtbl) w->obj->unk.lpVtbl->pi_release(w->obj);
     else             pi_refcounted_release(w->obj);
     w->released = 1;
@@ -317,7 +317,7 @@ static void RefIncWorkerThread(void* user_data)
 {
     RefWorker* w = (RefWorker*)user_data;
     int i;
-    while (!g_ref_go) PiTestThreadYield();
+    while (!g_ref_go) PiPluginTestThreadYield();
     for (i = 0; i < REF_INC_ROUNDS; ++i) {
         if (w->use_vtbl) w->obj->unk.lpVtbl->pi_add_ref(w->obj);
         else             pi_refcounted_add_ref(w->obj);
@@ -326,7 +326,7 @@ static void RefIncWorkerThread(void* user_data)
 
 static void TestConcurrentRefCount(int use_vtbl)
 {
-    PiTestThread threads[REF_THREADS];
+    PiPluginTestThread threads[REF_THREADS];
     RefWorker    workers[REF_THREADS];
     unsigned     i;
 
@@ -346,9 +346,9 @@ static void TestConcurrentRefCount(int use_vtbl)
             workers[i].obj      = obj;
             workers[i].use_vtbl = use_vtbl;
             workers[i].released = 0;
-            CHECK_EQ_INT(PiTestThreadStart(&threads[i], &RefPairWorkerThread, &workers[i]), 0);
+            CHECK_EQ_INT(PiPluginTestThreadStart(&threads[i], &RefPairWorkerThread, &workers[i]), 0);
         }
-        for (i = 0; i < REF_THREADS; ++i) PiTestThreadJoin(&threads[i]);
+        for (i = 0; i < REF_THREADS; ++i) PiPluginTestThreadJoin(&threads[i]);
 
         CHECK_EQ_INT(obj->ref_count, 1);          /* 成对操作后回到基数 */
         CHECK_EQ_INT(g_ref_destroy_calls, 0);     /* 还没释放，绝不能销毁 */
@@ -377,11 +377,11 @@ static void TestConcurrentRefCount(int use_vtbl)
             workers[i].obj      = obj;
             workers[i].use_vtbl = use_vtbl;
             workers[i].released = 0;
-            CHECK_EQ_INT(PiTestThreadStart(&threads[i], &RefReleaseWorkerThread, &workers[i]), 0);
+            CHECK_EQ_INT(PiPluginTestThreadStart(&threads[i], &RefReleaseWorkerThread, &workers[i]), 0);
         }
-        PiTestThreadYield();
+        PiPluginTestThreadYield();
         g_ref_go = 1;
-        for (i = 0; i < REF_THREADS; ++i) PiTestThreadJoin(&threads[i]);
+        for (i = 0; i < REF_THREADS; ++i) PiPluginTestThreadJoin(&threads[i]);
 
         for (i = 0; i < REF_THREADS; ++i)
             CHECK_EQ_INT(workers[i].released, 1);      /* 四条线程都真的跑了 */
@@ -405,11 +405,11 @@ static void TestConcurrentRefCount(int use_vtbl)
             workers[i].obj      = obj;
             workers[i].use_vtbl = use_vtbl;
             workers[i].released = 0;
-            CHECK_EQ_INT(PiTestThreadStart(&threads[i], &RefIncWorkerThread, &workers[i]), 0);
+            CHECK_EQ_INT(PiPluginTestThreadStart(&threads[i], &RefIncWorkerThread, &workers[i]), 0);
         }
-        PiTestThreadYield();
+        PiPluginTestThreadYield();
         g_ref_go = 1;
-        for (i = 0; i < REF_INC_THREADS; ++i) PiTestThreadJoin(&threads[i]);
+        for (i = 0; i < REF_INC_THREADS; ++i) PiPluginTestThreadJoin(&threads[i]);
 
         CHECK_EQ_INT(obj->ref_count, expected);   /* 分毫不差 —— 丢一次就少一份 */
         CHECK_EQ_INT(g_ref_destroy_calls, 0);
@@ -426,13 +426,13 @@ int main(void)
 {
     printf("== piplugin thread-safety tests (W-04) ==\n");
 
-    PiTestMutexInit(&g_ref_mutex);
+    PiPluginTestMutexInit(&g_ref_mutex);
 
     TestCrossThreadPostMessage();
     TestConcurrentRefCount(0);
     TestConcurrentRefCount(1);
 
-    PiTestMutexDestroy(&g_ref_mutex);
+    PiPluginTestMutexDestroy(&g_ref_mutex);
 
     printf("== checks=%u failures=%u ==\n", g_checks, g_failures);
     if (g_failures != 0) {

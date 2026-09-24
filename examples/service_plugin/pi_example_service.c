@@ -1,5 +1,5 @@
 /*
- * piplugin example - a service plugin (headless, IPiService)
+ * piplugin example - a service plugin (headless, IPiPluginService)
  *
  * A plugin with no UI at all: a host's main loop calls start / poll / stop and
  * the plugin does the work. This is what a task server, an importer or a
@@ -11,16 +11,16 @@
  *     pi_example_minimal_host.exe pi_example_service.dll
  *
  * What is worth copying from here:
- *   - the descriptor declares PI_IID_SERVICE PROVIDES and requires nothing, so
+ *   - the descriptor declares PI_PLUGIN_IID_SERVICE PROVIDES and requires nothing, so
  *     any host - GUI or headless - can host it;
  *   - ONE plugin object carries IPiPluginBase, and QueryInterface hands out a
- *     small wrapper for IPiService. Two interfaces need two vtable layouts, and
+ *     small wrapper for IPiPluginService. Two interfaces need two vtable layouts, and
  *     a vtable cannot live at offset 0 twice: returning the same pointer for both
- *     IIDs would make pi_service_start() call the slot that is actually
- *     pi_initialize(). The wrapper owns a reference to the plugin, so the plugin
+ *     IIDs would make pi_plugin_service_start() call the slot that is actually
+ *     pi_plugin_initialize(). The wrapper owns a reference to the plugin, so the plugin
  *     cannot die while the host still holds its service;
- *   - pi_service_stop() is IDEMPOTENT (the host's unload sequence calls it again);
- *   - poll() reports progress through pi_host_post_message() instead of blocking
+ *   - pi_plugin_service_stop() is IDEMPOTENT (the host's unload sequence calls it again);
+ *   - poll() reports progress through pi_plugin_host_post_message() instead of blocking
  *     the host's thread.
  */
 #include "piplugin/pi_plugin.h"
@@ -38,15 +38,15 @@ static const PiGuid EXAMPLE_SERVICE_CLASS_GUID =
 
 typedef struct ExampleService {
     PiRefCountedBase base;      /* MUST be first: this is the IPiPluginBase object */
-    IPiHostServices* host;      /* borrowed from initialize: we take a reference */
+    IPiPluginHostServices* host;      /* borrowed from initialize: we take a reference */
     int32_t          status;
     uint32_t         interval;  /* report every N polls */
     uint32_t         polls;
     int              running;
 } ExampleService;
 
-/* The IPiService side: a wrapper with its own vtable and a reference to the
- * plugin (same containment pattern the framework uses for IPiHostUI). */
+/* The IPiPluginService side: a wrapper with its own vtable and a reference to the
+ * plugin (same containment pattern the framework uses for IPiPluginHostUI). */
 typedef struct ExampleServiceIfc {
     PiRefCountedBase base;      /* MUST be first */
     ExampleService*  owner;     /* add-ref'd */
@@ -58,9 +58,9 @@ static uint32_t PI_CALL Ifc_AddRef(void* self) { return pi_refcounted_add_ref(se
 static uint32_t PI_CALL Ifc_Release(void* self) { return pi_refcounted_release(self); }
 
 /* --------------------------------------------------------------------------
- * IPiService slots (self_ptr is the wrapper; the state lives in the owner)
+ * IPiPluginService slots (self_ptr is the wrapper; the state lives in the owner)
  * -------------------------------------------------------------------------- */
-static PiResult PI_CALL Service_Start(void* self_ptr, const PiServiceOption* options,
+static PiResult PI_CALL Service_Start(void* self_ptr, const PiPluginServiceOption* options,
                                       uint32_t option_count)
 {
     ExampleServiceIfc* ifc = (ExampleServiceIfc*)self_ptr;
@@ -80,7 +80,7 @@ static PiResult PI_CALL Service_Start(void* self_ptr, const PiServiceOption* opt
 
     me->polls   = 0;
     me->running = 1;
-    me->status  = PI_SERVICE_RUNNING;
+    me->status  = PI_PLUGIN_SERVICE_RUNNING;
     printf("[example service] started (report every %u poll(s))\n", (unsigned)me->interval);
     return PI_OK;
 }
@@ -90,7 +90,7 @@ static PiResult ServiceDoStop(ExampleService* me)
     if (!me) return PI_E_INVALIDARG;
     if (me->running) printf("[example service] stopping after %u poll(s)\n", (unsigned)me->polls);
     me->running = 0;
-    me->status  = PI_SERVICE_STOPPED;
+    me->status  = PI_PLUGIN_SERVICE_STOPPED;
     return PI_OK;                    /* idempotent: the unload sequence calls this again */
 }
 
@@ -111,7 +111,7 @@ static PiResult PI_CALL Service_Poll(void* self_ptr)
     ++me->polls;
     if (me->interval && (me->polls % me->interval) == 0 && me->host) {
         /* "Here is my progress" - the host decides what to do with it. */
-        pi_host_post_message(me->host, EXAMPLE_MSG_TICK, (uintptr_t)me->polls, 0);
+        pi_plugin_host_post_message(me->host, EXAMPLE_MSG_TICK, (uintptr_t)me->polls, 0);
     }
     return PI_OK;
 }
@@ -127,7 +127,7 @@ static PiResult PI_CALL Service_GetStatus(void* self_ptr, int32_t* out_status)
 static PiResult PI_CALL Service_Qi(void* self_ptr, const PiGuid* iid, void** out)
 {
     if (!out) return PI_E_INVALIDARG;
-    if (pi_guid_equal(iid, &PI_IID_UNKNOWN) || pi_guid_equal(iid, &PI_IID_SERVICE)) {
+    if (pi_guid_equal(iid, &PI_IID_UNKNOWN) || pi_guid_equal(iid, &PI_PLUGIN_IID_SERVICE)) {
         *out = self_ptr; pi_refcounted_add_ref(self_ptr); return PI_OK;
     }
     *out = NULL; return PI_E_NOINTERFACE;
@@ -140,7 +140,7 @@ static void Ifc_Destroy(void* self)
     free(ifc);
 }
 
-static const IPiServiceVtbl s_service_vtbl = {
+static const IPiPluginServiceVtbl s_service_vtbl = {
     { &Service_Qi, &Ifc_AddRef, &Ifc_Release },
     &Service_Start, &Service_Stop, &Service_Poll, &Service_GetStatus
 };
@@ -153,10 +153,10 @@ static PiResult PI_CALL Plugin_Qi(void* self_ptr, const PiGuid* iid, void** out)
     ExampleService* me = (ExampleService*)self_ptr;
     if (!out) return PI_E_INVALIDARG;
 
-    if (pi_guid_equal(iid, &PI_IID_UNKNOWN) || pi_guid_equal(iid, &PI_IID_PLUGIN_BASE)) {
+    if (pi_guid_equal(iid, &PI_IID_UNKNOWN) || pi_guid_equal(iid, &PI_PLUGIN_IID_PLUGIN_BASE)) {
         *out = self_ptr; pi_refcounted_add_ref(self_ptr); return PI_OK;
     }
-    if (pi_guid_equal(iid, &PI_IID_SERVICE)) {
+    if (pi_guid_equal(iid, &PI_PLUGIN_IID_SERVICE)) {
         ExampleServiceIfc* ifc = (ExampleServiceIfc*)calloc(1, sizeof(ExampleServiceIfc));
         if (!ifc) return PI_E_OUTOFMEMORY;
         pi_refcounted_init_with_destroy(&ifc->base, (const IPiUnknownVtbl*)&s_service_vtbl,
@@ -169,7 +169,7 @@ static PiResult PI_CALL Plugin_Qi(void* self_ptr, const PiGuid* iid, void** out)
     *out = NULL; return PI_E_NOINTERFACE;
 }
 
-static PiResult PI_CALL Plugin_Init(void* self_ptr, IPiHostServices* host)
+static PiResult PI_CALL Plugin_Init(void* self_ptr, IPiPluginHostServices* host)
 {
     ExampleService* me = (ExampleService*)self_ptr;
     if (me->host) return PI_OK;                     /* idempotent */
@@ -222,7 +222,7 @@ static uint32_t PI_CALL Factory_Release(void* self) { return pi_refcounted_relea
 static PiResult PI_CALL Factory_Qi(void* self_ptr, const PiGuid* iid, void** out)
 {
     if (!out) return PI_E_INVALIDARG;
-    if (pi_guid_equal(iid, &PI_IID_UNKNOWN) || pi_guid_equal(iid, &PI_IID_PLUGIN_FACTORY)) {
+    if (pi_guid_equal(iid, &PI_IID_UNKNOWN) || pi_guid_equal(iid, &PI_PLUGIN_IID_PLUGIN_FACTORY)) {
         *out = self_ptr; pi_refcounted_add_ref(self_ptr); return PI_OK;
     }
     *out = NULL; return PI_E_NOINTERFACE;
@@ -239,7 +239,7 @@ static PiResult PI_CALL Factory_Guid(void* self, uint32_t index, PiGuid* guid)
     return PI_OK;
 }
 
-static PiResult PI_CALL Factory_Create(void* self, const PiGuid* guid, IPiHostServices* host,
+static PiResult PI_CALL Factory_Create(void* self, const PiGuid* guid, IPiPluginHostServices* host,
                                        IPiPluginBase** out)
 {
     ExampleService* plugin;
@@ -252,7 +252,7 @@ static PiResult PI_CALL Factory_Create(void* self, const PiGuid* guid, IPiHostSe
     if (!plugin) return PI_E_OUTOFMEMORY;
     pi_refcounted_init_with_destroy(&plugin->base, (const IPiUnknownVtbl*)&s_plugin_vtbl,
                                     &Plugin_Destroy);
-    plugin->status = PI_SERVICE_STOPPED;
+    plugin->status = PI_PLUGIN_SERVICE_STOPPED;
     Plugin_Init(plugin, host);
     *out = (IPiPluginBase*)&plugin->base;
     return PI_OK;
@@ -272,8 +272,8 @@ PI_PLUGIN_ENTRY_DECL
         pi_refcounted_init(&s_factory.base, (const IPiUnknownVtbl*)&s_factory_vtbl);
 
         /* PROVIDES a service, requires nothing: any host can run this plugin. */
-        s_caps[0].iid   = PI_IID_SERVICE;
-        s_caps[0].flags = PI_CAP_PROVIDES;
+        s_caps[0].iid   = PI_PLUGIN_IID_SERVICE;
+        s_caps[0].flags = PI_PLUGIN_CAP_PROVIDES;
 
         s_desc.name             = "Example Service";
         s_desc.vendor           = "piplugin examples";

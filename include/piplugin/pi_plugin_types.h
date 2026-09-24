@@ -1,8 +1,12 @@
 /*
- * piplugin - Core Type Definitions
+ * piplugin - core type definitions
  *
- * Pure C cross-platform plugin framework with COM-style vtables.
- * All public symbols use the "pi_" prefix.
+ * Pure C, COM-style vtables, C ABI. This library's own names carry the
+ * `pi_plugin_` / `PiPlugin` / `PI_PLUGIN_` prefix. The vocabulary shared by
+ * every PI library - result codes, the 128-bit GUID, the native window handle,
+ * the IPiUnknown root interface, and the ABI/platform plumbing - comes from
+ * pibase and keeps its bare `pi_` / `Pi` / `PI_` prefix; see
+ * <pibase/pi_base.h> for that rule and for where the boundary is drawn.
  *
  * Design principle (LV2-inspired): the core is minimal and GUI/network
  * features are OPTIONAL capabilities, discovered at runtime via
@@ -10,12 +14,14 @@
  *
  *   Plugin side:  PiPluginDescriptor declares capabilities
  *                 (required / optional / provided) identified by GUID.
- *   Host side:    the host is passed to the plugin as an IPiHostServices
+ *   Host side:    the host is passed to the plugin as an IPiPluginHostServices
  *                 object; GUI-specific services are queried through
- *                 IPiHostUI. A headless host simply does not expose it.
+ *                 IPiPluginHostUI. A headless host simply does not expose it.
  */
 #ifndef PI_PLUGIN_TYPES_H
 #define PI_PLUGIN_TYPES_H
+
+#include <pibase/pi_base.h>
 
 #include <stdint.h>
 #include <stddef.h>
@@ -25,116 +31,46 @@ extern "C" {
 #endif
 
 /* --------------------------------------------------------------------------
- * Platform detection
+ * Export marker for this library's own public symbols
+ *
+ * The visibility *attribute* is family vocabulary (pibase provides PI_EXPORT /
+ * PI_IMPORT); which one applies is this library's business, because only it
+ * knows whether it is being built or consumed.
  * -------------------------------------------------------------------------- */
-#if defined(_WIN32) || defined(_WIN64)
-#  define PI_PLATFORM_WINDOWS 1
-#  ifdef PI_PLUGIN_BUILDING
-#    define PI_EXPORT __declspec(dllexport)
-#  else
-#    define PI_EXPORT __declspec(dllimport)
-#  endif
-#  define PI_LOCAL
-#elif defined(__APPLE__)
-#  define PI_PLATFORM_MACOS 1
-#  define PI_EXPORT __attribute__((visibility("default")))
-#  define PI_LOCAL  __attribute__((visibility("hidden")))
+#ifdef PI_PLUGIN_BUILDING
+#  define PI_PLUGIN_API PI_EXPORT
 #else
-#  define PI_PLATFORM_LINUX 1
-#  define PI_EXPORT __attribute__((visibility("default")))
-#  define PI_LOCAL  __attribute__((visibility("hidden")))
+#  define PI_PLUGIN_API PI_IMPORT
 #endif
-
-/* --------------------------------------------------------------------------
- * 128-bit GUID (COM-compatible layout)
- * -------------------------------------------------------------------------- */
-typedef struct PiGuid {
-    uint32_t data1;
-    uint16_t data2;
-    uint16_t data3;
-    uint8_t  data4[8];
-} PiGuid;
-
-/* Macro to define a GUID inline */
-#define PI_GUID(l, w1, w2, b1, b2, b3, b4, b5, b6, b7, b8) \
-    { (uint32_t)(l), (uint16_t)(w1), (uint16_t)(w2), \
-      { (uint8_t)(b1), (uint8_t)(b2), (uint8_t)(b3), (uint8_t)(b4), \
-        (uint8_t)(b5), (uint8_t)(b6), (uint8_t)(b7), (uint8_t)(b8) } }
-
-PI_EXPORT int pi_guid_equal(const PiGuid* a, const PiGuid* b);
-
-/* --------------------------------------------------------------------------
- * Result codes
- * -------------------------------------------------------------------------- */
-typedef int32_t PiResult;
-
-#define PI_OK                  ((PiResult)0)
-#define PI_FAIL                ((PiResult)-1)
-#define PI_E_NOINTERFACE       ((PiResult)-2)
-#define PI_E_INVALIDARG        ((PiResult)-3)
-#define PI_E_OUTOFMEMORY       ((PiResult)-4)
-#define PI_E_NOTIMPL           ((PiResult)-5)
-#define PI_E_UNEXPECTED        ((PiResult)-6)
-#define PI_E_NOTFOUND          ((PiResult)-7)
-#define PI_E_MISSINGCAPABILITY ((PiResult)-8)  /* required host capability absent */
-#define PI_E_VERSIONMISMATCH   ((PiResult)-9)  /* plugin/host api_version incompatible */
-
-#define PI_SUCCEEDED(r)        ((PiResult)(r) >= 0)
-#define PI_FAILED(r)           ((PiResult)(r) < 0)
-
-/* 分区规则：上面是框架占用的错误码（-1..-9）。app / 插件自定义的错误码取值
- * <= -100（即绝对值 >= 100 的负数），给框架将来新增错误码留出量级余量。
- *
- * 为什么需要这一条：app 自定义协议方法（docs/design/interfaces.md §5）的返回
- * 类型就是 PiResult，而同一个插件可能被不止一个宿主加载 —— 各自挑 -10 / -20
- * 这类贴边编号，等插件同时服务两个宿主时就会撞车。这与 msg 码 / 事件 type /
- * IID 编号的 `>= 0x80000000` 规则同精神，只是 PiResult 走的是负数轴。
- *
- * 符号不能乱用：PI_SUCCEEDED / PI_FAILED 按符号判定，所以自定义**错误码**必须
- * 是负数。反过来说，若某个接口要表达"已成功受理、结果稍后送达"，那是**成功**
- * 语义，应当另开一个**正值**结果码 —— 用负数会让 PI_FAILED() 对"这次调用失败了
- * 吗"给出错误答案，而且错得很安静（按 < 0 写失败分支的代码会把"已受理"判成失败）。 */
-
-/* --------------------------------------------------------------------------
- * Opaque native window handle
- * -------------------------------------------------------------------------- */
-#if PI_PLATFORM_WINDOWS
-typedef void* PiNativeWindow;
-#elif PI_PLATFORM_MACOS
-typedef void* PiNativeWindow;
-#elif PI_PLATFORM_LINUX
-typedef unsigned long PiNativeWindow;
-#endif
-
-#define PI_INVALID_WINDOW ((PiNativeWindow)0)
-#define PI_IS_VALID_WINDOW(h) ((h) != PI_INVALID_WINDOW)
 
 /* --------------------------------------------------------------------------
  * Forward declarations of core interfaces
+ *
+ * IPiUnknown is deliberately absent: it is family vocabulary and comes from
+ * pibase, which also defines PI_IID_UNKNOWN.
  * -------------------------------------------------------------------------- */
-typedef struct IPiUnknown       IPiUnknown;
-typedef struct IPiHostServices  IPiHostServices;
-typedef struct IPiHostUI        IPiHostUI;
+typedef struct IPiPluginHostServices  IPiPluginHostServices;
+typedef struct IPiPluginHostUI        IPiPluginHostUI;
 typedef struct IPiPluginFactory IPiPluginFactory;
 typedef struct IPiPluginBase    IPiPluginBase;
 typedef struct IPiPluginView    IPiPluginView;
-typedef struct IPiService       IPiService;
+typedef struct IPiPluginService       IPiPluginService;
 
 /* --------------------------------------------------------------------------
  * Capability declaration (LV2-style feature negotiation)
  *
  * A plugin declares, in its descriptor, which interfaces it
- *   - REQUIRES from the host   (e.g. PI_IID_HOST_UI: needs a GUI host)
+ *   - REQUIRES from the host   (e.g. PI_PLUGIN_IID_HOST_UI: needs a GUI host)
  *   - OPTIONALLY uses          (degrades gracefully if absent)
- *   - PROVIDES                 (e.g. PI_IID_PLUGIN_VIEW, PI_IID_SERVICE)
+ *   - PROVIDES                 (e.g. PI_PLUGIN_IID_PLUGIN_VIEW, PI_PLUGIN_IID_SERVICE)
  *
  * The host can inspect this list BEFORE instantiating the plugin, e.g. a
- * headless task server only instantiates plugins that PROVIDE PI_IID_SERVICE,
- * and skips (or rejects) plugins that REQUIRE PI_IID_HOST_UI.
+ * headless task server only instantiates plugins that PROVIDE PI_PLUGIN_IID_SERVICE,
+ * and skips (or rejects) plugins that REQUIRE PI_PLUGIN_IID_HOST_UI.
  * -------------------------------------------------------------------------- */
-#define PI_CAP_REQUIRED  ((uint32_t)1)  /* host must provide, else init fails */
-#define PI_CAP_OPTIONAL  ((uint32_t)2)  /* plugin uses it if the host has it  */
-#define PI_CAP_PROVIDES  ((uint32_t)4)  /* plugin implements this interface   */
+#define PI_PLUGIN_CAP_REQUIRED  ((uint32_t)1)  /* host must provide, else init fails */
+#define PI_PLUGIN_CAP_OPTIONAL  ((uint32_t)2)  /* plugin uses it if the host has it  */
+#define PI_PLUGIN_CAP_PROVIDES  ((uint32_t)4)  /* plugin implements this interface   */
 
 typedef struct PiPluginCapability {
     PiGuid   iid;    /* capability / interface GUID */
@@ -190,7 +126,7 @@ typedef struct PiPluginDescriptor {
  * FILL IT IN ZEROED, then set the fields you care about:
  *
  *     PiPluginDescriptor desc;
- *     pi_descriptor_init(&desc);      // memset(0): every optional field is "absent"
+ *     pi_plugin_descriptor_init(&desc);      // memset(0): every optional field is "absent"
  *     desc.name = "My Plugin";
  *     ...
  *
@@ -203,7 +139,7 @@ typedef struct PiPluginDescriptor {
  * crashed the imgui test host this way.) Static/global descriptors are zeroed by
  * the language and are fine either way.
  * -------------------------------------------------------------------------- */
-static inline void pi_descriptor_init(PiPluginDescriptor* desc)
+static inline void pi_plugin_descriptor_init(PiPluginDescriptor* desc)
 {
     if (!desc) return;
     desc->name = NULL;
@@ -219,12 +155,12 @@ static inline void pi_descriptor_init(PiPluginDescriptor* desc)
 
 /* Check whether the descriptor declares capability `iid` with the wanted
  * flags. Returns the matching entry, or NULL. */
-PI_EXPORT const PiPluginCapability* pi_descriptor_find_capability(
+PI_PLUGIN_API const PiPluginCapability* pi_plugin_descriptor_find_capability(
     const PiPluginDescriptor* desc, const PiGuid* iid);
 
 /* Convenience: does the plugin provide / require the given capability? */
-PI_EXPORT int pi_descriptor_provides(const PiPluginDescriptor* desc, const PiGuid* iid);
-PI_EXPORT int pi_descriptor_requires(const PiPluginDescriptor* desc, const PiGuid* iid);
+PI_PLUGIN_API int pi_plugin_descriptor_provides(const PiPluginDescriptor* desc, const PiGuid* iid);
+PI_PLUGIN_API int pi_plugin_descriptor_requires(const PiPluginDescriptor* desc, const PiGuid* iid);
 
 /* Value of the descriptor property `key`, or NULL when the plugin declares no
  * such property. NULL-safe for every argument (desc, its properties array, the
@@ -236,7 +172,7 @@ PI_EXPORT int pi_descriptor_requires(const PiPluginDescriptor* desc, const PiGui
  * version gate accepts older plugins (same major), so the layout has to be
  * decided here rather than assumed. A pre-0.3 plugin therefore reports "no
  * properties" - which is the truth - instead of handing out garbage. */
-PI_EXPORT const char* pi_descriptor_find_property(const PiPluginDescriptor* desc,
+PI_PLUGIN_API const char* pi_plugin_descriptor_find_property(const PiPluginDescriptor* desc,
                                                   const char* key);
 
 /* --------------------------------------------------------------------------
@@ -247,7 +183,7 @@ PI_EXPORT const char* pi_descriptor_find_property(const PiPluginDescriptor* desc
  * 宿主接受一个插件的条件（roadmap BLK-03）：
  *     major 相同  且  插件版本 <= 宿主版本
  * major 不同 = vtbl 布局可能已变，一律拒绝；插件 minor 高于宿主 = 插件可能用到
- * 宿主还没有的接口，同样拒绝。判定用 pi_api_version_compatible()。
+ * 宿主还没有的接口，同样拒绝。判定用 pi_plugin_api_version_compatible()。
  *
  * "谁迁就谁"：**插件迁就宿主**。宿主是自己进程的主人，不会为了某个插件升级；
  * 插件应尽量按较低的 API 版本编译，被拒时提示用户升级宿主。
@@ -263,35 +199,35 @@ PI_EXPORT const char* pi_descriptor_find_property(const PiPluginDescriptor* desc
 /* 本库自己的 API 版本，**始终与发布版本一致**（当前发布 0.4.0 → API 0.4）。
  *
  * 历史：0.3 来自 APP-04（descriptor 追加 properties，二进制布局变化），
- * 0.4 来自 APP-06（新增事件接口 IPiEventSink / IPiHostEvents）。
+ * 0.4 来自 APP-06（新增事件接口 IPiPluginEventSink / IPiPluginHostEvents）。
  * 三处版本（CMakeLists 的 project(VERSION)、conanfile.py 的 version、这里的
  * major.minor）必须一起改 —— 单测里的版本 tripwire 就是提醒这件事的机制。
  *
  * 1.0 是"ABI 冻结承诺"的时刻：在那之前每个 x 版本都可以改 ABI，
  * 所以插件应随宿主一起升级；升级时同步 CHANGELOG.md 与 interfaces.md 1.5。 */
-#define PI_PLUGIN_API_VERSION PI_PLUGIN_API_VERSION_MAKE(0, 4)
+#define PI_PLUGIN_API_VERSION PI_PLUGIN_API_VERSION_MAKE(0, 5)
 
 /* 宿主版本与插件版本是否兼容。返回非 0 = 可以加载。 */
-PI_EXPORT int pi_api_version_compatible(uint32_t host_version, uint32_t plugin_version);
+PI_PLUGIN_API int pi_plugin_api_version_compatible(uint32_t host_version, uint32_t plugin_version);
 
 /* --------------------------------------------------------------------------
- * Host-side message posted by plugins via IPiHostServices::pi_post_message.
+ * Host-side message posted by plugins via IPiPluginHostServices::pi_plugin_post_message.
  * Framework reserves codes below 0x80000000; plugins may use anything else.
  * -------------------------------------------------------------------------- */
-#define PI_MSG_NONE 0u
+#define PI_PLUGIN_MSG_NONE 0u
 
 /* --------------------------------------------------------------------------
  * Entry point that every plugin DLL must export
  * -------------------------------------------------------------------------- */
 typedef PiResult (*PiPluginEntryProc)(IPiPluginFactory** out_factory);
 
-/* 插件侧导出宏：插件 DLL 永远是"导出方"，与 PI_EXPORT 相反 —— PI_EXPORT 在
+/* 插件侧导出宏：插件 DLL 永远是"导出方"，与 PI_PLUGIN_API 相反 —— PI_PLUGIN_API 在
  * 非 PI_PLUGIN_BUILDING 的翻译单元里展开成 dllimport，直接拿它去**定义**
  * 入口会编译失败（"definition of dllimport function not allowed"）。 */
 #if PI_PLATFORM_WINDOWS
-#  define PI_PLUGIN_EXPORT __declspec(dllexport)
+#  define PI_PLUGIN_ENTRY_EXPORT __declspec(dllexport)
 #else
-#  define PI_PLUGIN_EXPORT __attribute__((visibility("default")))
+#  define PI_PLUGIN_ENTRY_EXPORT __attribute__((visibility("default")))
 #endif
 
 #define PI_PLUGIN_ENTRY_NAME "pi_plugin_entry"
@@ -315,7 +251,7 @@ typedef PiResult (*PiPluginEntryProc)(IPiPluginFactory** out_factory);
  *     }
  */
 #define PI_PLUGIN_ENTRY_DECL \
-    PI_PLUGIN_ENTRY_LINKAGE PI_PLUGIN_EXPORT PiResult pi_plugin_entry(IPiPluginFactory** out_factory)
+    PI_PLUGIN_ENTRY_LINKAGE PI_PLUGIN_ENTRY_EXPORT PiResult pi_plugin_entry(IPiPluginFactory** out_factory)
 
 /* --------------------------------------------------------------------------
  * Known interface GUIDs (for IPiUnknown::pi_query_interface)
@@ -339,17 +275,19 @@ typedef PiResult (*PiPluginEntryProc)(IPiPluginFactory** out_factory);
  *
  *   3) IID 一旦随 PUBLIC 版本发布就不可再改（COM 规则：已发布接口不可变，
  *      要改只能新增一个 IID 并新增接口）。
+ *
+ * PI_IID_UNKNOWN 不在这里：它标识根接口 IPiUnknown，属家族根词汇，由基础层
+ * 与 IPiUnknown 一起提供（见 <pibase/pi_base.h>）。
  * -------------------------------------------------------------------------- */
-extern PI_EXPORT const PiGuid PI_IID_UNKNOWN;         /* IPiUnknown        */
-extern PI_EXPORT const PiGuid PI_IID_HOST_SERVICES;   /* IPiHostServices   */
-extern PI_EXPORT const PiGuid PI_IID_HOST_UI;         /* IPiHostUI         */
-extern PI_EXPORT const PiGuid PI_IID_PLUGIN_FACTORY;  /* IPiPluginFactory  */
-extern PI_EXPORT const PiGuid PI_IID_PLUGIN_BASE;     /* IPiPluginBase     */
-extern PI_EXPORT const PiGuid PI_IID_PLUGIN_VIEW;     /* IPiPluginView     */
-extern PI_EXPORT const PiGuid PI_IID_SERVICE;         /* IPiService        */
+extern PI_PLUGIN_API const PiGuid PI_PLUGIN_IID_HOST_SERVICES;   /* IPiPluginHostServices   */
+extern PI_PLUGIN_API const PiGuid PI_PLUGIN_IID_HOST_UI;         /* IPiPluginHostUI         */
+extern PI_PLUGIN_API const PiGuid PI_PLUGIN_IID_PLUGIN_FACTORY;  /* IPiPluginFactory  */
+extern PI_PLUGIN_API const PiGuid PI_PLUGIN_IID_PLUGIN_BASE;     /* IPiPluginBase     */
+extern PI_PLUGIN_API const PiGuid PI_PLUGIN_IID_PLUGIN_VIEW;     /* IPiPluginView     */
+extern PI_PLUGIN_API const PiGuid PI_PLUGIN_IID_SERVICE;         /* IPiPluginService        */
 /* 0.4 additions (roadmap APP-06, channel C) - interfaces first, nothing changed */
-extern PI_EXPORT const PiGuid PI_IID_EVENT_SINK;      /* IPiEventSink      */
-extern PI_EXPORT const PiGuid PI_IID_HOST_EVENTS;     /* IPiHostEvents     */
+extern PI_PLUGIN_API const PiGuid PI_PLUGIN_IID_EVENT_SINK;      /* IPiPluginEventSink      */
+extern PI_PLUGIN_API const PiGuid PI_PLUGIN_IID_HOST_EVENTS;     /* IPiPluginHostEvents     */
 
 #ifdef __cplusplus
 }

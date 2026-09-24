@@ -1,6 +1,6 @@
 # ./examples/service_plugin/CMakeLists.txt
 #
-# 服务插件示例：纯 C，无 UI，实现 IPiService（start/poll/status/stop）。
+# 服务插件示例：纯 C，无 UI，实现 IPiPluginService（start/poll/status/stop）。
 cmake_minimum_required(VERSION 3.23)
 
 set(TARGET_NAME pi_example_service)

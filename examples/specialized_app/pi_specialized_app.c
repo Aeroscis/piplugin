@@ -3,11 +3,11 @@
  *
  * This is the shape the roadmap calls "通道 A + 通道 B": an application that
  *   1. defines its own protocol (my_app_protocol.h) and REQUIRES every plugin in
- *      its ecosystem to implement it (pi_host_session_require -> the gate runs
+ *      its ecosystem to implement it (pi_plugin_host_session_require -> the gate runs
  *      before instantiation, so a non-conforming plugin is rejected without ever
  *      being created);
  *   2. offers ITS OWN service to plugins through the host services object
- *      (pi_host_services_create_ex + extra_qi, APP-01);
+ *      (pi_plugin_host_services_create_ex + extra_qi, APP-01);
  *   3. consumes the plugin's protocol through QueryInterface - the plugin's side
  *      of the conversation is examples/specialized_app/pi_specialized_plugin.c.
  *
@@ -72,7 +72,7 @@ static const IMyAppInfoVtbl s_app_info_vtbl = {
 
 static AppInfo s_app_info;      /* static: lives as long as the app, no destroy */
 
-/* The extra_qi hook pi_host_services_create_ex() forwards unknown IIDs to. */
+/* The extra_qi hook pi_plugin_host_services_create_ex() forwards unknown IIDs to. */
 static PiResult PI_CALL AppExtraQi(void* ctx, const PiGuid* iid, void** out)
 {
     (void)ctx;
@@ -101,28 +101,28 @@ static void OnSessionLog(void* user_data, const char* message)
 /* Try to load one plugin; report whether the app's gate accepted it. */
 static int LoadAndCheck(const char* dll, IMyAppJobQueue** out_jobs)
 {
-    uint32_t slot = PI_HOST_SESSION_INVALID_SLOT;
+    uint32_t slot = PI_PLUGIN_HOST_SESSION_INVALID_SLOT;
     PiResult hr;
 
     /* Count it as loaded while it is being loaded, so a plugin asking the app
      * (through MY_APP_INFO_IID) sees the count including itself - that is what
      * "how many plugins are loaded" means to a user. */
     ++g_loaded;
-    hr = pi_host_session_load(g_session, dll, &slot);
+    hr = pi_plugin_host_session_load(g_session, dll, &slot);
 
     if (PI_FAILED(hr)) {
         /* PI_E_MISSINGCAPABILITY here means: the plugin does not PROVIDES the
          * protocol this app requires. The gate ran BEFORE instantiation. */
         --g_loaded;
         printf("[app] rejected '%s' (hr=%d): %s\n", dll, (int)hr,
-               pi_host_session_last_error(g_session));
+               pi_plugin_host_session_last_error(g_session));
         return 0;
     }
 
     printf("[app] accepted '%s'\n", dll);
 
     if (out_jobs) {
-        IPiPluginBase* plugin = pi_host_session_get_plugin(g_session, slot);   /* borrowed */
+        IPiPluginBase* plugin = pi_plugin_host_session_get_plugin(g_session, slot);   /* borrowed */
         IMyAppJobQueue* jobs = NULL;
         if (PI_SUCCEEDED(pi_iunknown_query_interface((IPiUnknown*)plugin, &MY_APP_JOB_IID,
                                                      (void**)&jobs))) {
@@ -139,7 +139,7 @@ int main(int argc, char** argv)
     const char* good_dll = (argc > 1) ? argv[1] : "pi_example_specialized_plugin.dll";
     const char* bad_dll  = (argc > 2) ? argv[2] : "pi_example_service.dll";
 
-    IPiHostServices* services = NULL;
+    IPiPluginHostServices* services = NULL;
     IMyAppJobQueue*  jobs = NULL;
     int              exit_code = 0;
 
@@ -152,19 +152,19 @@ int main(int argc, char** argv)
      * The extra_qi hook is what makes "our service" reachable: the framework's
      * default host object answers its own three IIDs and forwards the rest here.
      * (create_default() is the same call with a NULL hook.) */
-    if (PI_FAILED(pi_host_services_create_ex(&OnHostMessage, NULL, PI_INVALID_WINDOW,
+    if (PI_FAILED(pi_plugin_host_services_create_ex(&OnHostMessage, NULL, PI_INVALID_WINDOW,
                                              &AppExtraQi, NULL, &services))) {
         printf("FATAL: cannot create host services\n");
         return 1;
     }
 
     /* 2) the session, with the app's requirement declared up front */
-    if (PI_FAILED(pi_host_session_create(services, &g_session))) {
+    if (PI_FAILED(pi_plugin_host_session_create(services, &g_session))) {
         printf("FATAL: cannot create session\n");
         return 1;
     }
-    pi_host_session_set_logger(g_session, &OnSessionLog, NULL);
-    pi_host_session_require(g_session, &MY_APP_JOB_IID);
+    pi_plugin_host_session_set_logger(g_session, &OnSessionLog, NULL);
+    pi_plugin_host_session_require(g_session, &MY_APP_JOB_IID);
     printf("[app] this app requires com.example job-queue plugins\n");
 
     /* 3) a conforming plugin: accepted, and we can call its protocol */
@@ -194,9 +194,9 @@ int main(int argc, char** argv)
     }
 
     /* 5) unload everything in one call; the kit guarantees the order */
-    pi_host_session_unload_all(g_session);
+    pi_plugin_host_session_unload_all(g_session);
     g_loaded = 0;
-    pi_host_session_destroy(g_session); g_session = NULL;
+    pi_plugin_host_session_destroy(g_session); g_session = NULL;
     pi_iunknown_release((IPiUnknown*)services);
 
     printf("RESULT: %s\n", exit_code ? "FAIL" : "PASS");

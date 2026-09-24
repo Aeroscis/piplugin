@@ -10,9 +10,9 @@
 > （C++ RAII 层，`unit_cpp`，52 项 + Debug 下 `_CrtDumpMemoryLeaks()` 无泄漏断言）、
 > `tests/unit/pi_thread_tests.c`（跨线程专项，`unit_threads`，70 项）。覆盖核心纯 C
 > 逻辑：GUID、descriptor 能力查询与 properties 读法（含 0.3 前布局）、
-> 引用计数（含 destroy 回调）、`pi_module_load` 失败路径（含线程局部错误串与
-> `pi_module_get_load_error_r`）、`pi_host_services_create_default` 的 headless/GUI
-> 两形态、`pi_api_version_compatible` 边界、`pi_host_services_create_ex` 钩子契约。
+> 引用计数（含 destroy 回调）、`pi_plugin_module_load` 失败路径（含线程局部错误串与
+> `pi_plugin_module_get_load_error_r`）、`pi_plugin_host_services_create_default` 的 headless/GUI
+> 两形态、`pi_plugin_api_version_compatible` 边界、`pi_plugin_host_services_create_ex` 钩子契约。
 > **复核**：`ctest -C Debug`；用例注册表见 `tests/CMakeLists.txt`。
 
 ## 2. 宿主自动化验证脚本 [P1] —— 已完成（roadmap ECO-07，演化形态）
@@ -45,7 +45,7 @@
 | headless 宿主 + GUI 插件 | ✅ 已演示（插件无头运行、不建 UI） |
 | headless 宿主 + service 插件 | ✅ 已有示例并纳入自动化（APP-07：`pi_test_plugin_service.dll` + ctest `headless_host_service_lifecycle`，断言 start/poll/status/stop 全生命周期） |
 | 多插件同进程 | ✅ 已覆盖（APP-08：`tests/test_host_multi` / ctest `multi_plugin_qt_in_one_process`，两个不同的 Qt 插件 DLL 同时加载、各自有 UI、各自跑定时器、一起卸载；W-05 补上 imgui 变体：ctest `multi_plugin_imgui_in_one_process`，两个不同的 **imgui** 插件模块各自渲染若干帧、各自心跳推进、一起干净卸载） |
-| 嵌入窗口动态切换 | ✅ 已覆盖（W-02：`tests/test_host_multi --container-switch`，ctest `container_switch_runtime`（imgui 插件）/ `container_switch_runtime_qt`（Qt 插件）—— attach A → 切到 B → 切回 A → 尺寸往返 → 卸载，每步断言"插件窗口是**指定容器**的子窗口、可见、尺寸与容器客户区一致"，并断言 `pi_view_detach()` 后旧窗口确实已销毁） |
+| 嵌入窗口动态切换 | ✅ 已覆盖（W-02：`tests/test_host_multi --container-switch`，ctest `container_switch_runtime`（imgui 插件）/ `container_switch_runtime_qt`（Qt 插件）—— attach A → 切到 B → 切回 A → 尺寸往返 → 卸载，每步断言"插件窗口是**指定容器**的子窗口、可见、尺寸与容器客户区一致"，并断言 `pi_plugin_view_detach()` 后旧窗口确实已销毁） |
 
 > **已知环境性退化（观察，非定论）**：在同一个长会话里反复跑 ctest 之后，imgui 那几个
 > 用例会集体挂住——宿主日志显示心跳推进不了（`heartbeats=0/2`），
@@ -58,17 +58,17 @@
 ## 5. 线程安全专项 [P2] —— 已完成（W-04）
 
 > **结论**：三个跨线程场景各有用例、全部按退出码判定——插件子线程调
-> `pi_host_post_message`（`unit_threads` 3 线程 × 200 条 + `qt_view_post_from_worker_thread`
-> 真插件子线程）、Qt 套件 `pi_qt_view_post` 跨线程 marshal（回调必须跑在**宿主 GUI
+> `pi_plugin_host_post_message`（`unit_threads` 3 线程 × 200 条 + `qt_view_post_from_worker_thread`
+> 真插件子线程）、Qt 套件 `pi_plugin_qt_view_post` 跨线程 marshal（回调必须跑在**宿主 GUI
 > 线程**上）、并发 AddRef/Release（成对操作回到基数、并发释放到零时 `destroy`
-> **恰好一次**）。顺带修掉一个真 bug：`pi_qt_view_post()` 文档写着"marshal 到 Qt 线程"，
+> **恰好一次**）。顺带修掉一个真 bug：`pi_plugin_qt_view_post()` 文档写着"marshal 到 Qt 线程"，
 > 实现却是**内联执行**，照文档写的插件会从后台线程碰 QWidget。
 > **复核**：`ctest -C Debug`；线程契约见 `docs/design/interfaces.md` §6。
 
 ## 6. 负向测试 [P2] —— 已完成（roadmap ECO-08）
 
 > **结论**：四类负向输入都有自动化断言，且都在 ctest 里——加载不存在的 DLL、加载不含
-> `pi_plugin_entry` 的 DLL、`pi_create_instance` 传未知 class GUID（`PI_E_NOINTERFACE`
+> `pi_plugin_entry` 的 DLL、`pi_plugin_create_instance` 传未知 class GUID（`PI_E_NOINTERFACE`
 > + `*out` 为 NULL）、headless 宿主加载 `HOST_UI REQUIRED` 插件（ctest
 > `capability_gate_rejects_gui_required_plugin`）。顺带修掉两个测试插件在
 > `PI_E_NOINTERFACE` 路径上没把 `*out` 置 NULL 的问题（违反终审约定 2.4）。

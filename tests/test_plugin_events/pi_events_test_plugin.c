@@ -3,15 +3,15 @@
  *
  * A pure-C plugin that exercises both halves of the event mechanism:
  *
- *   - it PROVIDES PI_IID_EVENT_SINK, so a host can push ADDRESSED events into it
- *     (the host queries the sink and calls pi_event_deliver);
- *   - it uses the host's PI_IID_HOST_EVENTS (declared OPTIONAL), so it can
+ *   - it PROVIDES PI_PLUGIN_IID_EVENT_SINK, so a host can push ADDRESSED events into it
+ *     (the host queries the sink and calls pi_plugin_event_deliver);
+ *   - it uses the host's PI_PLUGIN_IID_HOST_EVENTS (declared OPTIONAL), so it can
  *     PUBLISH events and SUBSCRIBE to topics like any other participant.
  *
  * It also demonstrates the two interface objects trick again (the instance
- * carries IPiPluginBase, QueryInterface(PI_IID_EVENT_SINK) hands out a small
+ * carries IPiPluginBase, QueryInterface(PI_PLUGIN_IID_EVENT_SINK) hands out a small
  * wrapper with the sink vtable), the same containment pattern the service test
- * plugin and the framework's own IPiHostUI use.
+ * plugin and the framework's own IPiPluginHostUI use.
  *
  * The scripted conversation with tests/test_host_events (topics/keys live in
  * tests/common/pi_test_events_protocol.h):
@@ -24,7 +24,7 @@
  *                                     com.example.plugin.saw_broadcast
  *
  * Deliberately NOT unsubscribing in terminate: the host kit calls
- * pi_host_events_drop_owner() for every slot it unloads, and this plugin is the
+ * pi_plugin_host_events_drop_owner() for every slot it unloads, and this plugin is the
  * proof that a plugin which forgets cannot leave a dangling callback behind
  * (that is decision D9 of docs/design/events.md).
  */
@@ -41,8 +41,8 @@ static const PiGuid EVENTS_CLASS_GUID =
 
 typedef struct EventsPlugin {
     PiRefCountedBase  base;          /* MUST be first: the IPiPluginBase object */
-    IPiHostServices*  host;          /* add-ref'd; borrowed by Initialize */
-    IPiHostEvents*    host_events;   /* add-ref'd; NULL when the host has none  */
+    IPiPluginHostServices*  host;          /* add-ref'd; borrowed by Initialize */
+    IPiPluginHostEvents*    host_events;   /* add-ref'd; NULL when the host has none  */
 
     /* what it did, for its own traces */
     uint32_t          ready_published;
@@ -50,8 +50,8 @@ typedef struct EventsPlugin {
     uint32_t          welcome_calls;
     uint32_t          ack_published;
     uint32_t          broadcast_seen;
-    uint32_t          subscription;  /* handle, or PI_EVENT_INVALID_SUBSCRIPTION */
-    char              last_topic[PI_EVENT_TOPIC_MAX];
+    uint32_t          subscription;  /* handle, or PI_PLUGIN_EVENT_INVALID_SUBSCRIPTION */
+    char              last_topic[PI_PLUGIN_EVENT_TOPIC_MAX];
 } EventsPlugin;
 
 typedef struct EventsSink {
@@ -62,14 +62,14 @@ typedef struct EventsSink {
 static uint32_t PI_CALL Plugin_AddRef(void* self_ptr);
 static uint32_t PI_CALL Plugin_Release(void* self_ptr);
 static PiResult PI_CALL Plugin_Qi(void* self_ptr, const PiGuid* iid, void** out);
-static PiResult PI_CALL Plugin_Initialize(void* self_ptr, IPiHostServices* host);
+static PiResult PI_CALL Plugin_Initialize(void* self_ptr, IPiPluginHostServices* host);
 static PiResult PI_CALL Plugin_Terminate(void* self_ptr);
 static PiResult PI_CALL Plugin_GetView(void* self_ptr, IPiPluginView** out);
 
 static uint32_t PI_CALL Sink_AddRef(void* self_ptr);
 static uint32_t PI_CALL Sink_Release(void* self_ptr);
 static PiResult PI_CALL Sink_Qi(void* self_ptr, const PiGuid* iid, void** out);
-static PiResult PI_CALL Sink_Deliver(void* self_ptr, const PiEvent* event);
+static PiResult PI_CALL Sink_Deliver(void* self_ptr, const PiPluginEvent* event);
 
 /* 本模块内的薄封装：直接取 dllimport 函数地址在 C 里会触发 C4232（见
  * docs/design/interfaces.md 5.3），与其它纯 C 实现同一消法。 */
@@ -85,7 +85,7 @@ static const IPiPluginBaseVtbl s_plugin_vtbl = {
     &Plugin_GetView
 };
 
-static const IPiEventSinkVtbl s_sink_vtbl = {
+static const IPiPluginEventSinkVtbl s_sink_vtbl = {
     { &Sink_Qi, &Sink_AddRef, &Sink_Release },
     &Sink_Deliver
 };
@@ -105,7 +105,7 @@ static void* PluginOwnerToken(EventsPlugin* plugin)
 static void PluginPublish(EventsPlugin* plugin, uint32_t type, const char* topic,
                           const PiPluginProperty* payload, uint32_t payload_count)
 {
-    PiEvent event;
+    PiPluginEvent event;
     if (!plugin || !plugin->host_events) return;   /* no events host: carry on */
 
     memset(&event, 0, sizeof(event));
@@ -115,7 +115,7 @@ static void PluginPublish(EventsPlugin* plugin, uint32_t type, const char* topic
     event.payload_count = payload_count;
     event.origin        = NULL;                   /* the host fills this in */
 
-    (void)pi_host_events_publish(plugin->host_events, &event);
+    (void)pi_plugin_host_events_publish(plugin->host_events, &event);
 }
 
 /* A one-property payload, borrowed for the publish call only (the router copies). */
@@ -125,11 +125,11 @@ static void PluginPublishOne(EventsPlugin* plugin, const char* topic,
     PiPluginProperty prop;
     prop.key   = key;
     prop.value = value;
-    PluginPublish(plugin, PI_EVENT_NOTIFY, topic, &prop, 1);
+    PluginPublish(plugin, PI_PLUGIN_EVENT_NOTIFY, topic, &prop, 1);
 }
 
 /* Subscription callback (runs on the host's main thread): echo what we saw. */
-static void OnBroadcast(void* user_data, const PiEvent* event)
+static void OnBroadcast(void* user_data, const PiPluginEvent* event)
 {
     EventsPlugin* plugin = (EventsPlugin*)user_data;
     char count[16];
@@ -139,14 +139,14 @@ static void OnBroadcast(void* user_data, const PiEvent* event)
     ++plugin->broadcast_seen;
 
     snprintf(count, sizeof(count), "%u", (unsigned)plugin->broadcast_seen);
-    PluginPublishOne(plugin, PI_TEST_EVENTS_TOPIC_SAW_BROADCAST,
-                     PI_TEST_EVENTS_KEY_COUNT, count);
+    PluginPublishOne(plugin, PI_PLUGIN_TEST_EVENTS_TOPIC_SAW_BROADCAST,
+                     PI_PLUGIN_TEST_EVENTS_KEY_COUNT, count);
 }
 
 /* --------------------------------------------------------------------------
- * IPiEventSink (self_ptr is the EventsSink wrapper)
+ * IPiPluginEventSink (self_ptr is the EventsSink wrapper)
  * -------------------------------------------------------------------------- */
-static PiResult PI_CALL Sink_Deliver(void* self_ptr, const PiEvent* event)
+static PiResult PI_CALL Sink_Deliver(void* self_ptr, const PiPluginEvent* event)
 {
     EventsSink*   wrapper = (EventsSink*)self_ptr;
     EventsPlugin* plugin  = wrapper ? wrapper->owner : NULL;
@@ -162,18 +162,18 @@ static PiResult PI_CALL Sink_Deliver(void* self_ptr, const PiEvent* event)
         plugin->last_topic[n] = '\0';
     }
 
-    if (event->topic && strcmp(event->topic, PI_TEST_EVENTS_TOPIC_WELCOME) == 0) {
+    if (event->topic && strcmp(event->topic, PI_PLUGIN_TEST_EVENTS_TOPIC_WELCOME) == 0) {
         ++plugin->welcome_calls;
-        greeting = pi_test_event_payload(event, PI_TEST_EVENTS_KEY_GREETING);
+        greeting = pi_plugin_test_event_payload(event, PI_PLUGIN_TEST_EVENTS_KEY_GREETING);
 
         /* Reply from inside the sink: publishing here is allowed, and the host
          * sees it on its next pump (never re-entrantly during this call). */
-        PluginPublishOne(plugin, PI_TEST_EVENTS_TOPIC_ACK,
-                         PI_TEST_EVENTS_KEY_ACKED, "1");
+        PluginPublishOne(plugin, PI_PLUGIN_TEST_EVENTS_TOPIC_ACK,
+                         PI_PLUGIN_TEST_EVENTS_KEY_ACKED, "1");
         ++plugin->ack_published;
 
         printf("[events plugin] welcomed (greeting='%s') -> published '%s'\n",
-               greeting ? greeting : "(none)", PI_TEST_EVENTS_TOPIC_ACK);
+               greeting ? greeting : "(none)", PI_PLUGIN_TEST_EVENTS_TOPIC_ACK);
         return PI_OK;
     }
 
@@ -185,7 +185,7 @@ static PiResult PI_CALL Sink_Qi(void* self_ptr, const PiGuid* iid, void** out)
 {
     if (!out) return PI_E_INVALIDARG;
     if (pi_guid_equal(iid, &PI_IID_UNKNOWN) ||
-        pi_guid_equal(iid, &PI_IID_EVENT_SINK)) {
+        pi_guid_equal(iid, &PI_PLUGIN_IID_EVENT_SINK)) {
         *out = self_ptr;
         pi_refcounted_add_ref(self_ptr);
         return PI_OK;
@@ -207,10 +207,10 @@ static void Sink_Destroy(void* self_ptr)
 /* --------------------------------------------------------------------------
  * IPiPluginBase (self_ptr is the EventsPlugin instance)
  * -------------------------------------------------------------------------- */
-static PiResult PI_CALL Plugin_Initialize(void* self_ptr, IPiHostServices* host)
+static PiResult PI_CALL Plugin_Initialize(void* self_ptr, IPiPluginHostServices* host)
 {
     EventsPlugin* plugin = (EventsPlugin*)self_ptr;
-    uint32_t handle = PI_EVENT_INVALID_SUBSCRIPTION;
+    uint32_t handle = PI_PLUGIN_EVENT_INVALID_SUBSCRIPTION;
 
     if (plugin->host) return PI_OK;   /* idempotent (see docs/tutorial/write-plugin.md) */
     if (!host) return PI_OK;
@@ -219,16 +219,16 @@ static PiResult PI_CALL Plugin_Initialize(void* self_ptr, IPiHostServices* host)
     pi_iunknown_add_ref((IPiUnknown*)host);
 
     /* Events are OPTIONAL for a plugin: a host without them is a normal host. */
-    if (PI_FAILED(pi_host_events_query(host, &plugin->host_events))) {
+    if (PI_FAILED(pi_plugin_host_events_query(host, &plugin->host_events))) {
         plugin->host_events = NULL;
-        printf("[events plugin] host provides no events (IPiHostEvents absent)\n");
+        printf("[events plugin] host provides no events (IPiPluginHostEvents absent)\n");
         return PI_OK;
     }
 
     /* Subscribe as a participant. owner = this instance, so the host can drop
      * the subscription on unload without asking us (D9). */
-    if (PI_SUCCEEDED(pi_host_events_subscribe(plugin->host_events,
-                                              PI_TEST_EVENTS_TOPIC_BROADCAST,
+    if (PI_SUCCEEDED(pi_plugin_host_events_subscribe(plugin->host_events,
+                                              PI_PLUGIN_TEST_EVENTS_TOPIC_BROADCAST,
                                               PluginOwnerToken(plugin),
                                               &OnBroadcast, plugin, &handle))) {
         plugin->subscription = handle;
@@ -237,9 +237,9 @@ static PiResult PI_CALL Plugin_Initialize(void* self_ptr, IPiHostServices* host)
     /* Announce ourselves: this is the plugin -> host direction. */
     {
         PiPluginProperty prop;
-        prop.key   = PI_TEST_EVENTS_KEY_PLUGIN;
+        prop.key   = PI_PLUGIN_TEST_EVENTS_KEY_PLUGIN;
         prop.value = "events-test";
-        PluginPublish(plugin, PI_EVENT_NOTIFY, PI_TEST_EVENTS_TOPIC_READY, &prop, 1);
+        PluginPublish(plugin, PI_PLUGIN_EVENT_NOTIFY, PI_PLUGIN_TEST_EVENTS_TOPIC_READY, &prop, 1);
         ++plugin->ready_published;
     }
     return PI_OK;
@@ -279,15 +279,15 @@ static PiResult PI_CALL Plugin_Qi(void* self_ptr, const PiGuid* iid, void** out)
     if (!out) return PI_E_INVALIDARG;
 
     if (pi_guid_equal(iid, &PI_IID_UNKNOWN) ||
-        pi_guid_equal(iid, &PI_IID_PLUGIN_BASE)) {
+        pi_guid_equal(iid, &PI_PLUGIN_IID_PLUGIN_BASE)) {
         *out = self_ptr;
         pi_refcounted_add_ref(self_ptr);
         return PI_OK;
     }
 
-    if (pi_guid_equal(iid, &PI_IID_EVENT_SINK)) {
+    if (pi_guid_equal(iid, &PI_PLUGIN_IID_EVENT_SINK)) {
         /* Separate wrapper object: the two vtables cannot both live at offset 0
-         * (same pattern as the service test plugin and IPiHostUI). */
+         * (same pattern as the service test plugin and IPiPluginHostUI). */
         EventsSink* sink = (EventsSink*)calloc(1, sizeof(EventsSink));
         if (!sink) return PI_E_OUTOFMEMORY;
         pi_refcounted_init_with_destroy(&sink->base, (const IPiUnknownVtbl*)&s_sink_vtbl,
@@ -336,7 +336,7 @@ static PiResult PI_CALL Factory_Qi(void* self_ptr, const PiGuid* iid, void** out
 {
     if (!out) return PI_E_INVALIDARG;
     if (pi_guid_equal(iid, &PI_IID_UNKNOWN) ||
-        pi_guid_equal(iid, &PI_IID_PLUGIN_FACTORY)) {
+        pi_guid_equal(iid, &PI_PLUGIN_IID_PLUGIN_FACTORY)) {
         *out = self_ptr;
         pi_refcounted_add_ref(self_ptr);
         return PI_OK;
@@ -362,7 +362,7 @@ static PiResult PI_CALL Factory_GetClassGuid(void* self_ptr, uint32_t index, PiG
 }
 
 static PiResult PI_CALL Factory_CreateInstance(void* self_ptr, const PiGuid* guid,
-                                               IPiHostServices* host, IPiPluginBase** out)
+                                               IPiPluginHostServices* host, IPiPluginBase** out)
 {
     EventsPlugin* plugin;
 
@@ -376,7 +376,7 @@ static PiResult PI_CALL Factory_CreateInstance(void* self_ptr, const PiGuid* gui
 
     pi_refcounted_init_with_destroy(&plugin->base, (const IPiUnknownVtbl*)&s_plugin_vtbl,
                                     &Plugin_Destroy);
-    plugin->subscription = PI_EVENT_INVALID_SUBSCRIPTION;
+    plugin->subscription = PI_PLUGIN_EVENT_INVALID_SUBSCRIPTION;
 
     if (PI_FAILED(Plugin_Initialize(plugin, host))) {
         pi_iunknown_release((IPiUnknown*)&plugin->base);
@@ -408,10 +408,10 @@ PI_PLUGIN_ENTRY_DECL
 
         /* PROVIDES the sink (the host may push to us);
          * OPTIONAL host events (we run fine without them, just quieter). */
-        s_caps[0].iid   = PI_IID_EVENT_SINK;
-        s_caps[0].flags = PI_CAP_PROVIDES;
-        s_caps[1].iid   = PI_IID_HOST_EVENTS;
-        s_caps[1].flags = PI_CAP_OPTIONAL;
+        s_caps[0].iid   = PI_PLUGIN_IID_EVENT_SINK;
+        s_caps[0].flags = PI_PLUGIN_CAP_PROVIDES;
+        s_caps[1].iid   = PI_PLUGIN_IID_HOST_EVENTS;
+        s_caps[1].flags = PI_PLUGIN_CAP_OPTIONAL;
 
         s_desc.name             = "Events Test Plugin";
         s_desc.vendor           = "piplugin";

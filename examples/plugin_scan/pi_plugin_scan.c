@@ -28,7 +28,7 @@
  *
  * The other thing this example demonstrates is a lifetime rule: a descriptor's
  * strings belong to the MODULE. Everything needed later is deep-copied before
- * pi_host_session_unload() (see ScanEntry).
+ * pi_plugin_host_session_unload() (see ScanEntry).
  *
  * Windows-only for now, because it lists files with FindFirstFileA; it has no
  * other platform or GUI dependency. See README.md for the three steps.
@@ -104,7 +104,7 @@ static void ScanFile(PiPluginHostSession* session, const char* directory, const 
 {
     ScanEntry* e;
     char       path[SCAN_PATH_MAX];
-    uint32_t   slot = PI_HOST_SESSION_INVALID_SLOT;
+    uint32_t   slot = PI_PLUGIN_HOST_SESSION_INVALID_SLOT;
     PiResult   hr;
     const PiPluginDescriptor* desc;
     uint32_t   i;
@@ -120,14 +120,14 @@ static void ScanFile(PiPluginHostSession* session, const char* directory, const 
     /* inspect = load module + factory + version gate + capability gates, and
      * STOP there (no instance is created). A failure is a normal outcome: most
      * DLLs in a deployment folder are not plugins. */
-    hr = pi_host_session_inspect(session, path, &slot);
+    hr = pi_plugin_host_session_inspect(session, path, &slot);
     if (PI_FAILED(hr)) {
-        CopyString(e->reason, sizeof(e->reason), pi_host_session_last_error(session));
+        CopyString(e->reason, sizeof(e->reason), pi_plugin_host_session_last_error(session));
         ++g_entry_count;
         return;
     }
 
-    desc = pi_host_session_get_descriptor(session, slot);
+    desc = pi_plugin_host_session_get_descriptor(session, slot);
     if (desc) {
         /* Deep-copy everything we want to keep: the descriptor's memory belongs
          * to the module, which we unload below. */
@@ -139,9 +139,9 @@ static void ScanFile(PiPluginHostSession* session, const char* directory, const 
         e->property_count = desc->property_count;
         for (i = 0; i < desc->capability_count; ++i) {
             const PiPluginCapability* cap = &desc->capabilities[i];
-            if (cap->flags & PI_CAP_PROVIDES) ++e->provides;
-            if (cap->flags & PI_CAP_REQUIRED) ++e->required;
-            if (cap->flags & PI_CAP_OPTIONAL) ++e->optional;
+            if (cap->flags & PI_PLUGIN_CAP_PROVIDES) ++e->provides;
+            if (cap->flags & PI_PLUGIN_CAP_REQUIRED) ++e->required;
+            if (cap->flags & PI_PLUGIN_CAP_OPTIONAL) ++e->optional;
         }
         for (i = 0; i < desc->property_count && i < SCAN_MAX_PROPS; ++i) {
             CopyString(e->properties[i].key, SCAN_TEXT_MAX, desc->properties[i].key);
@@ -154,7 +154,7 @@ static void ScanFile(PiPluginHostSession* session, const char* directory, const 
     }
 
     /* Unload immediately: discovery must not leave modules mapped. */
-    pi_host_session_unload(session, slot);
+    pi_plugin_host_session_unload(session, slot);
     ++g_entry_count;
 }
 
@@ -242,7 +242,7 @@ static void PrintVersionSelection(void)
 int main(int argc, char** argv)
 {
     const char*          directory = (argc > 1 && argv[1]) ? argv[1] : ".";
-    IPiHostServices*     services  = NULL;
+    IPiPluginHostServices*     services  = NULL;
     PiPluginHostSession* session   = NULL;
     PiResult             hr;
     uint32_t             i;
@@ -252,10 +252,10 @@ int main(int argc, char** argv)
 
     /* A scanner needs no UI and no message loop: headless services are enough
      * for the gates, and nothing is ever instantiated. */
-    hr = pi_host_services_create_default(NULL, NULL, PI_INVALID_WINDOW, &services);
+    hr = pi_plugin_host_services_create_default(NULL, NULL, PI_INVALID_WINDOW, &services);
     if (PI_FAILED(hr)) { printf("FATAL: host services (hr=%d)\n", (int)hr); return 1; }
 
-    hr = pi_host_session_create(services, &session);
+    hr = pi_plugin_host_session_create(services, &session);
     if (PI_FAILED(hr)) {
         printf("FATAL: session (hr=%d)\n", (int)hr);
         pi_iunknown_release((IPiUnknown*)services);
@@ -290,7 +290,7 @@ int main(int argc, char** argv)
     PrintInventory();
     PrintVersionSelection();
 
-    pi_host_session_destroy(session);
+    pi_plugin_host_session_destroy(session);
     pi_iunknown_release((IPiUnknown*)services);
 
     printf("\nRESULT: %s\n", g_entry_count ? "PASS" : "FAIL");

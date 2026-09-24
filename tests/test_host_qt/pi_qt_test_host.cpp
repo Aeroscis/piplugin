@@ -19,7 +19,7 @@
  * 布局、样式与帧时钟长什么样"——容器是谁、在哪、多大、怎么美化，全归宿主。
  */
 #include "piplugin/pi_plugin.h"
-/* C++ RAII 层（可选头）：宿主服务对象用 PiPtr 持有，退出路径上不用手写 release。 */
+/* C++ RAII 层（可选头）：宿主服务对象用 PiPluginPtr 持有，退出路径上不用手写 release。 */
 #include "piplugin/pi_cpp.h"
 #include "pi_host_session.h"
 #include "pi_host_embed_area.h"
@@ -50,7 +50,7 @@ static void LogStatus(const char* fmt, ...)
         std::string s(logPath, len > 0 && len < MAX_PATH ? len : 0);
         size_t slash = s.find_last_of("\\/");
         if (slash != std::string::npos) s = s.substr(0, slash + 1);
-        s += "pi_qt_host.log";
+        s += "pi_plugin_qt_host.log";
         fopen_s(&f, s.c_str(), "a");
         if (!f) return;
     }
@@ -64,9 +64,9 @@ static void LogStatus(const char* fmt, ...)
 /* --------------------------------------------------------------------------
  * Host state
  * ------------------------------------------------------------------------ */
-static PiPtr<IPiHostServices> g_hostServices;   /* RAII：析构即 release */
+static PiPluginPtr<IPiPluginHostServices> g_hostServices;   /* RAII：析构即 release */
 static PiPluginHostSession*   g_session      = NULL;
-static uint32_t               g_slot         = PI_HOST_SESSION_INVALID_SLOT;
+static uint32_t               g_slot         = PI_PLUGIN_HOST_SESSION_INVALID_SLOT;
 
 static PiPluginEmbedArea* g_embedArea  = NULL;   /* 宿主创建、宿主摆位、宿主美化 */
 static QLabel*            g_statusLabel = NULL;
@@ -109,12 +109,12 @@ static void SetStatus(const QString& text)
 static void UnloadPlugin()
 {
     LogStatus("unload: begin");
-    if (g_session && g_slot != PI_HOST_SESSION_INVALID_SLOT) {
+    if (g_session && g_slot != PI_PLUGIN_HOST_SESSION_INVALID_SLOT) {
         /* 先解除嵌入区域的绑定，再让 session 走七步卸载序列：
          * 解绑后本控件不再持有任何指向该插件的视图（也就不会在卸载后再转发 resize） */
         if (g_embedArea) g_embedArea->detachBinding();
-        pi_host_session_unload(g_session, g_slot);
-        g_slot = PI_HOST_SESSION_INVALID_SLOT;
+        pi_plugin_host_session_unload(g_session, g_slot);
+        g_slot = PI_PLUGIN_HOST_SESSION_INVALID_SLOT;
     }
     SetStatus(QString::fromUtf8("No plugin loaded"));
     LogStatus("unload: done");
@@ -126,10 +126,10 @@ static void LoadPlugin(const char* dllPath)
 
     if (!g_hostServices) {
         /* Create the host services object with the embed container's
-         * native window, so IPiHostUI is exposed to plugins.
+         * native window, so IPiPluginHostUI is exposed to plugins.
          * put() 给出参地址：句柄接管 create_default 返回的引用（已 add-ref），
          * 失败时框架会把 *out 置 NULL，句柄保持为空。 */
-        if (PI_FAILED(pi_host_services_create_default(&HostMessageProc, NULL,
+        if (PI_FAILED(pi_plugin_host_services_create_default(&HostMessageProc, NULL,
                                                       (PiNativeWindow)g_embedArea->winId(),
                                                       g_hostServices.put()))) {
             SetStatus(QString::fromUtf8("Host services unavailable"));
@@ -137,18 +137,18 @@ static void LoadPlugin(const char* dllPath)
         }
     }
     if (!g_session) {
-        if (PI_FAILED(pi_host_session_create(g_hostServices.get(), &g_session))) {
+        if (PI_FAILED(pi_plugin_host_session_create(g_hostServices.get(), &g_session))) {
             SetStatus(QString::fromUtf8("Host session unavailable"));
             return;
         }
-        pi_host_session_set_logger(g_session, &SessionLogProc, NULL);
+        pi_plugin_host_session_set_logger(g_session, &SessionLogProc, NULL);
     }
 
-    uint32_t slot = PI_HOST_SESSION_INVALID_SLOT;
-    PiResult hr = pi_host_session_load(g_session, dllPath, &slot);
+    uint32_t slot = PI_PLUGIN_HOST_SESSION_INVALID_SLOT;
+    PiResult hr = pi_plugin_host_session_load(g_session, dllPath, &slot);
     if (PI_FAILED(hr)) {
-        /* 失败原因（含 pi_module_load 的错误描述与双向门禁的拒绝理由）由 kit 给出 */
-        const QString why = QString::fromLocal8Bit(pi_host_session_last_error(g_session));
+        /* 失败原因（含 pi_plugin_module_load 的错误描述与双向门禁的拒绝理由）由 kit 给出 */
+        const QString why = QString::fromLocal8Bit(pi_plugin_host_session_last_error(g_session));
         if (hr == PI_E_MISSINGCAPABILITY)
             SetStatus(QString::fromUtf8("Rejected: %1").arg(why));
         else
@@ -157,7 +157,7 @@ static void LoadPlugin(const char* dllPath)
     }
     g_slot = slot;
 
-    const PiPluginDescriptor* desc = pi_host_session_get_descriptor(g_session, slot);
+    const PiPluginDescriptor* desc = pi_plugin_host_session_get_descriptor(g_session, slot);
 
     /* 嵌入：区域是本宿主创建并摆位的，L1 kit 负责让它成为 embed host */
     const bool view_attached = PI_SUCCEEDED(g_embedArea->attach(g_session, slot, true));
@@ -176,7 +176,7 @@ static void LoadPlugin(const char* dllPath)
                       prop->value ? prop->value : "(null)");
         }
         {
-            const char* kind = pi_descriptor_find_property(desc, "com.example.kind");
+            const char* kind = pi_plugin_descriptor_find_property(desc, "com.example.kind");
             LogStatus("property com.example.kind = %s", kind ? kind : "(absent)");
         }
     } else {
@@ -188,9 +188,9 @@ static void LoadPlugin(const char* dllPath)
  * Main window — plain QWidget subclass (lambdas instead of slots, so no
  * moc step is needed).
  * ------------------------------------------------------------------------ */
-class PiQtHostWindow : public QWidget {
+class PiPluginQtHostWindow : public QWidget {
 public:
-    explicit PiQtHostWindow(QWidget* parent = NULL) : QWidget(parent)
+    explicit PiPluginQtHostWindow(QWidget* parent = NULL) : QWidget(parent)
     {
         setWindowTitle(QString::fromUtf8("piplugin — Test Host (Qt)"));
         resize(1280, 720);
@@ -236,7 +236,7 @@ protected:
     void closeEvent(QCloseEvent* event) override
     {
         UnloadPlugin();
-        if (g_session) { pi_host_session_destroy(g_session); g_session = NULL; }
+        if (g_session) { pi_plugin_host_session_destroy(g_session); g_session = NULL; }
         g_hostServices.reset();   /* 引用归零即销毁，不再手写 release */
         QWidget::closeEvent(event);
     }
@@ -249,7 +249,7 @@ int main(int argc, char** argv)
 {
     QApplication app(argc, argv);
 
-    PiQtHostWindow window;
+    PiPluginQtHostWindow window;
     window.show();
 
     /* Auto-load for automated testing (command line = plugin DLL path). */

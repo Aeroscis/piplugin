@@ -95,7 +95,7 @@ Qt（或依赖第三方预编译），这条成本会随时间上升。
   也就是说这是 **ActiveQt 级别的稳定私有约定**，不是 5.15 的临时补丁；
 - **需要留意的语义变化**（迁移时用回归证明，而不是靠猜）：
   1. Qt6 默认启用 high-DPI 缩放。本套件嵌入的是**原生子窗口**，几何走
-     `MoveWindow`/父客户区坐标；设备像素比介入后，`pi_on_resize` 传入的客户区像素与
+     `MoveWindow`/父客户区坐标；设备像素比介入后，`pi_plugin_on_resize` 传入的客户区像素与
      Qt 的 `setGeometry()` 之间需要一次「缩放/拖动/多显示器」回归（`tests/test_host_qt`
      已具备窗口，加上 `docs/design/d3d-window-resizing.md` 的像素测量法即可）；
   2. `QApplication` 单实例语义不变（§4.2 的前提）；

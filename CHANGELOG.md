@@ -36,6 +36,55 @@ and `pi_descriptor_find_property()` already treats a plugin `minor < 3` as
 "the pre-properties descriptor layout", so nothing else needed a 0.3.0 of its
 own.
 
+## [0.5.0]
+
+### Changed
+
+- **This library's own names now carry its own prefix, and the vocabulary shared
+  across the family moved out to the base layer `pibase`.** Two changes that
+  belong in one entry, because the first is what made the second visible.
+
+  *Names.* Every identifier this library defines is now `pi_plugin_*` (functions)
+  / `PiPlugin*` (types) / `PI_PLUGIN_*` (macros). The bare `pi_` / `Pi` / `PI_`
+  prefix is reserved for vocabulary the whole family shares, so a reader can tell
+  from the identifier alone whether a name is family-level or this library's. In
+  practice everything a host or plugin author writes is affected:
+  `pi_module_load` -> `pi_plugin_module_load`, `PiServiceOption` ->
+  `PiPluginServiceOption`, `PI_CAP_OPTIONAL` -> `PI_PLUGIN_CAP_OPTIONAL`,
+  `pi_event_deliver` -> `pi_plugin_event_deliver`. `PI_EXPORT` becomes
+  `PI_PLUGIN_API`, and `PI_PLUGIN_EXPORT` (which exports a *plugin's* entry point)
+  becomes `PI_PLUGIN_ENTRY_EXPORT` so it stops reading like its new neighbour.
+  Not renamed, because they were already right: `pi_plugin_entry`,
+  `PI_PLUGIN_API_VERSION`, `PiPluginDescriptor`, `IPiPluginFactory`, and the
+  `pi_plugin_*.h` file names.
+
+  *Layer.* The family-level vocabulary - the result-code list, `PiGuid`,
+  `PiNativeWindow`, `IPiUnknown` with its reference counting and `PI_IID_UNKNOWN`,
+  and the ABI/platform plumbing (`PI_CALL`, `PI_EXPORT`, `PI_IMPORT`,
+  `PI_LOCAL`, `PI_PLATFORM_*`) - now comes from the header-only `pibase` package
+  as `<pibase/pi_base.h>`. `pi_plugin_unknown.h` is gone: its entire contents
+  were family vocabulary. Six symbols therefore leave this library's export
+  surface - `pi_guid_equal`, `pi_refcounted_init`,
+  `pi_refcounted_init_with_destroy`, `pi_refcounted_add_ref`,
+  `pi_refcounted_release` and the `PI_IID_UNKNOWN` data symbol - because they
+  are `static inline` or header constants now. Consumers need
+  `find_package(pibase)` (or the Conan package) reachable; the exported target
+  already carries that dependency.
+
+  The result-code partition that previously existed only in prose is now
+  recorded in the header with the codes: app and plugin error codes take values
+  <= -100, and an interface that needs an "accepted, result later" success state
+  must introduce a **positive** result code, because `PI_SUCCEEDED` /
+  `PI_FAILED` decide by sign and a negative "pending" would make `PI_FAILED`
+  answer its own question wrongly.
+
+  *Rebuild everything together.* The entry point's name is unchanged
+  (`pi_plugin_entry` is still `pi_plugin_entry`), but the names of the exported
+  symbols a plugin imports changed, so a module built against 0.4 will not load
+  into a 0.5 host. That is the ordinary pre-1.0 rule above: hosts and plugins
+  move as a set across an `x` release. Nothing about the vtable layouts, the
+  descriptor layout, or the descriptor's `api_version` semantics changed.
+
 ## [Unreleased]
 
 ### Added

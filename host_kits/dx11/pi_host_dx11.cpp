@@ -14,7 +14,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-struct PiHostDx11Device {
+struct PiPluginHostDx11Device {
     ID3D11Device*           device;
     ID3D11DeviceContext*    context;
     IDXGISwapChain*         swap_chain;
@@ -29,14 +29,14 @@ struct PiHostDx11Device {
     const char*             present_model;
     unsigned                resize_failures;
     float                   background[4];
-    PiHostDx11LogProc       log;
+    PiPluginHostDx11LogProc       log;
     void*                   log_user;
 };
 
 /* --------------------------------------------------------------------------
  * Diagnostics
  * -------------------------------------------------------------------------- */
-static void Dx11Log(PiHostDx11Device* dx, const char* fmt, ...)
+static void Dx11Log(PiPluginHostDx11Device* dx, const char* fmt, ...)
 {
     char buf[512];
     va_list ap;
@@ -50,7 +50,7 @@ static void Dx11Log(PiHostDx11Device* dx, const char* fmt, ...)
 /* --------------------------------------------------------------------------
  * Render target
  * -------------------------------------------------------------------------- */
-static void Dx11CleanupRenderTarget(PiHostDx11Device* dx)
+static void Dx11CleanupRenderTarget(PiPluginHostDx11Device* dx)
 {
     if (dx->render_target) {
         dx->render_target->Release();
@@ -58,7 +58,7 @@ static void Dx11CleanupRenderTarget(PiHostDx11Device* dx)
     }
 }
 
-static void Dx11CreateRenderTarget(PiHostDx11Device* dx)
+static void Dx11CreateRenderTarget(PiPluginHostDx11Device* dx)
 {
     ID3D11Texture2D* back_buffer = NULL;
     if (!dx->swap_chain || !dx->device) return;
@@ -76,7 +76,7 @@ static void Dx11CreateRenderTarget(PiHostDx11Device* dx)
 /* 只增不减：整条修复的地基是"拖拽期间缓冲永不小于窗口"（陈旧帧只会被
  * SCALING_NONE 裁剪）。所以增长是拖拽期间唯一可能发生的 resize，且一次拖拽最多一次。
  * 返回非 0 表示渲染目标可用。 */
-static int Dx11EnsureAtLeast(PiHostDx11Device* dx, unsigned w, unsigned h)
+static int Dx11EnsureAtLeast(PiPluginHostDx11Device* dx, unsigned w, unsigned h)
 {
     unsigned nw, nh;
     HRESULT hr;
@@ -110,7 +110,7 @@ static int Dx11EnsureAtLeast(PiHostDx11Device* dx, unsigned w, unsigned h)
 
 /* 精确跟随：SCALING_NONE 拿不到时的旧行为 —— 缓冲必须与窗口严格一致，
  * 否则会被拉伸。 */
-static int Dx11ResizeExact(PiHostDx11Device* dx, unsigned w, unsigned h)
+static int Dx11ResizeExact(PiPluginHostDx11Device* dx, unsigned w, unsigned h)
 {
     HRESULT hr;
 
@@ -131,7 +131,7 @@ static int Dx11ResizeExact(PiHostDx11Device* dx, unsigned w, unsigned h)
     return dx->render_target != NULL;
 }
 
-int pi_host_dx11_prepare_size(PiHostDx11Device* dx, unsigned width, unsigned height)
+int pi_plugin_host_dx11_prepare_size(PiPluginHostDx11Device* dx, unsigned width, unsigned height)
 {
     if (!dx || !dx->swap_chain || !dx->context || width == 0 || height == 0) return 0;
     if (dx->scaling_none) return Dx11EnsureAtLeast(dx, width, height);
@@ -141,11 +141,11 @@ int pi_host_dx11_prepare_size(PiHostDx11Device* dx, unsigned width, unsigned hei
 /* --------------------------------------------------------------------------
  * Lifecycle
  * -------------------------------------------------------------------------- */
-PiResult pi_host_dx11_create(PiNativeWindow hwnd, const PiHostDx11Desc* desc,
-                             PiHostDx11Device** out_device)
+PiResult pi_plugin_host_dx11_create(PiNativeWindow hwnd, const PiPluginHostDx11Desc* desc,
+                             PiPluginHostDx11Device** out_device)
 {
     HWND hWnd = (HWND)hwnd;
-    PiHostDx11Device* dx;
+    PiPluginHostDx11Device* dx;
     const D3D_FEATURE_LEVEL featureLevels[] = { D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_0 };
     D3D_FEATURE_LEVEL featureLevel;
     HRESULT hr;
@@ -153,7 +153,7 @@ PiResult pi_host_dx11_create(PiNativeWindow hwnd, const PiHostDx11Desc* desc,
     if (!hwnd || !out_device) return PI_E_INVALIDARG;
     *out_device = NULL;
 
-    dx = (PiHostDx11Device*)calloc(1, sizeof(*dx));
+    dx = (PiPluginHostDx11Device*)calloc(1, sizeof(*dx));
     if (!dx) return PI_E_OUTOFMEMORY;
 
     dx->present_model = "unknown";
@@ -182,7 +182,7 @@ PiResult pi_host_dx11_create(PiNativeWindow hwnd, const PiHostDx11Desc* desc,
     }
     if (FAILED(hr)) {
         Dx11Log(dx, "d3d: device creation failed hr=0x%08X", (unsigned)hr);
-        pi_host_dx11_destroy(dx);
+        pi_plugin_host_dx11_destroy(dx);
         return PI_E_UNEXPECTED;
     }
 
@@ -293,7 +293,7 @@ PiResult pi_host_dx11_create(PiNativeWindow hwnd, const PiHostDx11Desc* desc,
                                                &featureLevel, &dx->context);
             if (FAILED(hr) || !dx->swap_chain) {
                 Dx11Log(dx, "d3d: no swap chain available hr=0x%08X", (unsigned)hr);
-                pi_host_dx11_destroy(dx);
+                pi_plugin_host_dx11_destroy(dx);
                 return PI_E_UNEXPECTED;
             }
         }
@@ -317,7 +317,7 @@ PiResult pi_host_dx11_create(PiNativeWindow hwnd, const PiHostDx11Desc* desc,
     return PI_OK;
 }
 
-void pi_host_dx11_destroy(PiHostDx11Device* dx)
+void pi_plugin_host_dx11_destroy(PiPluginHostDx11Device* dx)
 {
     if (!dx) return;
 
@@ -335,21 +335,21 @@ void pi_host_dx11_destroy(PiHostDx11Device* dx)
 /* --------------------------------------------------------------------------
  * Accessors
  * -------------------------------------------------------------------------- */
-ID3D11Device*           pi_host_dx11_device(PiHostDx11Device* dx)         { return dx ? dx->device : NULL; }
-ID3D11DeviceContext*    pi_host_dx11_context(PiHostDx11Device* dx)        { return dx ? dx->context : NULL; }
-IDXGISwapChain*         pi_host_dx11_swap_chain(PiHostDx11Device* dx)     { return dx ? dx->swap_chain : NULL; }
-ID3D11RenderTargetView* pi_host_dx11_render_target(PiHostDx11Device* dx)  { return dx ? dx->render_target : NULL; }
-const char*             pi_host_dx11_present_model(PiHostDx11Device* dx)  { return (dx && dx->present_model) ? dx->present_model : "unknown"; }
-int                     pi_host_dx11_is_flip_model(PiHostDx11Device* dx)  { return dx ? dx->flip_model : 0; }
-int                     pi_host_dx11_has_scaling_none(PiHostDx11Device* dx) { return dx ? dx->scaling_none : 0; }
-unsigned                pi_host_dx11_resize_failures(PiHostDx11Device* dx) { return dx ? dx->resize_failures : 0u; }
+ID3D11Device*           pi_plugin_host_dx11_device(PiPluginHostDx11Device* dx)         { return dx ? dx->device : NULL; }
+ID3D11DeviceContext*    pi_plugin_host_dx11_context(PiPluginHostDx11Device* dx)        { return dx ? dx->context : NULL; }
+IDXGISwapChain*         pi_plugin_host_dx11_swap_chain(PiPluginHostDx11Device* dx)     { return dx ? dx->swap_chain : NULL; }
+ID3D11RenderTargetView* pi_plugin_host_dx11_render_target(PiPluginHostDx11Device* dx)  { return dx ? dx->render_target : NULL; }
+const char*             pi_plugin_host_dx11_present_model(PiPluginHostDx11Device* dx)  { return (dx && dx->present_model) ? dx->present_model : "unknown"; }
+int                     pi_plugin_host_dx11_is_flip_model(PiPluginHostDx11Device* dx)  { return dx ? dx->flip_model : 0; }
+int                     pi_plugin_host_dx11_has_scaling_none(PiPluginHostDx11Device* dx) { return dx ? dx->scaling_none : 0; }
+unsigned                pi_plugin_host_dx11_resize_failures(PiPluginHostDx11Device* dx) { return dx ? dx->resize_failures : 0u; }
 
-void pi_host_dx11_reset_resize_stats(PiHostDx11Device* dx)
+void pi_plugin_host_dx11_reset_resize_stats(PiPluginHostDx11Device* dx)
 {
     if (dx) dx->resize_failures = 0;
 }
 
-void pi_host_dx11_present(PiHostDx11Device* dx, unsigned sync_interval)
+void pi_plugin_host_dx11_present(PiPluginHostDx11Device* dx, unsigned sync_interval)
 {
     if (!dx || !dx->swap_chain) return;
     dx->swap_chain->Present(sync_interval, 0);
@@ -358,14 +358,14 @@ void pi_host_dx11_present(PiHostDx11Device* dx, unsigned sync_interval)
 /* --------------------------------------------------------------------------
  * Container / window style
  * -------------------------------------------------------------------------- */
-unsigned long pi_host_dx11_top_level_style(void)
+unsigned long pi_plugin_host_dx11_top_level_style(void)
 {
     /* WS_CLIPCHILDREN：没有它，宿主自己的绘制区域包含内嵌插件窗口，
      * 于是每次 Present 都会擦掉插件的像素。 */
     return (unsigned long)WS_CLIPCHILDREN;
 }
 
-PiNativeWindow pi_host_dx11_create_embed_container(PiNativeWindow parent,
+PiNativeWindow pi_plugin_host_dx11_create_embed_container(PiNativeWindow parent,
                                                    int x, int y, int width, int height)
 {
     HWND child;

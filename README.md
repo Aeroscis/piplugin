@@ -36,7 +36,7 @@
 | **LV2 风格能力协商** | descriptor 以 GUID 声明 `REQUIRED` / `OPTIONAL` / `PROVIDES`，宿主在**实例化之前**决定接受或拒绝 |
 | **双向门禁** | 宿主既能检查"插件要求的能力我有没有"，也能要求"我的生态里插件必须具备某能力"（app 特化协议，无需 fork 框架） |
 | **版本门禁** | 插件声明 `api_version`，major 不同或比宿主新则在 `create_instance` 前被拒（`PI_E_VERSIONMISMATCH`） |
-| **GUI 与 headless 同一套 API** | headless 宿主不暴露 `IPiHostUI`，把该能力标为 OPTIONAL 的插件自动降级为无界面运行 |
+| **GUI 与 headless 同一套 API** | headless 宿主不暴露 `IPiPluginHostUI`，把该能力标为 OPTIONAL 的插件自动降级为无界面运行 |
 | **嵌入任意 GUI 工具包** | 插件返回自己的原生窗口句柄，宿主把它嵌进自己的容器；适配器套件吸收 Qt / imgui 的差异 |
 | **零依赖核心** | 核心库只依赖平台自身的库，不需要 C++ 运行时，也不带任何第三方代码 |
 | **宿主侧 kit** | 可选的静态库：把加载 / 门禁 / 七步卸载序列（`piplugin_host`）与 Qt、D3D11 的嵌入胶水（`piplugin_host_qt`、`piplugin_host_dx11`）固化下来 |
@@ -129,16 +129,16 @@ cd bin\Debug
 ```
 宿主 (Host)
   ├─ GUI Host        （imgui / Qt / 裸 Win32）
-  ├─ Headless Host   （任务服务器 / CLI；不暴露 IPiHostUI，插件自动降级）
+  ├─ Headless Host   （任务服务器 / CLI；不暴露 IPiPluginHostUI，插件自动降级）
   └─ 任意宿主
-        │  pi_module_load / pi_host_create_plugin
+        │  pi_plugin_module_load / pi_plugin_host_create_plugin
         ▼  动态加载（LoadLibrary / dlopen）
 插件 DLL（.dll / .so / .dylib）
   └─ pi_plugin_entry() → IPiPluginFactory
        ├─ PiPluginDescriptor（名称 / 版本 / 能力声明）
        └─ CreateInstance → IPiPluginBase
             ├─ IPiPluginView（GUI 插件：attach / on_idle / on_resize）
-            └─ IPiService（headless / 服务插件）
+            └─ IPiPluginService（headless / 服务插件）
 ```
 
 完整架构、接口族与线程模型见

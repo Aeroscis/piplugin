@@ -194,7 +194,7 @@ public class PiShot {
 New-Item -ItemType Directory -Force -Path $ShotDir | Out-Null
 $exe = Join-Path $BinDir "pi_test_host_imgui.exe"
 if (-not (Test-Path $exe)) { throw "host exe not found: $exe" }
-$log = Join-Path $BinDir "pi_test_host.log"
+$log = Join-Path $BinDir "pi_plugin_test_host.log"
 if (Test-Path $log) { Remove-Item $log -Force }
 foreach ($f in @("A_initial.png", "B_grown.png", "C_shrunk.png")) {
     $p = Join-Path $ShotDir $f
@@ -205,7 +205,7 @@ Write-Host "[1/8] starting host with Qt plugin..."
 $proc = Start-Process -FilePath $exe -ArgumentList "pi_test_plugin_qt.dll" -WorkingDirectory $BinDir -PassThru
 Start-Sleep -Seconds 3
 
-$hwnd = [PiWin32]::FindHostWindow("PiTestHost", "piplugin")
+$hwnd = [PiWin32]::FindHostWindow("PiPluginTestHost", "piplugin")
 if ($hwnd -eq [IntPtr]::Zero) { throw "host window not found" }
 
 $wr   = [PiWin32]::WindowRect($hwnd)      # left, top, w, h  (logical px)

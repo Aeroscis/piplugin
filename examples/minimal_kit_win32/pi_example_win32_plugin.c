@@ -25,8 +25,8 @@ static const PiGuid EXAMPLE_WIN32_CLASS_GUID =
 
 typedef struct Win32Plugin {
     PiRefCountedBase base;        /* MUST be first */
-    IPiHostServices* host;        /* add-ref'd */
-    IPiHostUI*       host_ui;     /* add-ref'd, NULL when the host has no UI */
+    IPiPluginHostServices* host;        /* add-ref'd */
+    IPiPluginHostUI*       host_ui;     /* add-ref'd, NULL when the host has no UI */
     uint32_t         paints;
 } Win32Plugin;
 
@@ -61,13 +61,13 @@ static void PaintUi(void* user_data, void* hdc_ptr, int32_t width, int32_t heigh
 static PiResult PI_CALL Plugin_Qi(void* self_ptr, const PiGuid* iid, void** out)
 {
     if (!out) return PI_E_INVALIDARG;
-    if (pi_guid_equal(iid, &PI_IID_UNKNOWN) || pi_guid_equal(iid, &PI_IID_PLUGIN_BASE)) {
+    if (pi_guid_equal(iid, &PI_IID_UNKNOWN) || pi_guid_equal(iid, &PI_PLUGIN_IID_PLUGIN_BASE)) {
         *out = self_ptr; pi_refcounted_add_ref(self_ptr); return PI_OK;
     }
     *out = NULL; return PI_E_NOINTERFACE;
 }
 
-static PiResult PI_CALL Plugin_Init(void* self_ptr, IPiHostServices* host)
+static PiResult PI_CALL Plugin_Init(void* self_ptr, IPiPluginHostServices* host)
 {
     Win32Plugin* me = (Win32Plugin*)self_ptr;
     if (me->host) return PI_OK;                 /* idempotent */
@@ -76,9 +76,9 @@ static PiResult PI_CALL Plugin_Init(void* self_ptr, IPiHostServices* host)
     me->host = host;
     pi_iunknown_add_ref((IPiUnknown*)host);
 
-    /* Optional capability: a headless host does not expose IPiHostUI, and then we
+    /* Optional capability: a headless host does not expose IPiPluginHostUI, and then we
      * publish no view at all (see GetView). */
-    if (PI_SUCCEEDED(pi_iunknown_query_interface((IPiUnknown*)host, &PI_IID_HOST_UI,
+    if (PI_SUCCEEDED(pi_iunknown_query_interface((IPiUnknown*)host, &PI_PLUGIN_IID_HOST_UI,
                                                  (void**)&me->host_ui))) {
         printf("[win32 plugin] GUI host detected\n");
     } else {
@@ -94,14 +94,14 @@ static PiResult PI_CALL Plugin_Term(void* self_ptr)
     printf("[win32 plugin] terminating after %u paint(s)\n", (unsigned)me->paints);
     /* The kit's window class and WndProc live in THIS module, so tear them down
      * before the host unloads us. Idempotent; the host detaching first is fine. */
-    pi_win32_view_shutdown();
+    pi_plugin_win32_view_shutdown();
     return PI_OK;
 }
 
 static PiResult PI_CALL Plugin_GetView(void* self_ptr, IPiPluginView** out)
 {
     Win32Plugin* me = (Win32Plugin*)self_ptr;
-    PiWin32ViewDesc desc;
+    PiPluginWin32ViewDesc desc;
 
     if (!out) return PI_E_INVALIDARG;
     if (!me->host_ui) { *out = NULL; return PI_E_NOINTERFACE; }
@@ -109,7 +109,7 @@ static PiResult PI_CALL Plugin_GetView(void* self_ptr, IPiPluginView** out)
     memset(&desc, 0, sizeof(desc));
     desc.paint     = &PaintUi;
     desc.user_data = me;
-    return pi_win32_view_create(&desc, out);
+    return pi_plugin_win32_view_create(&desc, out);
 }
 
 static void Plugin_Destroy(void* self)
@@ -140,7 +140,7 @@ static uint32_t PI_CALL Factory_Release(void* self) { return pi_refcounted_relea
 static PiResult PI_CALL Factory_Qi(void* self_ptr, const PiGuid* iid, void** out)
 {
     if (!out) return PI_E_INVALIDARG;
-    if (pi_guid_equal(iid, &PI_IID_UNKNOWN) || pi_guid_equal(iid, &PI_IID_PLUGIN_FACTORY)) {
+    if (pi_guid_equal(iid, &PI_IID_UNKNOWN) || pi_guid_equal(iid, &PI_PLUGIN_IID_PLUGIN_FACTORY)) {
         *out = self_ptr; pi_refcounted_add_ref(self_ptr); return PI_OK;
     }
     *out = NULL; return PI_E_NOINTERFACE;
@@ -157,7 +157,7 @@ static PiResult PI_CALL Factory_Guid(void* self, uint32_t index, PiGuid* guid)
     return PI_OK;
 }
 
-static PiResult PI_CALL Factory_Create(void* self, const PiGuid* guid, IPiHostServices* host,
+static PiResult PI_CALL Factory_Create(void* self, const PiGuid* guid, IPiPluginHostServices* host,
                                        IPiPluginBase** out)
 {
     Win32Plugin* plugin;
@@ -188,10 +188,10 @@ PI_PLUGIN_ENTRY_DECL
     if (!s_initialized) {
         pi_refcounted_init(&s_factory.base, (const IPiUnknownVtbl*)&s_factory_vtbl);
 
-        s_caps[0].iid = PI_IID_PLUGIN_VIEW; s_caps[0].flags = PI_CAP_PROVIDES;
-        s_caps[1].iid = PI_IID_HOST_UI;     s_caps[1].flags = PI_CAP_OPTIONAL;
+        s_caps[0].iid = PI_PLUGIN_IID_PLUGIN_VIEW; s_caps[0].flags = PI_PLUGIN_CAP_PROVIDES;
+        s_caps[1].iid = PI_PLUGIN_IID_HOST_UI;     s_caps[1].flags = PI_PLUGIN_CAP_OPTIONAL;
 
-        pi_descriptor_init(&s_desc);
+        pi_plugin_descriptor_init(&s_desc);
         s_desc.name             = "Example Win32 Plugin";
         s_desc.vendor           = "piplugin examples";
         s_desc.version          = "1.0.0";

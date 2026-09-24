@@ -21,7 +21,7 @@
 
 int main(void)
 {
-    PiEventRouter* router = NULL;
+    PiPluginEventRouter* router = NULL;
 
     printf("== piplugin packaged consumer ==\n");
     printf("PI_PLUGIN_API_VERSION = %u.%u (0x%08X)\n",
@@ -31,20 +31,20 @@ int main(void)
 
     /* Touch each linked part so the linker cannot drop it: the core rejects a
      * NULL out-parameter, the router can be created/destroyed. */
-    if (pi_host_services_create_default(NULL, NULL, PI_INVALID_WINDOW, NULL) != PI_E_INVALIDARG) {
+    if (pi_plugin_host_services_create_default(NULL, NULL, PI_INVALID_WINDOW, NULL) != PI_E_INVALIDARG) {
         printf("unexpected: host services accepted a NULL out-parameter\n");
         return 1;
     }
-    if (pi_event_router_create(&router) != PI_OK || router == NULL) {
+    if (pi_plugin_event_router_create(&router) != PI_OK || router == NULL) {
         printf("event router could not be created\n");
         return 1;
     }
     printf("core + host kit L0 + event router: OK\n");
-    pi_event_router_destroy(router);
+    pi_plugin_event_router_destroy(router);
 
 #ifdef PI_CONSUMER_WITH_IMGUI
-    printf("imgui adapter kit linked: pi_imgui_view_create = %p\n",
-           (void*)(uintptr_t)&pi_imgui_view_create);
+    printf("imgui adapter kit linked: pi_plugin_imgui_view_create = %p\n",
+           (void*)(uintptr_t)&pi_plugin_imgui_view_create);
 #else
     printf("imgui adapter kit: not linked in this configuration\n");
 #endif

@@ -14,8 +14,8 @@ cmake_minimum_required(VERSION 3.23)
 
 set(CMAKE_AUTOMOC ON)
 
-set(PLUGIN_NAME pi_example_plugin_qt_direct)
-set(HOST_NAME  pi_example_qt_direct_host)
+set(PLUGIN_NAME pi_plugin_example_plugin_qt_direct)
+set(HOST_NAME  pi_plugin_example_qt_direct_host)
 
 pi_tar_msg(STATUS ${HOST_NAME} "building example: Qt host with a Qt plugin (direct)...")
 

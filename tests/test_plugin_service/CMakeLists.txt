@@ -1,6 +1,6 @@
 # ./tests/test_plugin_service/CMakeLists.txt
 #
-# roadmap APP-07 的落地示例：一个纯 C 的"服务插件"（无 UI，实现 IPiService），
+# roadmap APP-07 的落地示例：一个纯 C 的"服务插件"（无 UI，实现 IPiPluginService），
 # 由 headless 测试宿主驱动并做全生命周期断言（见 tests/test_headless_host）。
 cmake_minimum_required(VERSION 3.23)
 

@@ -2,7 +2,7 @@
  * piplugin - 声明 "需要 GUI 宿主" 的测试插件（roadmap ECO-08 负向用例）
  *
  * 它是一个**完全合法**的插件：工厂、class GUID、能力声明都正常，
- * 唯一的特点是 descriptor 里写了 `PI_IID_HOST_UI (REQUIRED)`。
+ * 唯一的特点是 descriptor 里写了 `PI_PLUGIN_IID_HOST_UI (REQUIRED)`。
  *
  * 于是 headless 宿主必须在**实例化之前**就拒绝它 —— 这正是能力协商存在的理由：
  * 插件不去猜宿主有没有 GUI，宿主也不用等插件崩了才发现它需要窗口。
@@ -22,7 +22,7 @@ typedef struct GuiRequiredFactory {
 } GuiRequiredFactory;
 
 /* 工厂与 descriptor 的状态（静态存储 —— 语言保证清零，但下面仍显式
- * pi_descriptor_init()，把"可选字段=不存在"写成明确意图）。 */
+ * pi_plugin_descriptor_init()，把"可选字段=不存在"写成明确意图）。 */
 static GuiRequiredFactory  s_factory;
 static PiPluginCapability  s_caps[2];
 static PiPluginProperty    s_props[1];
@@ -38,7 +38,7 @@ static PiResult PI_CALL Factory_Qi(void* self_ptr, const PiGuid* iid, void** out
 {
     if (!out) return PI_E_INVALIDARG;
     if (pi_guid_equal(iid, &PI_IID_UNKNOWN) ||
-        pi_guid_equal(iid, &PI_IID_PLUGIN_FACTORY)) {
+        pi_guid_equal(iid, &PI_PLUGIN_IID_PLUGIN_FACTORY)) {
         *out = self_ptr;
         pi_refcounted_add_ref(self_ptr);
         return PI_OK;
@@ -64,7 +64,7 @@ static PiResult PI_CALL Factory_GetClassGuid(void* self_ptr, uint32_t index, PiG
 }
 
 static PiResult PI_CALL Factory_CreateInstance(void* self_ptr, const PiGuid* guid,
-                                               IPiHostServices* host, IPiPluginBase** out)
+                                               IPiPluginHostServices* host, IPiPluginBase** out)
 {
     /* 永远不该被调用：任何宿主都必须在 create_instance 之前，因为 HOST_UI 是
      * REQUIRED 而它给不出，就拒绝这个插件。若真被调用到，说明门禁失效了 ——
@@ -90,14 +90,14 @@ PI_PLUGIN_ENTRY_DECL
     if (!s_initialized) {
         pi_refcounted_init(&s_factory.base, (const IPiUnknownVtbl*)&s_factory_vtbl);
 
-        /* 关键的一行：REQUIRED 而不是 OPTIONAL。headless 宿主给不出 IPiHostUI，
+        /* 关键的一行：REQUIRED 而不是 OPTIONAL。headless 宿主给不出 IPiPluginHostUI，
          * 于是双向门禁的第一向就会拒绝（方向二 = 宿主生态要求插件 PROVIDES 什么）。 */
-        s_caps[0].iid   = PI_IID_PLUGIN_VIEW;
-        s_caps[0].flags = PI_CAP_PROVIDES;
-        s_caps[1].iid   = PI_IID_HOST_UI;
-        s_caps[1].flags = PI_CAP_REQUIRED;
+        s_caps[0].iid   = PI_PLUGIN_IID_PLUGIN_VIEW;
+        s_caps[0].flags = PI_PLUGIN_CAP_PROVIDES;
+        s_caps[1].iid   = PI_PLUGIN_IID_HOST_UI;
+        s_caps[1].flags = PI_PLUGIN_CAP_REQUIRED;
 
-        pi_descriptor_init(&s_desc);
+        pi_plugin_descriptor_init(&s_desc);
         s_desc.name             = "GUI Required Test Plugin";
         s_desc.vendor           = "piplugin";
         s_desc.version          = "1.0.0";

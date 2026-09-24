@@ -7,7 +7,8 @@
 #define PI_PLUGIN_H
 
 #include "pi_plugin_types.h"
-#include "pi_plugin_unknown.h"
+#include "pi_plugin_types.h"
+#include <pibase/pi_base.h>
 #include "pi_plugin_host_services.h"
 #include "pi_plugin_factory.h"
 #include "pi_plugin_base.h"

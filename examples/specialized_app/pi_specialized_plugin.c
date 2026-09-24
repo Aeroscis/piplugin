@@ -3,10 +3,10 @@
  *
  * It does two things the framework's own vocabulary cannot express:
  *   1. it IMPLEMENTS the app's protocol (IMyAppJobQueue, 通道 A) and declares
- *      PI_CAP_PROVIDES for MY_APP_JOB_IID - that declaration is what the app's
+ *      PI_PLUGIN_CAP_PROVIDES for MY_APP_JOB_IID - that declaration is what the app's
  *      gate checks BEFORE it instantiates anything;
  *   2. it CONSUMES a service the app provides (IMyAppInfo, 通道 B) by querying
- *      the host object it was handed in pi_initialize() and calling it.
+ *      the host object it was handed in pi_plugin_initialize() and calling it.
  *
  * Run it with examples/specialized_app.
  */
@@ -22,7 +22,7 @@ static const PiGuid SPECIALIZED_CLASS_GUID =
 
 typedef struct JobPlugin {
     PiRefCountedBase base;        /* MUST be first: this is the IPiPluginBase object */
-    IPiHostServices* host;        /* add-ref'd */
+    IPiPluginHostServices* host;        /* add-ref'd */
     IMyAppInfo*      app_info;    /* add-ref'd, NULL if the app provides none */
     int32_t          next_job_id;
     uint32_t         jobs;
@@ -93,7 +93,7 @@ static PiResult PI_CALL Plugin_Qi(void* self_ptr, const PiGuid* iid, void** out)
     JobPlugin* me = (JobPlugin*)self_ptr;
     if (!out) return PI_E_INVALIDARG;
 
-    if (pi_guid_equal(iid, &PI_IID_UNKNOWN) || pi_guid_equal(iid, &PI_IID_PLUGIN_BASE)) {
+    if (pi_guid_equal(iid, &PI_IID_UNKNOWN) || pi_guid_equal(iid, &PI_PLUGIN_IID_PLUGIN_BASE)) {
         *out = self_ptr; pi_refcounted_add_ref(self_ptr); return PI_OK;
     }
     if (pi_guid_equal(iid, &MY_APP_JOB_IID)) {
@@ -108,7 +108,7 @@ static PiResult PI_CALL Plugin_Qi(void* self_ptr, const PiGuid* iid, void** out)
     *out = NULL; return PI_E_NOINTERFACE;
 }
 
-static PiResult PI_CALL Plugin_Init(void* self_ptr, IPiHostServices* host)
+static PiResult PI_CALL Plugin_Init(void* self_ptr, IPiPluginHostServices* host)
 {
     JobPlugin* me = (JobPlugin*)self_ptr;
     if (me->host) return PI_OK;               /* idempotent */
@@ -176,7 +176,7 @@ static uint32_t PI_CALL Factory_Release(void* self) { return pi_refcounted_relea
 static PiResult PI_CALL Factory_Qi(void* self_ptr, const PiGuid* iid, void** out)
 {
     if (!out) return PI_E_INVALIDARG;
-    if (pi_guid_equal(iid, &PI_IID_UNKNOWN) || pi_guid_equal(iid, &PI_IID_PLUGIN_FACTORY)) {
+    if (pi_guid_equal(iid, &PI_IID_UNKNOWN) || pi_guid_equal(iid, &PI_PLUGIN_IID_PLUGIN_FACTORY)) {
         *out = self_ptr; pi_refcounted_add_ref(self_ptr); return PI_OK;
     }
     *out = NULL; return PI_E_NOINTERFACE;
@@ -193,7 +193,7 @@ static PiResult PI_CALL Factory_Guid(void* self, uint32_t index, PiGuid* guid)
     return PI_OK;
 }
 
-static PiResult PI_CALL Factory_Create(void* self, const PiGuid* guid, IPiHostServices* host,
+static PiResult PI_CALL Factory_Create(void* self, const PiGuid* guid, IPiPluginHostServices* host,
                                        IPiPluginBase** out)
 {
     JobPlugin* plugin;
@@ -227,8 +227,8 @@ PI_PLUGIN_ENTRY_DECL
         /* The declaration the app's gate looks at: "I implement the app's job
          * protocol". The second entry says "I can use the app's info service if
          * it has one" - OPTIONAL, so the plugin also runs in a plain host. */
-        s_caps[0].iid   = MY_APP_JOB_IID;      s_caps[0].flags = PI_CAP_PROVIDES;
-        s_caps[1].iid   = MY_APP_INFO_IID;     s_caps[1].flags = PI_CAP_OPTIONAL;
+        s_caps[0].iid   = MY_APP_JOB_IID;      s_caps[0].flags = PI_PLUGIN_CAP_PROVIDES;
+        s_caps[1].iid   = MY_APP_INFO_IID;     s_caps[1].flags = PI_PLUGIN_CAP_OPTIONAL;
 
         s_desc.name             = "Example Job Plugin";
         s_desc.vendor           = "piplugin examples";

@@ -5,8 +5,8 @@
 
 它同时能驱两类插件：
 
-- 有 view 的（imgui / Qt 插件）→ attach 到宿主的容器并每帧 `pi_view_on_idle()`；
-- 只有 service 的（headless 插件）→ `pi_service_start/poll/stop`。
+- 有 view 的（imgui / Qt 插件）→ attach 到宿主的容器并每帧 `pi_plugin_view_on_idle()`；
+- 只有 service 的（headless 插件）→ `pi_plugin_service_start/poll/stop`。
 
 ## 三步跑通
 
@@ -43,11 +43,11 @@ RESULT: PASS
 
 ## 读代码的顺序
 
-1. `pi_host_services_create_default()` + `pi_host_session_create()`：宿主对象的两个前提；
-2. `pi_host_session_load()`：一次调用里完成"加载 → 门禁 → 实例化 → 初始化"；
-3. `pi_host_session_attach_view()`：**容器是我们创建的**，kit 只接收它；
-4. 主循环：`PeekMessage` + `pi_host_session_drive_idle()` + `pi_service_poll()`；
-5. `pi_host_session_unload()`：七步卸载序列内化，宿主不手写顺序。
+1. `pi_plugin_host_services_create_default()` + `pi_plugin_host_session_create()`：宿主对象的两个前提；
+2. `pi_plugin_host_session_load()`：一次调用里完成"加载 → 门禁 → 实例化 → 初始化"；
+3. `pi_plugin_host_session_attach_view()`：**容器是我们创建的**，kit 只接收它；
+4. 主循环：`PeekMessage` + `pi_plugin_host_session_drive_idle()` + `pi_plugin_service_poll()`；
+5. `pi_plugin_host_session_unload()`：七步卸载序列内化，宿主不手写顺序。
 
 下一步可以看：
 

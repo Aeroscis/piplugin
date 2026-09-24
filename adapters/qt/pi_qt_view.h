@@ -13,13 +13,13 @@
  *     created, so Qt itself creates it as a WS_CHILD of the host - no
  *     SetParent() of a finished top-level window, no frame margins, no screen
  *     coordinate arithmetic; see the embedding note in pi_qt_view.cpp),
- *     host-driven event pumping via IPiPluginView::pi_on_idle() (which calls
+ *     host-driven event pumping via IPiPluginView::pi_plugin_on_idle() (which calls
  *     processEvents() on a bounded slice), and fully synchronous
  *     attach / detach / resize / visibility
  *
  * Every call runs on the host GUI thread, so there is no marshaling, no
  * second thread and nothing that can outlive the module: when
- * pi_view_release() returns, the widget AND the QApplication are gone, and
+ * pi_plugin_view_release() returns, the widget AND the QApplication are gone, and
  * the host may FreeLibrary() the plugin.
  *
  * Plugin authors only write a widget factory:
@@ -30,26 +30,26 @@
  *       return w;
  *   }
  *
- *   // inside IPiPluginBase::pi_get_view:
- *   PiQtViewDesc desc = {};
+ *   // inside IPiPluginBase::pi_plugin_get_view:
+ *   PiPluginQtViewDesc desc = {};
  *   desc.create_widget = &MakeUi;
  *   desc.user_data     = this;
  *   desc.retain        = &MyPlugin::AddRefThunk;   // optional
  *   desc.release       = &MyPlugin::ReleaseThunk;  // optional
- *   pi_qt_view_create(&desc, out);
+ *   pi_plugin_qt_view_create(&desc, out);
  *
- *   // inside IPiPluginBase::pi_terminate (recommended):
- *   pi_qt_view_shutdown_owner(this);
+ *   // inside IPiPluginBase::pi_plugin_terminate (recommended):
+ *   pi_plugin_qt_view_shutdown_owner(this);
  *
- * Host requirements: call IPiPluginView::pi_on_idle() once per frame, and
+ * Host requirements: call IPiPluginView::pi_plugin_on_idle() once per frame, and
  * detach + release the view before unloading the plugin module.
  *
  * Limitation: the kit is meant for hosts that do NOT themselves run Qt
  * (they use another toolkit). A Qt-based host should instead put the
  * plugin widgets into its own Qt event loop directly.
  */
-#ifndef PI_QT_VIEW_H
-#define PI_QT_VIEW_H
+#ifndef PI_PLUGIN_QT_VIEW_H
+#define PI_PLUGIN_QT_VIEW_H
 
 #include "piplugin/pi_plugin.h"
 
@@ -74,12 +74,12 @@
  * -------------------------------------------------------------------------- */
 #if defined(_WIN32) || defined(_WIN64)
 #  ifdef PI_PLUGIN_QT_BUILDING
-#    define PI_QT_API __declspec(dllexport)
+#    define PI_PLUGIN_QT_API __declspec(dllexport)
 #  else
-#    define PI_QT_API __declspec(dllimport)
+#    define PI_PLUGIN_QT_API __declspec(dllimport)
 #  endif
 #else
-#  define PI_QT_API __attribute__((visibility("default")))
+#  define PI_PLUGIN_QT_API __attribute__((visibility("default")))
 #endif
 
 #ifdef __cplusplus
@@ -97,63 +97,63 @@ extern "C" {
  * parent *before* the native window is created (that is what makes Qt create
  * it as a real child window instead of a top-level one). Return NULL to fail
  * the attach. */
-typedef QWidget* (*PiQtCreateWidgetProc)(void* user_data);
+typedef QWidget* (*PiPluginQtCreateWidgetProc)(void* user_data);
 
 /* Optional: called on the host GUI thread to destroy the widget
  * (e.g. to disconnect signals first). If NULL the kit deletes it. */
-typedef void (*PiQtDestroyWidgetProc)(void* user_data, QWidget* widget);
+typedef void (*PiPluginQtDestroyWidgetProc)(void* user_data, QWidget* widget);
 
 /* Optional refcount hooks: retain is called when the kit starts holding
  * user_data (attach), release after the widget has been destroyed. Use
  * them to keep your plugin object alive while Qt still references it. */
-typedef void (*PiQtRetainProc)(void* user_data);
-typedef void (*PiQtReleaseProc)(void* user_data);
+typedef void (*PiPluginQtRetainProc)(void* user_data);
+typedef void (*PiPluginQtReleaseProc)(void* user_data);
 
-typedef struct PiQtViewDesc {
-    PiQtCreateWidgetProc  create_widget;   /* required */
-    PiQtDestroyWidgetProc destroy_widget;  /* optional, NULL = delete */
-    PiQtRetainProc        retain;          /* optional, NULL = nothing */
-    PiQtReleaseProc       release;         /* optional, NULL = nothing */
+typedef struct PiPluginQtViewDesc {
+    PiPluginQtCreateWidgetProc  create_widget;   /* required */
+    PiPluginQtDestroyWidgetProc destroy_widget;  /* optional, NULL = delete */
+    PiPluginQtRetainProc        retain;          /* optional, NULL = nothing */
+    PiPluginQtReleaseProc       release;         /* optional, NULL = nothing */
     void*                 user_data;       /* passed to all callbacks  */
-} PiQtViewDesc;
+} PiPluginQtViewDesc;
 
 /* Create a Qt-backed IPiPluginView. The returned view starts with
- * refcount 1; release it with ->pi_release() (after pi_detach() or let
+ * refcount 1; release it with ->pi_release() (after pi_plugin_detach() or let
  * release handle a still-attached view). */
-PI_QT_API PiResult pi_qt_view_create(const PiQtViewDesc* desc, IPiPluginView** out_view);
+PI_PLUGIN_QT_API PiResult pi_plugin_qt_view_create(const PiPluginQtViewDesc* desc, IPiPluginView** out_view);
 
 /* Tear down the live views of THIS PLUGIN, synchronously, on the calling (host
  * GUI) thread; the QApplication is destroyed when the last view in the process
  * goes away. Idempotent, and safe even with views still attached.
  *
- * `owner` is the value the plugin passed as PiQtViewDesc::user_data when it
+ * `owner` is the value the plugin passed as PiPluginQtViewDesc::user_data when it
  * created those views - almost always the plugin instance (`this`). Scoping the
  * teardown is what makes the SHARED kit safe for several Qt plugins at once:
  * "every view in the process" would reach into the OTHER plugins that are still
  * loaded and delete their widgets.
  *
  * The host must make sure this has happened - by detaching and releasing the
- * views, or by calling this from the plugin's pi_terminate() - before it
+ * views, or by calling this from the plugin's pi_plugin_terminate() - before it
  * unloads the plugin's module: widget destruction runs code compiled into the
  * PLUGIN, which is about to be unmapped. */
-PI_QT_API void pi_qt_view_shutdown_owner(void* owner);
+PI_PLUGIN_QT_API void pi_plugin_qt_view_shutdown_owner(void* owner);
 
 /* The process-wide hammer: tear down every live view (whichever plugin it
  * belongs to) and destroy the QApplication. Only correct when the caller owns
  * every Qt plugin in the process; it is the diagnostic / last-resort path, and
  * what the per-module kits of 0.2.0 meant by "shutdown". Prefer
- * pi_qt_view_shutdown_owner(). */
-PI_QT_API void pi_qt_view_shutdown(void);
+ * pi_plugin_qt_view_shutdown_owner(). */
+PI_PLUGIN_QT_API void pi_plugin_qt_view_shutdown(void);
 
 /* The plugin's root widget, or NULL if it has not been created yet.
  * Created on the host GUI thread; only touch it from there. */
-PI_QT_API QWidget* pi_qt_view_widget(IPiPluginView* view);
+PI_PLUGIN_QT_API QWidget* pi_plugin_qt_view_widget(IPiPluginView* view);
 
 /* Run fn(user) on the host GUI thread (W-04).
  *
  * Callable from ANY thread: called on the host GUI thread itself the callback
  * runs inline (same order, no latency); called from any other thread the call
- * is queued and run by the host's next pi_on_idle() -> processEvents() slice,
+ * is queued and run by the host's next pi_plugin_on_idle() -> processEvents() slice,
  * WITHOUT blocking the caller. There is still no second Qt thread anywhere -
  * the callback always runs on the one thread that owns the widgets, which is
  * what makes it safe to touch Qt inside it.
@@ -162,11 +162,11 @@ PI_QT_API QWidget* pi_qt_view_widget(IPiPluginView* view);
  * when the view is detached or destroyed (the plugin must not be called back
  * after its widget is gone), and before the first attach there is no host GUI
  * thread to marshal to, so it is dropped too. Both cases leave a line in the
- * PI_QT_VIEW_TRACE=1 log. */
-PI_QT_API void pi_qt_view_post(IPiPluginView* view, void (*fn)(void* user), void* user);
+ * PI_PLUGIN_QT_VIEW_TRACE=1 log. */
+PI_PLUGIN_QT_API void pi_plugin_qt_view_post(IPiPluginView* view, void (*fn)(void* user), void* user);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* PI_QT_VIEW_H */
+#endif /* PI_PLUGIN_QT_VIEW_H */

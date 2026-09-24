@@ -36,7 +36,7 @@ cd bin\Debug
 RESULT: PASS
 ```
 
-第三个参数可以是**任意**插件：只要它没有声明 `PI_CAP_PROVIDES MY_APP_JOB_IID`，
+第三个参数可以是**任意**插件：只要它没有声明 `PI_PLUGIN_CAP_PROVIDES MY_APP_JOB_IID`，
 就会被门禁挡在 `create_instance` 之前（`hr=-8` = `PI_E_MISSINGCAPABILITY`）。
 
 ## 三个角色的分工
@@ -50,22 +50,22 @@ RESULT: PASS
 
 **插件实现协议**（`pi_specialized_plugin.c`）
 
-- 在 descriptor 里**如实声明** `PI_CAP_PROVIDES` —— 门禁读的就是它；
+- 在 descriptor 里**如实声明** `PI_PLUGIN_CAP_PROVIDES` —— 门禁读的就是它；
 - `QueryInterface(MY_APP_JOB_IID)` 交出**独立的包装对象**（两套 vtbl 不能共用一个指针）；
-- 反向也要能降级：app 没提供 `IMyAppInfo` 时只是打印一行，不影响加载（声明为 `PI_CAP_OPTIONAL`）。
+- 反向也要能降级：app 没提供 `IMyAppInfo` 时只是打印一行，不影响加载（声明为 `PI_PLUGIN_CAP_OPTIONAL`）。
 
 **app 消费协议并做门禁**（`pi_specialized_app.c`）
 
 ```c
 /* 1) 声明"我的生态里插件必须实现它" —— 这一条在 create_instance 之前生效 */
-pi_host_session_require(session, &MY_APP_JOB_IID);
+pi_plugin_host_session_require(session, &MY_APP_JOB_IID);
 
 /* 2) 把自己的服务挂到宿主对象上（通道 B）：框架 IID 之外的 QI 转给你 */
-pi_host_services_create_ex(&OnMessage, NULL, PI_INVALID_WINDOW,
+pi_plugin_host_services_create_ex(&OnMessage, NULL, PI_INVALID_WINDOW,
                            &AppExtraQi, NULL, &services);
 
 /* 3) 门禁通过后取协议：QI 返回的是 add-ref 过的指针，用完 release */
-IPiPluginBase* plugin = pi_host_session_get_plugin(session, slot);   /* 借用 */
+IPiPluginBase* plugin = pi_plugin_host_session_get_plugin(session, slot);   /* 借用 */
 IMyAppJobQueue* jobs = NULL;
 if (PI_SUCCEEDED(pi_iunknown_query_interface((IPiUnknown*)plugin, &MY_APP_JOB_IID,
                                              (void**)&jobs))) {

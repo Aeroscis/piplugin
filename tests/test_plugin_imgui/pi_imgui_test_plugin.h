@@ -6,12 +6,12 @@
  * the piplugin_imgui adapter kit - designed to run inside a
  * Qt host.
  */
-#ifndef PI_IMGUI_TEST_PLUGIN_H
-#define PI_IMGUI_TEST_PLUGIN_H
+#ifndef PI_PLUGIN_IMGUI_TEST_PLUGIN_H
+#define PI_PLUGIN_IMGUI_TEST_PLUGIN_H
 
 #include "piplugin/pi_plugin.h"
-/* C++ RAII 层（可选头）：PiPtr 管住宿主与服务接口，pi_cpp_destroy 提供
- * PiRefCountedBase 需要的析构 thunk。本文件此前自带一份 pi_cpp_destroy，
+/* C++ RAII 层（可选头）：PiPluginPtr 管住宿主与服务接口，pi_plugin_cpp_destroy 提供
+ * PiRefCountedBase 需要的析构 thunk。本文件此前自带一份 pi_plugin_cpp_destroy，
  * 现在框架头里有了，就不再各写一份。 */
 #include "piplugin/pi_cpp.h"
 
@@ -22,11 +22,11 @@ public:
     ImGuiPlugin();
     ~ImGuiPlugin();
 
-    PiResult Initialize(IPiHostServices* host);
+    PiResult Initialize(IPiPluginHostServices* host);
     PiResult Terminate();
 
     static PiResult PI_CALL Qi_PluginBase(void* self_ptr, const PiGuid* iid, void** out);
-    static PiResult PI_CALL Init(void* self_ptr, IPiHostServices* host);
+    static PiResult PI_CALL Init(void* self_ptr, IPiPluginHostServices* host);
     static PiResult PI_CALL Term(void* self_ptr);
     static PiResult PI_CALL GetView(void* self_ptr, IPiPluginView** out);
 
@@ -42,8 +42,8 @@ private:
     PiRefCountedBase m_base;          /* MUST be first data member */
     static const IPiPluginBaseVtbl s_base_vtbl;
 
-    PiPtr<IPiHostServices> m_host;    /* 借用入参 -> 自己 add-ref，析构自动 release */
-    PiPtr<IPiHostUI>       m_hostUI;  /* headless 宿主上为空句柄 */
+    PiPluginPtr<IPiPluginHostServices> m_host;    /* 借用入参 -> 自己 add-ref，析构自动 release */
+    PiPluginPtr<IPiPluginHostUI>       m_hostUI;  /* headless 宿主上为空句柄 */
 };
 
 class ImGuiPluginFactory {
@@ -59,7 +59,7 @@ public:
     static PiResult PI_CALL GetClassGuid(void* self_ptr, uint32_t index, PiGuid* guid);
     static PiResult PI_CALL CreateInstance(void* self_ptr,
                                             const PiGuid* guid,
-                                            IPiHostServices* host,
+                                            IPiPluginHostServices* host,
                                             IPiPluginBase** out);
 
     static const IPiPluginFactoryVtbl s_factory_vtbl;
@@ -71,4 +71,4 @@ private:
     PiPluginProperty   m_properties[3];   /* APP-04：自由元数据（含变体标记） */
 };
 
-#endif /* PI_IMGUI_TEST_PLUGIN_H */
+#endif /* PI_PLUGIN_IMGUI_TEST_PLUGIN_H */

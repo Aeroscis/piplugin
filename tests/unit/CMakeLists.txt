@@ -67,7 +67,7 @@ endif()
 set_tests_properties(unit PROPERTIES TIMEOUT 120)
 
 # ------- W-04：线程安全压测（单独目标 + 单独用例） -------------
-# 三个跨线程场景里不需要 UI 工具包的两个：插件子线程 pi_host_post_message、
+# 三个跨线程场景里不需要 UI 工具包的两个：插件子线程 pi_plugin_host_post_message、
 # 并发 AddRef/Release。单独一个用例是因为它会真的起线程互相踩 —— 反复跑
 # （`ctest -R unit_threads --repeat until-fail:20`）比单次通过更有意义。
 set(THREADS_TARGET_NAME pi_unit_threads)

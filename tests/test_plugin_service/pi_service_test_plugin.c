@@ -3,9 +3,9 @@
  *
  * The missing workhorse of the framework's story: a plugin that has no UI at
  * all and is driven by a server-side host. It implements IPiPluginBase (with
- * pi_get_view() saying "no view") plus IPiService, and declares
+ * pi_plugin_get_view() saying "no view") plus IPiPluginService, and declares
  *
- *     PI_IID_SERVICE  PROVIDES
+ *     PI_PLUGIN_IID_SERVICE  PROVIDES
  *
  * so a host can find it out from the descriptor before it pays for
  * instantiation - which is exactly what a task server wants to filter on.
@@ -13,10 +13,10 @@
  * Pure C, no adapters, no third-party dependency: this is also the reference
  * for "how do I implement a second interface on a plugin object" without
  * touching the C++ test plugins. The plugin instance itself carries the
- * IPiPluginBase interface; QueryInterface(PI_IID_SERVICE) hands out a separate
+ * IPiPluginBase interface; QueryInterface(PI_PLUGIN_IID_SERVICE) hands out a separate
  * small wrapper object with the service vtable (see ServiceIfc below) - the
- * same containment pattern the framework's own PiDefaultHost uses for
- * IPiHostUI, and the only way to give one object two different vtables without
+ * same containment pattern the framework's own PiPluginDefaultHost uses for
+ * IPiPluginHostUI, and the only way to give one object two different vtables without
  * reinterpreting a pointer through the wrong layout.
  *
  * Lifecycle contract this sample implements (docs/design/interfaces.md 2.6):
@@ -24,13 +24,13 @@
  *                     with PI_E_MISSINGCAPABILITY, exactly as the header says;
  *                     starting an already-running service is a no-op success;
  *   poll()          - only valid while running (otherwise PI_FAIL); every
- *                     `interval` polls it posts PI_TEST_MSG_SERVICE_TICK to the
+ *                     `interval` polls it posts PI_PLUGIN_TEST_MSG_SERVICE_TICK to the
  *                     host so an automated run can see the work happening;
  *   stop()          - IDEMPOTENT and safe before the first start: it always
- *                     posts PI_TEST_MSG_SERVICE_STOP with a call counter, which
+ *                     posts PI_PLUGIN_TEST_MSG_SERVICE_STOP with a call counter, which
  *                     is how the host proves both the idempotency and the extra
  *                     stop the unload sequence performs;
- *   get_status()    - PI_SERVICE_STOPPED / RUNNING.
+ *   get_status()    - PI_PLUGIN_SERVICE_STOPPED / RUNNING.
  */
 #include "piplugin/pi_plugin.h"
 #include "pi_test_service_protocol.h"
@@ -48,7 +48,7 @@ static const PiGuid SERVICE_CLASS_GUID =
  * -------------------------------------------------------------------------- */
 typedef struct ServicePlugin {
     PiRefCountedBase base;      /* MUST be first: this is the IPiPluginBase object */
-    IPiHostServices* host;      /* add-ref'd; borrowed by Initialize */
+    IPiPluginHostServices* host;      /* add-ref'd; borrowed by Initialize */
     int32_t          status;    /* PI_SERVICE_* */
     uint32_t         interval;  /* report a tick every N polls */
     uint32_t         polls;
@@ -59,9 +59,9 @@ typedef struct ServicePlugin {
     char             slot[32];  /* start() option "slot", required */
 } ServicePlugin;
 
-/* The IPiService side: a small wrapper that owns a reference to the plugin.
+/* The IPiPluginService side: a small wrapper that owns a reference to the plugin.
  * COM identity rules want each interface to have its own vtable slot, and the
- * two vtable layouts (IPiPluginBaseVtbl vs IPiServiceVtbl) cannot both live at
+ * two vtable layouts (IPiPluginBaseVtbl vs IPiPluginServiceVtbl) cannot both live at
  * offset 0 of one object. */
 typedef struct ServiceIfc {
     PiRefCountedBase base;      /* MUST be first */
@@ -71,14 +71,14 @@ typedef struct ServiceIfc {
 static uint32_t PI_CALL Plugin_AddRef(void* self_ptr);
 static uint32_t PI_CALL Plugin_Release(void* self_ptr);
 static PiResult PI_CALL Plugin_Qi(void* self_ptr, const PiGuid* iid, void** out);
-static PiResult PI_CALL Plugin_Initialize(void* self_ptr, IPiHostServices* host);
+static PiResult PI_CALL Plugin_Initialize(void* self_ptr, IPiPluginHostServices* host);
 static PiResult PI_CALL Plugin_Terminate(void* self_ptr);
 static PiResult PI_CALL Plugin_GetView(void* self_ptr, IPiPluginView** out);
 
 static uint32_t PI_CALL Service_AddRef(void* self_ptr);
 static uint32_t PI_CALL Service_Release(void* self_ptr);
 static PiResult PI_CALL Service_Qi(void* self_ptr, const PiGuid* iid, void** out);
-static PiResult PI_CALL Service_Start(void* self_ptr, const PiServiceOption* options,
+static PiResult PI_CALL Service_Start(void* self_ptr, const PiPluginServiceOption* options,
                                       uint32_t option_count);
 static PiResult PI_CALL Service_Stop(void* self_ptr);
 static PiResult PI_CALL Service_Poll(void* self_ptr);
@@ -99,7 +99,7 @@ static const IPiPluginBaseVtbl s_plugin_vtbl = {
     &Plugin_GetView
 };
 
-static const IPiServiceVtbl s_service_vtbl = {
+static const IPiPluginServiceVtbl s_service_vtbl = {
     { &Service_Qi, &Service_AddRef, &Service_Release },
     &Service_Start,
     &Service_Stop,
@@ -113,11 +113,11 @@ static const IPiServiceVtbl s_service_vtbl = {
 static void ServicePost(ServicePlugin* plugin, uint32_t msg, uintptr_t wparam)
 {
     if (plugin && plugin->host)
-        pi_host_post_message(plugin->host, msg, wparam, 0);
+        pi_plugin_host_post_message(plugin->host, msg, wparam, 0);
 }
 
 static PiResult ServiceDoStart(ServicePlugin* plugin,
-                               const PiServiceOption* options, uint32_t option_count)
+                               const PiPluginServiceOption* options, uint32_t option_count)
 {
     const char* slot = NULL;
     uint32_t interval = 1;
@@ -127,9 +127,9 @@ static PiResult ServiceDoStart(ServicePlugin* plugin,
 
     for (i = 0; i < option_count; ++i) {
         if (!options || !options[i].key) continue;
-        if (strcmp(options[i].key, PI_TEST_SERVICE_OPTION_SLOT) == 0) {
+        if (strcmp(options[i].key, PI_PLUGIN_TEST_SERVICE_OPTION_SLOT) == 0) {
             slot = options[i].value;
-        } else if (strcmp(options[i].key, PI_TEST_SERVICE_OPTION_INTERVAL) == 0 &&
+        } else if (strcmp(options[i].key, PI_PLUGIN_TEST_SERVICE_OPTION_INTERVAL) == 0 &&
                    options[i].value) {
             int parsed = atoi(options[i].value);
             interval = (parsed > 0) ? (uint32_t)parsed : 1u;
@@ -152,7 +152,7 @@ static PiResult ServiceDoStart(ServicePlugin* plugin,
     plugin->polls     = 0;
     plugin->ticks_posted = 0;
     plugin->running   = 1;
-    plugin->status    = PI_SERVICE_RUNNING;
+    plugin->status    = PI_PLUGIN_SERVICE_RUNNING;
     ++plugin->start_calls;
     return PI_OK;
 }
@@ -164,30 +164,30 @@ static PiResult ServiceDoStop(ServicePlugin* plugin)
     /* 幂等：没 start 过、或者已经停过，调用同样成功（文档承诺）。
      * 每次都报数，宿主因此能区分"调了几次"。 */
     ++plugin->stop_calls;
-    ServicePost(plugin, PI_TEST_MSG_SERVICE_STOP, (uintptr_t)plugin->stop_calls);
+    ServicePost(plugin, PI_PLUGIN_TEST_MSG_SERVICE_STOP, (uintptr_t)plugin->stop_calls);
     plugin->running = 0;
-    plugin->status  = PI_SERVICE_STOPPED;
+    plugin->status  = PI_PLUGIN_SERVICE_STOPPED;
     return PI_OK;
 }
 
 static PiResult ServiceDoPoll(ServicePlugin* plugin)
 {
     if (!plugin) return PI_E_INVALIDARG;
-    if (!plugin->running || plugin->status != PI_SERVICE_RUNNING)
+    if (!plugin->running || plugin->status != PI_PLUGIN_SERVICE_RUNNING)
         return PI_FAIL;   /* 停了的服务不该假装还在干活 */
 
     ++plugin->polls;
     if (plugin->interval && (plugin->polls % plugin->interval) == 0) {
         ++plugin->ticks_posted;
-        ServicePost(plugin, PI_TEST_MSG_SERVICE_TICK, (uintptr_t)plugin->ticks_posted);
+        ServicePost(plugin, PI_PLUGIN_TEST_MSG_SERVICE_TICK, (uintptr_t)plugin->ticks_posted);
     }
     return PI_OK;
 }
 
 /* --------------------------------------------------------------------------
- * IPiService slots (self_ptr is the ServiceIfc wrapper)
+ * IPiPluginService slots (self_ptr is the ServiceIfc wrapper)
  * -------------------------------------------------------------------------- */
-static PiResult PI_CALL Service_Start(void* self_ptr, const PiServiceOption* options,
+static PiResult PI_CALL Service_Start(void* self_ptr, const PiPluginServiceOption* options,
                                       uint32_t option_count)
 {
     ServiceIfc* me = (ServiceIfc*)self_ptr;
@@ -221,7 +221,7 @@ static PiResult PI_CALL Service_Qi(void* self_ptr, const PiGuid* iid, void** out
 {
     if (!out) return PI_E_INVALIDARG;
     if (pi_guid_equal(iid, &PI_IID_UNKNOWN) ||
-        pi_guid_equal(iid, &PI_IID_SERVICE)) {
+        pi_guid_equal(iid, &PI_PLUGIN_IID_SERVICE)) {
         *out = self_ptr;
         pi_refcounted_add_ref(self_ptr);
         return PI_OK;
@@ -245,7 +245,7 @@ static void ServiceIfc_Destroy(void* self_ptr)
 /* --------------------------------------------------------------------------
  * IPiPluginBase slots (self_ptr is the ServicePlugin instance)
  * -------------------------------------------------------------------------- */
-static PiResult PI_CALL Plugin_Initialize(void* self_ptr, IPiHostServices* host)
+static PiResult PI_CALL Plugin_Initialize(void* self_ptr, IPiPluginHostServices* host)
 {
     ServicePlugin* me = (ServicePlugin*)self_ptr;
 
@@ -283,15 +283,15 @@ static PiResult PI_CALL Plugin_Qi(void* self_ptr, const PiGuid* iid, void** out)
     if (!out) return PI_E_INVALIDARG;
 
     if (pi_guid_equal(iid, &PI_IID_UNKNOWN) ||
-        pi_guid_equal(iid, &PI_IID_PLUGIN_BASE)) {
+        pi_guid_equal(iid, &PI_PLUGIN_IID_PLUGIN_BASE)) {
         *out = self_ptr;
         pi_refcounted_add_ref(self_ptr);
         return PI_OK;
     }
 
-    if (pi_guid_equal(iid, &PI_IID_SERVICE)) {
+    if (pi_guid_equal(iid, &PI_PLUGIN_IID_SERVICE)) {
         /* 交出一个独立的服务接口包装（见文件头说明）。每次 QI 新建一个 ——
-         * 与框架自己的 IPiHostUI 包装行为一致（freeze review F5 记录在案）。 */
+         * 与框架自己的 IPiPluginHostUI 包装行为一致（freeze review F5 记录在案）。 */
         ServiceIfc* svc = (ServiceIfc*)calloc(1, sizeof(ServiceIfc));
         if (!svc) return PI_E_OUTOFMEMORY;
         pi_refcounted_init_with_destroy(&svc->base, (const IPiUnknownVtbl*)&s_service_vtbl,
@@ -336,7 +336,7 @@ static PiResult PI_CALL Factory_Qi(void* self_ptr, const PiGuid* iid, void** out
 {
     if (!out) return PI_E_INVALIDARG;
     if (pi_guid_equal(iid, &PI_IID_UNKNOWN) ||
-        pi_guid_equal(iid, &PI_IID_PLUGIN_FACTORY)) {
+        pi_guid_equal(iid, &PI_PLUGIN_IID_PLUGIN_FACTORY)) {
         *out = self_ptr;
         pi_refcounted_add_ref(self_ptr);
         return PI_OK;
@@ -366,7 +366,7 @@ static PiResult PI_CALL Factory_GetClassGuid(void* self_ptr, uint32_t index, PiG
 }
 
 static PiResult PI_CALL Factory_CreateInstance(void* self_ptr, const PiGuid* guid,
-                                               IPiHostServices* host, IPiPluginBase** out)
+                                               IPiPluginHostServices* host, IPiPluginBase** out)
 {
     ServicePlugin* plugin;
 
@@ -380,9 +380,9 @@ static PiResult PI_CALL Factory_CreateInstance(void* self_ptr, const PiGuid* gui
 
     pi_refcounted_init_with_destroy(&plugin->base, (const IPiUnknownVtbl*)&s_plugin_vtbl,
                                     &Plugin_Destroy);
-    plugin->status = PI_SERVICE_STOPPED;
+    plugin->status = PI_PLUGIN_SERVICE_STOPPED;
 
-    /* 宿主随后还会调用 pi_initialize（生命周期里的一步）；这里先初始化一次，
+    /* 宿主随后还会调用 pi_plugin_initialize（生命周期里的一步）；这里先初始化一次，
      * 与两个 GUI 测试插件保持同一种写法，Initialize 本身是幂等的。 */
     if (PI_FAILED(Plugin_Initialize(plugin, host))) {
         pi_iunknown_release((IPiUnknown*)&plugin->base);   /* 归零 -> Plugin_Destroy */
@@ -414,8 +414,8 @@ PI_PLUGIN_ENTRY_DECL
 
         /* 只声明一条能力：本插件提供一个服务。没有任何 REQUIRED 能力 ——
          * 于是任何宿主（GUI 的、无头的）都能加载它，无头宿主正是它存在的理由。 */
-        s_caps[0].iid   = PI_IID_SERVICE;
-        s_caps[0].flags = PI_CAP_PROVIDES;
+        s_caps[0].iid   = PI_PLUGIN_IID_SERVICE;
+        s_caps[0].flags = PI_PLUGIN_CAP_PROVIDES;
 
         s_desc.name             = "Service Test Plugin";
         s_desc.vendor           = "piplugin";

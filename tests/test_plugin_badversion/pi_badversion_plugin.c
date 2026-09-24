@@ -34,7 +34,7 @@ static PiResult PI_CALL Factory_Qi(void* self_ptr, const PiGuid* iid, void** out
 {
     if (!out) return PI_E_INVALIDARG;
     if (pi_guid_equal(iid, &PI_IID_UNKNOWN) ||
-        pi_guid_equal(iid, &PI_IID_PLUGIN_FACTORY)) {
+        pi_guid_equal(iid, &PI_PLUGIN_IID_PLUGIN_FACTORY)) {
         *out = self_ptr;
         pi_refcounted_add_ref(self_ptr);
         return PI_OK;
@@ -64,7 +64,7 @@ static PiResult PI_CALL Factory_GetClassGuid(void* self_ptr, uint32_t index, PiG
 }
 
 static PiResult PI_CALL Factory_CreateInstance(void* self_ptr, const PiGuid* guid,
-                                                IPiHostServices* host, IPiPluginBase** out)
+                                                IPiPluginHostServices* host, IPiPluginBase** out)
 {
     /* 永远不该被调用：宿主必须在 create_instance 之前就因版本不兼容拒绝。
      * 若某天真被调用到，说明版本门禁失效了 —— 返回 NOTIMPL 让用例更明显地失败。 */
@@ -96,8 +96,8 @@ static const IPiPluginFactoryVtbl s_factory_vtbl = {
 /* --------------------------------------------------------------------------
  * Entry point
  *
- * 用公共头的 PI_PLUGIN_ENTRY_DECL 宏（它展开成 PI_PLUGIN_EXPORT，即插件侧的
- * dllexport）——本插件同时也是这个宏的编译验证件：终审前该宏错用了 PI_EXPORT，
+ * 用公共头的 PI_PLUGIN_ENTRY_DECL 宏（它展开成 PI_PLUGIN_ENTRY_EXPORT，即插件侧的
+ * dllexport）——本插件同时也是这个宏的编译验证件：终审前该宏错用了 PI_PLUGIN_API，
  * 在插件里直接拿去定义入口会编译失败（见 interface-freeze-review.md F10）。
  * -------------------------------------------------------------------------- */
 PI_PLUGIN_ENTRY_DECL
@@ -108,8 +108,8 @@ PI_PLUGIN_ENTRY_DECL
     if (!s_initialized) {
         pi_refcounted_init(&s_factory.base, (const IPiUnknownVtbl*)&s_factory_vtbl);
 
-        s_caps[0].iid   = PI_IID_PLUGIN_VIEW;
-        s_caps[0].flags = PI_CAP_PROVIDES;
+        s_caps[0].iid   = PI_PLUGIN_IID_PLUGIN_VIEW;
+        s_caps[0].flags = PI_PLUGIN_CAP_PROVIDES;
 
         s_desc.name             = "Bad Version Test Plugin";
         s_desc.vendor           = "piplugin";

@@ -24,8 +24,8 @@
  * range - never allocate there yourself. Apps use a random 128-bit UUID:
  *   python -c "import uuid; print(uuid.uuid4())"
  */
-#ifndef PI_QT_DIRECT_PROTOCOL_H
-#define PI_QT_DIRECT_PROTOCOL_H
+#ifndef PI_PLUGIN_QT_DIRECT_PROTOCOL_H
+#define PI_PLUGIN_QT_DIRECT_PROTOCOL_H
 
 #include "piplugin/pi_plugin.h"
 
@@ -35,10 +35,10 @@
 
 class QWidget;
 
-#define PI_QT_DIRECT_WIDGET_IID_INIT \
+#define PI_PLUGIN_QT_DIRECT_WIDGET_IID_INIT \
     PI_GUID(0x9C3E71B5, 0x6D48, 0x4A21, 0xA5, 0x0E, 0x37, 0xD9, 0x82, 0x54, 0x1F, 0x6C)
 
-static const PiGuid PI_QT_DIRECT_WIDGET_IID = PI_QT_DIRECT_WIDGET_IID_INIT;
+static const PiGuid PI_PLUGIN_QT_DIRECT_WIDGET_IID = PI_PLUGIN_QT_DIRECT_WIDGET_IID_INIT;
 
 /* The contract, and all of it matters (the host cannot check it for you):
  *
@@ -52,7 +52,7 @@ static const PiGuid PI_QT_DIRECT_WIDGET_IID = PI_QT_DIRECT_WIDGET_IID_INIT;
  *
  *   destroy_widget()
  *     - destroys a widget this plugin created, on the host's GUI thread;
- *     - MUST be called before pi_host_session_unload() / FreeLibrary: after the
+ *     - MUST be called before pi_plugin_host_session_unload() / FreeLibrary: after the
  *       module is gone, a widget that is still alive holds function pointers
  *       into unmapped memory, and the next click or repaint calls them.
  *     - a plugin that never links the Qt kit has no other teardown hook, which
@@ -69,16 +69,16 @@ typedef struct IQtDirectWidget {
     const IQtDirectWidgetVtbl* lpVtbl;
 } IQtDirectWidget;
 
-static inline QWidget* pi_qt_direct_create_widget(IQtDirectWidget* self)
+static inline QWidget* pi_plugin_qt_direct_create_widget(IQtDirectWidget* self)
 {
     if (!self || !self->lpVtbl || !self->lpVtbl->create_widget) return 0;
     return self->lpVtbl->create_widget((void*)self);
 }
 
-static inline void pi_qt_direct_destroy_widget(IQtDirectWidget* self, QWidget* widget)
+static inline void pi_plugin_qt_direct_destroy_widget(IQtDirectWidget* self, QWidget* widget)
 {
     if (!self || !self->lpVtbl || !self->lpVtbl->destroy_widget) return;
     self->lpVtbl->destroy_widget((void*)self, widget);
 }
 
-#endif /* PI_QT_DIRECT_PROTOCOL_H */
+#endif /* PI_PLUGIN_QT_DIRECT_PROTOCOL_H */

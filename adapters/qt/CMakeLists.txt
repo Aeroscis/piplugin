@@ -41,7 +41,7 @@ target_sources(${TARGET_NAME}
         ${TARGET_SRC_FILE_LIST}
 )
 
-# 导出宏开关：本套件自己的翻译单元定义 PI_QT_API = dllexport，消费方（插件）
+# 导出宏开关：本套件自己的翻译单元定义 PI_PLUGIN_QT_API = dllexport，消费方（插件）
 # 看到的是 dllimport。刻意不开 CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS（见 F1）。
 target_compile_definitions(${TARGET_NAME} PRIVATE PI_PLUGIN_QT_BUILDING)
 

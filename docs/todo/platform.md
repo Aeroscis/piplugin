@@ -46,7 +46,7 @@
   Linux/macOS 上插件测试目标被跳过；`pi_qt_main.cpp` / `pi_imgui_main.cpp` 用
   `__declspec(dllexport)`（Windows 专用）。
 - 建议：
-  1. 把 `extern "C" __declspec(dllexport)` 换成宏（复用 `PI_EXPORT` /
+  1. 把 `extern "C" __declspec(dllexport)` 换成宏（复用 `PI_PLUGIN_API` /
      `PI_PLUGIN_ENTRY_DECL`，该宏在非 Windows 下已是 `visibility("default")`）；
   2. 移除/放宽 `if(NOT WIN32)` 门，让 Linux/macOS 也能产出 `.so` / `.dylib` 插件；
   3. 顺带：测试侧的 `nanosleep` 补平台层宏（或改用项目自己的封装）、`add_test` 的

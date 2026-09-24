@@ -107,7 +107,7 @@ Windows 全局：`WIN32_LEAN_AND_MEAN`。
 
 > 刻意**不**用 `CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS`：它会把 CRT 内部符号一并导出
 > （实测漏出 `__local_stdio_printf_options`、`snprintf`、`vsnprintf`）。公开 API
-> 一律显式 `PI_EXPORT`，插件入口显式 `__declspec(dllexport)`，见
+> 一律显式 `PI_PLUGIN_API`，插件入口显式 `__declspec(dllexport)`，见
 > `docs/design/interface-freeze-review.md`。
 
 ### 3.3 核心库（src/piplugin/CMakeLists.txt）
@@ -164,7 +164,7 @@ roadmap ECO-03：每个例子一个目录、一个 `CMakeLists.txt`、一份 REA
 | `pi_example_service` | 仅核心 | dll（纯 C 服务插件） |
 | `pi_example_plugin_imgui` | imgui + imgui 套件 | dll |
 | `pi_example_plugin_qt` | Qt5 + Qt 套件（SHARED） | dll（仅 Windows） |
-| `pi_example_kit_win32` / `pi_example_plugin_win32` | 仅核心（Windows） | STATIC 套件 + dll（ECO-01 的可执行附录：照 `docs/design/adapter-spec.md` 写的最小套件） |
+| `pi_example_kit_win32` / `pi_plugin_example_plugin_win32` | 仅核心（Windows） | STATIC 套件 + dll（ECO-01 的可执行附录：照 `docs/design/adapter-spec.md` 写的最小套件） |
 | `pi_example_specialized_plugin` / `pi_example_specialized_app` | 核心 + 宿主 kit L0 | dll + exe（通道 A/B 示范） |
 
 其中两个无 GUI 工具包依赖的例子同时注册为 ctest（`example_minimal_host_service`、

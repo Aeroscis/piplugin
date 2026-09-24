@@ -3,7 +3,7 @@
 // The framework promises "pure C ABI". This program is the proof for .NET: it
 // loads the framework DLL and a plugin with P/Invoke, drives the COM-style
 // lifecycle, and builds a HOST OBJECT in C# (a vtbl of [UnmanagedFunctionPointer]
-// delegates, laid out in unmanaged memory) to hand to pi_factory_create_instance.
+// delegates, laid out in unmanaged memory) to hand to pi_plugin_factory_create_instance.
 //
 // Run from the repository root (the plugin must sit next to piplugind.dll):
 //
@@ -42,8 +42,8 @@ internal static class PiFfiDemo
 
     // Framework IIDs (src/pi_plugin_unknown.c); plugin/app IIDs are random UUIDs.
     private static readonly PiGuid PI_IID_UNKNOWN = Guid(0x00000000, 0, 0, 0xC0, 0, 0, 0, 0, 0, 0, 0x46);
-    private static readonly PiGuid PI_IID_PLUGIN_FACTORY = Guid(0x00000001, 0, 0, 0xC0, 0, 0, 0, 0, 0, 0, 0x46);
-    private static readonly PiGuid PI_IID_HOST_SERVICES = Guid(0x00000010, 0, 0, 0xC0, 0, 0, 0, 0, 0, 0, 0x46);
+    private static readonly PiGuid PI_PLUGIN_IID_PLUGIN_FACTORY = Guid(0x00000001, 0, 0, 0xC0, 0, 0, 0, 0, 0, 0, 0x46);
+    private static readonly PiGuid PI_PLUGIN_IID_HOST_SERVICES = Guid(0x00000010, 0, 0, 0xC0, 0, 0, 0, 0, 0, 0, 0x46);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct PiPluginDescriptor
@@ -165,7 +165,7 @@ internal static class PiFfiDemo
         outPtr = IntPtr.Zero;
         if (iid == IntPtr.Zero) return -3;
         uint wanted = (uint)Marshal.ReadInt32(iid);   // data1 is the first field
-        if (wanted == PI_IID_UNKNOWN.data1 || wanted == PI_IID_HOST_SERVICES.data1)
+        if (wanted == PI_IID_UNKNOWN.data1 || wanted == PI_PLUGIN_IID_HOST_SERVICES.data1)
         {
             outPtr = self;
             return PI_OK;
@@ -227,18 +227,18 @@ internal static class PiFfiDemo
 
         IntPtr core = LoadLibraryA(corePath);
         Check(core != IntPtr.Zero, "load the framework core");
-        var moduleLoad = Sym<ModuleLoadProc>(core, "pi_module_load");
-        var moduleGetFactory = Sym<ModuleGetFactoryProc>(core, "pi_module_get_factory");
-        var moduleUnload = Sym<ModuleUnloadProc>(core, "pi_module_unload");
+        var moduleLoad = Sym<ModuleLoadProc>(core, "pi_plugin_module_load");
+        var moduleGetFactory = Sym<ModuleGetFactoryProc>(core, "pi_plugin_module_get_factory");
+        var moduleUnload = Sym<ModuleUnloadProc>(core, "pi_plugin_module_unload");
 
         // 1) load the plugin THROUGH the framework
         Console.WriteLine("- load");
         string pluginFull = Path.GetFullPath(pluginArg);
         IntPtr module = moduleLoad(pluginFull);
-        Check(module != IntPtr.Zero, "pi_module_load");
+        Check(module != IntPtr.Zero, "pi_plugin_module_load");
 
         int hr = moduleGetFactory(module, out IntPtr factory);
-        Check(hr == PI_OK && factory != IntPtr.Zero, $"pi_module_get_factory -> hr={hr}");
+        Check(hr == PI_OK && factory != IntPtr.Zero, $"pi_plugin_module_get_factory -> hr={hr}");
 
         var factoryVtbl = Marshal.PtrToStructure<IPiPluginFactoryVtbl>(
             Marshal.ReadIntPtr(factory));
@@ -248,12 +248,12 @@ internal static class PiFfiDemo
         // 2) QueryInterface, COM style
         Console.WriteLine("\n- QueryInterface");
         IntPtr iidPtr = Marshal.AllocHGlobal(Marshal.SizeOf<PiGuid>());
-        Marshal.StructureToPtr(PI_IID_PLUGIN_FACTORY, iidPtr, false);
+        Marshal.StructureToPtr(PI_PLUGIN_IID_PLUGIN_FACTORY, iidPtr, false);
         hr = qi(factory, iidPtr, out IntPtr outPtr);
-        Check(hr == PI_OK && outPtr != IntPtr.Zero, $"QI(PI_IID_PLUGIN_FACTORY) -> hr={hr}");
+        Check(hr == PI_OK && outPtr != IntPtr.Zero, $"QI(PI_PLUGIN_IID_PLUGIN_FACTORY) -> hr={hr}");
         Check(outPtr == factory, "the factory answers with a stable identity");
 
-        Marshal.StructureToPtr(PI_IID_HOST_SERVICES, iidPtr, false);
+        Marshal.StructureToPtr(PI_PLUGIN_IID_HOST_SERVICES, iidPtr, false);
         hr = qi(factory, iidPtr, out outPtr);
         Check(hr == PI_E_NOINTERFACE && outPtr == IntPtr.Zero,
               $"QI(unknown IID) -> PI_E_NOINTERFACE and *out = NULL (hr={hr})");
@@ -262,7 +262,7 @@ internal static class PiFfiDemo
         Console.WriteLine("\n- descriptor");
         var getDescriptor = Marshal.GetDelegateForFunctionPointer<GetDescriptorProc>(factoryVtbl.get_descriptor);
         IntPtr descPtr = getDescriptor(factory);
-        Check(descPtr != IntPtr.Zero, "pi_get_descriptor");
+        Check(descPtr != IntPtr.Zero, "pi_plugin_get_descriptor");
         var desc = Marshal.PtrToStructure<PiPluginDescriptor>(descPtr);
         Console.WriteLine($"     name={Str(desc.name)} vendor={Str(desc.vendor)} version={Str(desc.version)} " +
                           $"api=0x{desc.api_version:X8} capabilities={desc.capability_count} properties={desc.property_count}");
@@ -280,11 +280,11 @@ internal static class PiFfiDemo
         var getClassGuid = Marshal.GetDelegateForFunctionPointer<GetClassGuidProc>(factoryVtbl.get_class_guid);
         IntPtr classGuidPtr = Marshal.AllocHGlobal(Marshal.SizeOf<PiGuid>());
         hr = getClassGuid(factory, 0, classGuidPtr);
-        Check(hr == PI_OK, "pi_get_class_guid(0)");
+        Check(hr == PI_OK, "pi_plugin_get_class_guid(0)");
 
         var createInstance = Marshal.GetDelegateForFunctionPointer<CreateInstanceProc>(factoryVtbl.create_instance);
         hr = createInstance(factory, classGuidPtr, host, out IntPtr plugin);
-        Check(hr == PI_OK && plugin != IntPtr.Zero, $"pi_create_instance -> hr={hr}");
+        Check(hr == PI_OK && plugin != IntPtr.Zero, $"pi_plugin_create_instance -> hr={hr}");
 
         var baseVtbl = Marshal.PtrToStructure<IPiPluginBaseVtbl>(Marshal.ReadIntPtr(plugin));
         var initialize = Marshal.GetDelegateForFunctionPointer<InitializeProc>(baseVtbl.initialize);
@@ -292,9 +292,9 @@ internal static class PiFfiDemo
         var pluginRelease = Marshal.GetDelegateForFunctionPointer<ReleaseProc>(baseVtbl.base_.release);
 
         hr = initialize(plugin, host);
-        Check(hr == PI_OK, $"pi_initialize -> hr={hr}");
+        Check(hr == PI_OK, $"pi_plugin_initialize -> hr={hr}");
         hr = terminate(plugin);
-        Check(hr == PI_OK, $"pi_terminate -> hr={hr}");
+        Check(hr == PI_OK, $"pi_plugin_terminate -> hr={hr}");
 
         uint rc = pluginRelease(plugin);
         Check(rc == 0, $"release(plugin) -> refcount {rc}");

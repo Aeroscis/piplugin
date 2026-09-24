@@ -38,14 +38,14 @@ public:
         if (m_host)   { pi_iunknown_release((IPiUnknown*)m_host);   m_host = nullptr; }
     }
 
-    PiResult Initialize(IPiHostServices* host)
+    PiResult Initialize(IPiPluginHostServices* host)
     {
         if (m_host) return PI_OK;                 /* idempotent */
         if (!host) return PI_OK;
         m_host = host;
         pi_iunknown_add_ref((IPiUnknown*)host);
-        IPiHostUI* ui = nullptr;
-        if (PI_SUCCEEDED(pi_iunknown_query_interface((IPiUnknown*)host, &PI_IID_HOST_UI,
+        IPiPluginHostUI* ui = nullptr;
+        if (PI_SUCCEEDED(pi_iunknown_query_interface((IPiUnknown*)host, &PI_PLUGIN_IID_HOST_UI,
                                                      (void**)&ui))) {
             m_hostUI = ui;
         }
@@ -57,12 +57,12 @@ public:
         if (!out) return PI_E_INVALIDARG;
         if (!m_hostUI) { *out = nullptr; return PI_E_NOINTERFACE; }   /* headless host */
 
-        PiQtViewDesc desc = {};
+        PiPluginQtViewDesc desc = {};
         desc.create_widget = &CreateUi;
         desc.retain        = &Retain;
         desc.release       = &Release;
         desc.user_data     = this;
-        return pi_qt_view_create(&desc, out);
+        return pi_plugin_qt_view_create(&desc, out);
     }
 
     PiResult Terminate()
@@ -72,8 +72,8 @@ public:
          * it true even for a host that just drops the module.
          *
          * _owner(this): the kit is shared by every Qt plugin in the process, so the
-         * unscoped pi_qt_view_shutdown() would tear down other plugins' widgets too. */
-        pi_qt_view_shutdown_owner(this);
+         * unscoped pi_plugin_qt_view_shutdown() would tear down other plugins' widgets too. */
+        pi_plugin_qt_view_shutdown_owner(this);
         return PI_OK;
     }
 
@@ -93,7 +93,7 @@ public:
             ++me->m_clicks;
             label->setText(QString::fromUtf8("button pressed %1 time(s)").arg(me->m_clicks));
             if (me->m_host)
-                pi_host_post_message(me->m_host, 0x8000u, (uintptr_t)me->m_clicks, 0);
+                pi_plugin_host_post_message(me->m_host, 0x8000u, (uintptr_t)me->m_clicks, 0);
         });
         layout->addWidget(button);
         layout->addStretch();
@@ -122,12 +122,12 @@ private:
     {
         ExampleQtPlugin* me = (ExampleQtPlugin*)self_ptr;
         if (!out) return PI_E_INVALIDARG;
-        if (pi_guid_equal(iid, &PI_IID_UNKNOWN) || pi_guid_equal(iid, &PI_IID_PLUGIN_BASE)) {
+        if (pi_guid_equal(iid, &PI_IID_UNKNOWN) || pi_guid_equal(iid, &PI_PLUGIN_IID_PLUGIN_BASE)) {
             *out = me; me->m_base.unk.lpVtbl->pi_add_ref(self_ptr); return PI_OK;
         }
         *out = nullptr; return PI_E_NOINTERFACE;
     }
-    static PiResult PI_CALL Init(void* self_ptr, IPiHostServices* host)
+    static PiResult PI_CALL Init(void* self_ptr, IPiPluginHostServices* host)
     {
         return ((ExampleQtPlugin*)self_ptr)->Initialize(host);
     }
@@ -143,8 +143,8 @@ private:
     static const IPiPluginBaseVtbl s_vtbl;
 
     int              m_clicks;
-    IPiHostServices* m_host;      /* add-ref'd */
-    IPiHostUI*       m_hostUI;    /* add-ref'd, NULL on a headless host */
+    IPiPluginHostServices* m_host;      /* add-ref'd */
+    IPiPluginHostUI*       m_hostUI;    /* add-ref'd, NULL on a headless host */
 };
 
 const IPiPluginBaseVtbl ExampleQtPlugin::s_vtbl = {
@@ -163,11 +163,11 @@ public:
 
         /* Zero first: appended optional fields (properties) must read as "absent",
          * not as whatever this heap block happened to contain.
-         * See pi_descriptor_init() in pi_plugin_types.h. */
-        pi_descriptor_init(&m_desc);
+         * See pi_plugin_descriptor_init() in pi_plugin_types.h. */
+        pi_plugin_descriptor_init(&m_desc);
 
-        m_caps[0].iid = PI_IID_PLUGIN_VIEW; m_caps[0].flags = PI_CAP_PROVIDES;
-        m_caps[1].iid = PI_IID_HOST_UI;     m_caps[1].flags = PI_CAP_OPTIONAL;
+        m_caps[0].iid = PI_PLUGIN_IID_PLUGIN_VIEW; m_caps[0].flags = PI_PLUGIN_CAP_PROVIDES;
+        m_caps[1].iid = PI_PLUGIN_IID_HOST_UI;     m_caps[1].flags = PI_PLUGIN_CAP_OPTIONAL;
 
         m_desc.name = "Example Qt Plugin";
         m_desc.vendor = "piplugin examples";
@@ -182,7 +182,7 @@ public:
     {
         ExampleQtFactory* me = (ExampleQtFactory*)self_ptr;
         if (!out) return PI_E_INVALIDARG;
-        if (pi_guid_equal(iid, &PI_IID_UNKNOWN) || pi_guid_equal(iid, &PI_IID_PLUGIN_FACTORY)) {
+        if (pi_guid_equal(iid, &PI_IID_UNKNOWN) || pi_guid_equal(iid, &PI_PLUGIN_IID_PLUGIN_FACTORY)) {
             *out = me; me->m_base.unk.lpVtbl->pi_add_ref(self_ptr); return PI_OK;
         }
         *out = nullptr; return PI_E_NOINTERFACE;
@@ -202,7 +202,7 @@ public:
         return PI_OK;
     }
     static PiResult PI_CALL CreateInstance(void* self, const PiGuid* guid,
-                                           IPiHostServices* host, IPiPluginBase** out)
+                                           IPiPluginHostServices* host, IPiPluginBase** out)
     {
         (void)self;
         if (!guid || !out) return PI_E_INVALIDARG;

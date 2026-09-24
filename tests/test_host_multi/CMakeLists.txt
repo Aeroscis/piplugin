@@ -39,7 +39,7 @@ if(WIN32)
     target_link_libraries(${TARGET_NAME} PRIVATE ole32 user32)
 endif()
 
-# 测试共用头：W-04 的宿主侧 marshal 队列用 PiTestMutex（tests/common/pi_test_thread.h）
+# 测试共用头：W-04 的宿主侧 marshal 队列用 PiPluginTestMutex（tests/common/pi_test_thread.h）
 target_include_directories(${TARGET_NAME} PRIVATE ${PI_TESTS_COMMON_DIR})
 
 # ------- 部署到开发目录 bin/<CONFIG>（POST_BUILD：构建即就绪） -------------
@@ -64,11 +64,11 @@ if(TARGET pi_test_plugin_qt AND TARGET pi_test_plugin_qt2)
     set_tests_properties(multi_plugin_qt_in_one_process PROPERTIES TIMEOUT 180)
 endif()
 
-# ---- W-04：插件子线程 → 宿主，以及套件的跨线程 pi_qt_view_post ----
+# ---- W-04：插件子线程 → 宿主，以及套件的跨线程 pi_plugin_qt_view_post ----
 # 两件事在同一个 ctest 用例里断言（同一台宿主、同一次运行）：
-#   1. 插件的子线程直接调 pi_host_post_message()：宿主回调**就在那条子线程上**
+#   1. 插件的子线程直接调 pi_plugin_host_post_message()：宿主回调**就在那条子线程上**
 #      被调到（契约），宿主自己排队并在主线程上投递（不丢不重）；
-#   2. 插件的子线程调 pi_qt_view_post()：回调必须跑在**宿主 GUI 线程**上。
+#   2. 插件的子线程调 pi_plugin_qt_view_post()：回调必须跑在**宿主 GUI 线程**上。
 # 插件侧的探针由环境变量打开 —— 同一份插件还被一致性验收 / APP-08 / headless
 # 冒烟共用，默认不能改变它的行为。
 if(TARGET pi_test_plugin_qt)
@@ -78,12 +78,12 @@ if(TARGET pi_test_plugin_qt)
         WORKING_DIRECTORY "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
         )
     set_tests_properties(qt_view_post_from_worker_thread PROPERTIES
-        ENVIRONMENT "PI_QT_TEST_POST_THREAD=1"
+        ENVIRONMENT "PI_PLUGIN_QT_TEST_POST_THREAD=1"
         TIMEOUT 180)
 endif()
 
 # ---- W-02：嵌入窗口运行时切换（测试矩阵里唯一没覆盖的那一格）----
-# 加载插件 -> attach 到容器 A -> 用 pi_host_default_set_ui_window() 把宿主报告的
+# 加载插件 -> attach 到容器 A -> 用 pi_plugin_host_default_set_ui_window() 把宿主报告的
 # 窗口切到 B 并在活视图上 detach/attach 到 B -> 切回 A -> 尺寸往返 -> 卸载；
 # 每一步都断言"插件窗口是**指定容器**的子窗口、可见、尺寸与容器客户区一致"，
 # 以及 detach 之后旧窗口确实已经没了（detach 是同步的）。退出码判定。

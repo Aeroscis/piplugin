@@ -25,7 +25,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run_selftest.ps1 `
     -Plugin "my_plugin.dll,C:\path\to\other_plugin.dll" -Cycles 5 -IdleFrames 20
 ```
 
-或者直接调宿主（日志写在 exe 同目录的 `pi_test_host.log`）：
+或者直接调宿主（日志写在 exe 同目录的 `pi_plugin_test_host.log`）：
 
 ```
 pi_test_host_imgui.exe --cycles 3 --plugin my_plugin.dll --idle-frames 12
@@ -36,7 +36,7 @@ pi_test_host_imgui.exe --cycles 3 --plugin my_plugin.dll --idle-frames 12
 | `--cycles N` | 每个插件跑 N 轮（`0`/缺省 = 不进入验收模式） |
 | `--plugin a.dll[,b.dll,...]` | 被测插件列表；绝对路径原样使用，否则按 exe 目录解析 |
 | `--idle-frames N` | 每轮里让插件视图存活多少渲染帧（默认 20） |
-| `--skip-detach` | 诊断用：卸载时跳过 `pi_view_detach()`（复现"宿主直接丢模块"路径） |
+| `--skip-detach` | 诊断用：卸载时跳过 `pi_plugin_view_detach()`（复现"宿主直接丢模块"路径） |
 
 ## 3. 一轮里做了什么
 

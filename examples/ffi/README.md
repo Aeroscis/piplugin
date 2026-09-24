@@ -10,11 +10,11 @@ roadmap **ECO-06**。框架的卖点是**纯 C ABI**：`__stdcall` 函数指针�
    `PI_E_NOINTERFACE` 且 `*out == NULL`）；
 3. 读 descriptor（名称 / 版本 / `api_version` / capabilities / properties）；
 4. **在宿主语言里造一个宿主对象**（一张函数指针表 + 一个结构体）交给
-   `pi_factory_create_instance`，然后 `pi_initialize` / `pi_terminate` / `release`；
+   `pi_plugin_factory_create_instance`，然后 `pi_plugin_initialize` / `pi_plugin_terminate` / `release`；
 5. 卸载后再加载一次 —— 干净的卸载是"能再加载"的前提，也是宿主最常写错的一步。
 
 第 4 步是重点：**宿主侧契约就是一张 C 函数指针表**，所以任何能按 C 调用约定回调的语言
-都能写宿主。三个例子里各有一个"用本语言实现的 `IPiHostServices`"。
+都能写宿主。三个例子里各有一个"用本语言实现的 `IPiPluginHostServices`"。
 
 | 语言 | 目录 | 怎么跑 |
 |---|---|---|
@@ -42,14 +42,15 @@ typedef struct IPiUnknownVtbl {
 } IPiUnknownVtbl;
 ```
 
-对照阅读顺序：`include/piplugin/pi_plugin_types.h`（GUID / 返回码）→
-`pi_plugin_unknown.h`（上面这张表）→ `pi_plugin_factory.h` / `pi_plugin_base.h`（生命周期）→
+对照阅读顺序：基础层的 `pibase/pi_base.h`（返回码 / GUID / 上面这张表的根接口）→
+`include/piplugin/pi_plugin_types.h`（本库自己的 IID、描述符、API 版本）→
+`pi_plugin_factory.h` / `pi_plugin_base.h`（生命周期）→
 再回来看任一语言的实现。ABI 的边界在哪、为什么不需要胶水层，看完就够了。
 
 ## 已知边界（诚实说明）
 
 - 三个例子目前都只加载**不建窗口**的路径：它们创建实例、初始化、终止，但不
-  `pi_attach`（那需要宿主语言提供真实窗口句柄，属于各自 GUI 工具包的事）；
+  `pi_plugin_attach`（那需要宿主语言提供真实窗口句柄，属于各自 GUI 工具包的事）；
 - 例子的加载器用 `kernel32`（Windows）。Linux/macOS 上把 `LoadLibraryA` 换成
   `dlopen` 即可 —— 本仓库只在 Windows 上验证过（见 freeze review §5）；
 - Rust 例子**不依赖任何 crate**（否则就等于承认需要一个绑定层），C# 例子不用 NuGet 包。

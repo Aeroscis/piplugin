@@ -68,7 +68,7 @@ static inline PiResult my_app_job_count(IMyAppJobQueue* self, uint32_t* out_coun
  * 通道 B: the app defines a service the PLUGIN consumes
  *
  * Same GUID rule; this one is answered by the app's host services object (see
- * pi_host_services_create_ex and its extra_qi hook in the app example).
+ * pi_plugin_host_services_create_ex and its extra_qi hook in the app example).
  * -------------------------------------------------------------------------- */
 #define MY_APP_INFO_IID_INIT \
     PI_GUID(0x3F91C6A4, 0x7D28, 0x4E51, 0x8A, 0x05, 0xB9, 0x47, 0x62, 0xD1, 0x3E, 0x70)

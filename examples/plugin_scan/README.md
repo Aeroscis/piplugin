@@ -51,11 +51,11 @@ Qt Test Plugin B                   1.2.0     UI/Test           pi_test_plugin_qt
 ...（共 11 个）
 
 == rejected / not a plugin ==
-piplugind.dll                      pi_module_load failed: ".\piplugind.dll" does not export pi_plugin_entry
-piplugin_qtd.dll                   pi_module_load failed: ".\piplugin_qtd.dll" does not export pi_plugin_entry
+piplugind.dll                      pi_plugin_module_load failed: ".\piplugind.dll" does not export pi_plugin_entry
+piplugin_qtd.dll                   pi_plugin_module_load failed: ".\piplugin_qtd.dll" does not export pi_plugin_entry
 pi_test_plugin_badversion.dll      plugin api_version 0x00020000 (major 2, minor 0) is incompatible with host 0x00000004 (major 0, minor 4) ...
 pi_test_plugin_guirequired.dll     plugin requires capability iid data1=0x00000011 but this host does not provide it
-Qt5Core.dll                        pi_module_load failed: ".\Qt5Core.dll" does not export pi_plugin_entry
+Qt5Core.dll                        pi_plugin_module_load failed: ".\Qt5Core.dll" does not export pi_plugin_entry
 ...（共 7 个）
 
 usable=11 rejected=7
@@ -69,8 +69,8 @@ RESULT: PASS
 2. **被门禁拒绝的插件也在清单里**：`badversion`（api_version 不兼容）与
    `guirequired`（本扫描器是无头宿主，插件 REQUIRE 了 `HOST_UI`）——发现阶段就能看到
    "这个目录里哪些插件在本宿主里不可用、为什么"；
-3. **什么都没被实例化**：扫描用的是 `pi_host_session_inspect()`（加载模块 + 门禁后停住），
-   读完 descriptor 立刻 `pi_host_session_unload()`。跑完进程里零个插件模块。
+3. **什么都没被实例化**：扫描用的是 `pi_plugin_host_session_inspect()`（加载模块 + 门禁后停住），
+   读完 descriptor 立刻 `pi_plugin_host_session_unload()`。跑完进程里零个插件模块。
 
 ## 版本选择：这里是**占位**
 
@@ -100,8 +100,8 @@ cd bin\Debug ; .\pi_example_plugin_scan.exe ..\..\build\scan_demo
 1. `main()`：一个**无头** session（`PI_INVALID_WINDOW`，没有窗口、没有消息循环，
    因为发现不需要跑插件）；
 2. `ScanDirectory()`：`FindFirstFileA` 遍历 `*.dll`（Windows；其余平台需要一个分支）；
-3. `ScanFile()`：`pi_host_session_inspect()` → 读 descriptor → **深拷贝** →
-   `pi_host_session_unload()`；
+3. `ScanFile()`：`pi_plugin_host_session_inspect()` → 读 descriptor → **深拷贝** →
+   `pi_plugin_host_session_unload()`；
 4. `PrintInventory()` / `PrintVersionSelection()`：清单与占位选版。
 
 第 3 步的深拷贝不是洁癖：**descriptor 的字符串属于模块**，`unload` 之后原指针就是

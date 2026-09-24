@@ -15,11 +15,11 @@
 [qtview ...] attach: enter parent=00000000000F1404      <- 日志到此为止
 ```
 
-`PI_QT_VIEW_TRACE=1` 下只有这一行；插件的 `create_widget` 根本没被调用，控件不存在。
+`PI_PLUGIN_QT_VIEW_TRACE=1` 下只有这一行；插件的 `create_widget` 根本没被调用，控件不存在。
 原因在套件的第一行 attach 逻辑里（`adapters/qt/pi_qt_view.cpp:386-390`）：
 
 ```cpp
-bool PiQtView::attach(PiNativeWindow parent)
+bool PiPluginQtView::attach(PiNativeWindow parent)
 {
     piqt_trace("attach: enter parent=%p", ...);
     if (m_attached) return true;
@@ -45,9 +45,9 @@ bool PiQtView::attach(PiNativeWindow parent)
 
 | 宿主 | 插件 | 怎么办 |
 |---|---|---|
-| 非 Qt（imgui / 裸 Win32 / wxWidgets / 无头） | Qt（套件） | **走 Qt 套件**：套件建 `QApplication`、嵌原生子窗口、由宿主 `pi_on_idle()` 驱动。这是套件的目标场景（`examples/minimal_plugin_qt`） |
+| 非 Qt（imgui / 裸 Win32 / wxWidgets / 无头） | Qt（套件） | **走 Qt 套件**：套件建 `QApplication`、嵌原生子窗口、由宿主 `pi_plugin_on_idle()` 驱动。这是套件的目标场景（`examples/minimal_plugin_qt`） |
 | **Qt** | Qt | **直连**：插件把 `QWidget*` 交给宿主，宿主塞进自己的 `QLayout`，宿主的事件循环直接驱动它（**本文 §3**，`examples/qt_host_direct`） |
-| Qt | imgui | 走 imgui 套件 + 宿主侧 `PiPluginEmbedArea`（`host_kits/qt/`）：套件画在原生子窗口里，`PiPluginEmbedArea` 负责把它嵌进 Qt 控件树并转发尺寸/`pi_on_idle()` |
+| Qt | imgui | 走 imgui 套件 + 宿主侧 `PiPluginEmbedArea`（`host_kits/qt/`）：套件画在原生子窗口里，`PiPluginEmbedArea` 负责把它嵌进 Qt 控件树并转发尺寸/`pi_plugin_on_idle()` |
 | Qt | 裸 Win32 / 自写套件 | 同上，用 `PiPluginEmbedArea` |
 | 非 Qt | 非 Qt 且宿主愿意自绘 | 自写套件，照 `docs/design/adapter-spec.md`（可参考 `examples/minimal_kit_win32`） |
 
@@ -74,16 +74,16 @@ typedef struct IQtDirectWidgetVtbl {
 ```cpp
 QApplication app(argc, argv);                 // 宿主自己的（关键）
 
-pi_host_services_create_default(&OnHostMessage, &host, PI_INVALID_WINDOW, &services);
-pi_host_session_create(services, &session);
-pi_host_session_require(session, &PI_QT_DIRECT_WIDGET_IID);   // 见 §4.3
-pi_host_session_load(session, plugin_path, &slot);
+pi_plugin_host_services_create_default(&OnHostMessage, &host, PI_INVALID_WINDOW, &services);
+pi_plugin_host_session_create(services, &session);
+pi_plugin_host_session_require(session, &PI_PLUGIN_QT_DIRECT_WIDGET_IID);   // 见 §4.3
+pi_plugin_host_session_load(session, plugin_path, &slot);
 
-IPiPluginBase* plugin = pi_host_session_get_plugin(session, slot);   // borrowed
+IPiPluginBase* plugin = pi_plugin_host_session_get_plugin(session, slot);   // borrowed
 IQtDirectWidget* ifc = nullptr;
-pi_iunknown_query_interface((IPiUnknown*)plugin, &PI_QT_DIRECT_WIDGET_IID, (void**)&ifc);
+pi_iunknown_query_interface((IPiUnknown*)plugin, &PI_PLUGIN_QT_DIRECT_WIDGET_IID, (void**)&ifc);
 
-layout->addWidget(pi_qt_direct_create_widget(ifc));   // <- 直连就是这一行
+layout->addWidget(pi_plugin_qt_direct_create_widget(ifc));   // <- 直连就是这一行
 
 app.exec();                                           // 宿主自己的事件循环
 ```
@@ -92,9 +92,9 @@ app.exec();                                           // 宿主自己的事件�
 不建 `QApplication`，不做任何原生窗口/嵌入：
 
 ```cpp
-m_caps[0].iid = PI_QT_DIRECT_WIDGET_IID; m_caps[0].flags = PI_CAP_PROVIDES;
-/* 注意这里没有 PI_IID_PLUGIN_VIEW：直连模式下 UI 不走 view 通道，
- * 也没有 PI_IID_HOST_UI：容器是宿主的 QLayout，不是原生窗口。 */
+m_caps[0].iid = PI_PLUGIN_QT_DIRECT_WIDGET_IID; m_caps[0].flags = PI_PLUGIN_CAP_PROVIDES;
+/* 注意这里没有 PI_PLUGIN_IID_PLUGIN_VIEW：直连模式下 UI 不走 view 通道，
+ * 也没有 PI_PLUGIN_IID_HOST_UI：容器是宿主的 QLayout，不是原生窗口。 */
 ```
 
 `examples/qt_host_direct/` 是这段代码的完整、可运行版本（含自定义协议的
@@ -104,7 +104,7 @@ wrapper 对象写法：两个 vtable 不能同时位于同一对象的 offset 0�
 
 ### 4.1 线程：直连天然满足，但不要自作聪明
 
-Qt 对象只能在 `QApplication` 所在线程创建/销毁。宿主调用 `pi_get_view` /
+Qt 对象只能在 `QApplication` 所在线程创建/销毁。宿主调用 `pi_plugin_get_view` /
 你的协议方法发生在宿主 GUI 线程，也就是 `QApplication` 线程，所以**直连不需要任何
 marshal**。反过来：不要为了"并行"把控件创建挪到工作线程——原生窗口的父子关系由同一
 个线程服务，跨线程销毁/重挂会死锁（这条坑套件那边已经踩过，见 `adapters/qt/README.md`
@@ -113,13 +113,13 @@ marshal**。反过来：不要为了"并行"把控件创建挪到工作线程—
 ### 4.2 所有权与顺序：控件必须先死，模块才能卸载
 
 `create_widget()` 返回的控件**归宿主**：宿主把它塞进布局、也负责销毁它。销毁必须在
-`pi_host_session_unload()` **之前**完成，因为控件的信号槽函数体是**插件模块里的代码**；
+`pi_plugin_host_session_unload()` **之前**完成，因为控件的信号槽函数体是**插件模块里的代码**；
 模块一卸载，还活着的控件下次点击/重绘就跳进已释放内存。
 
 ```cpp
-pi_qt_direct_destroy_widget(ifc, widget);     // 1) 先拆控件（插件模块仍映射）
+pi_plugin_qt_direct_destroy_widget(ifc, widget);     // 1) 先拆控件（插件模块仍映射）
 pi_iunknown_release((IPiUnknown*)ifc);        // 2) 再放掉我们 QI 到的接口
-pi_host_session_unload(session, slot);        // 3) 七步卸载序列（含模块卸载）
+pi_plugin_host_session_unload(session, slot);        // 3) 七步卸载序列（含模块卸载）
 ```
 
 示例里的 `Host::TearDown()` 就是这个顺序，且幂等（交互模式的"Unload"按钮和自检模式
@@ -128,8 +128,8 @@ pi_host_session_unload(session, slot);        // 3) 七步卸载序列（含模�
 
 ### 4.3 用能力门禁把"走错路的插件"挡在实例化之前
 
-直连宿主**必须** `pi_host_session_require()` 自己的协议 IID。否则把"为套件写的" Qt
-插件喂给它时，加载会成功（那个插件合法地声明了 `PI_IID_PLUGIN_VIEW`），然后宿主 QI
+直连宿主**必须** `pi_plugin_host_session_require()` 自己的协议 IID。否则把"为套件写的" Qt
+插件喂给它时，加载会成功（那个插件合法地声明了 `PI_PLUGIN_IID_PLUGIN_VIEW`），然后宿主 QI
 不到协议、什么都不显示——又是一次静默失败，只是换了个地方发生。加上 require 之后：
 
 ```
@@ -154,10 +154,10 @@ target_link_libraries(my_qt_plugin PRIVATE piplugin Qt5::Widgets)   # 没有 pip
 | 症状 | 原因 | 处置 |
 |---|---|---|
 | 插件界面完全不出现，trace 只有 `attach: enter` | 宿主持有 `QApplication`，套件要建第二个 | 改直连（本文） |
-| 加载成功但 QI 不到协议，界面空白 | 宿主没 `require()`，或插件没声明 `PI_CAP_PROVIDES` | §4.3 |
+| 加载成功但 QI 不到协议，界面空白 | 宿主没 `require()`，或插件没声明 `PI_PLUGIN_CAP_PROVIDES` | §4.3 |
 | 关闭窗口/卸载插件时崩溃 | 控件在模块卸载后仍活着（顺序错了） | §4.2：控件 → 接口 → unload |
 | 控件出现但尺寸是 0 / 看不见 | 建出来就 `show()` 了，或没进布局 | 契约：无父、未 `show()`，由宿主的布局决定 |
-| 控件里点击无响应 | 宿主事件循环没跑（`app.exec()` 没执行 / 被阻塞） | 直连不需要 `pi_on_idle()`，但需要宿主自己的循环在跑 |
+| 控件里点击无响应 | 宿主事件循环没跑（`app.exec()` 没执行 / 被阻塞） | 直连不需要 `pi_plugin_on_idle()`，但需要宿主自己的循环在跑 |
 | 卸载后再点插件控件崩溃 | 同上第 3 行；也可能是宿主把控件留在了布局里 | `delete` 后让 `QApplication` 处理完 DeferredDelete（示例用 `sendPostedEvents`） |
 
 ## 6. 怎么自查（无需人眼）

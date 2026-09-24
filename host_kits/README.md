@@ -17,8 +17,8 @@ kit 把这段顺序收拢成一份实现，把「窗口长什么样」完整留�
 | **L1 嵌入胶水** | per-framework 小库 / header | 把**宿主自己创建的**容器变成 embed host：attach、idle 驱动、resize 转发；D3D 宿主的 flip-model 交换链 + `WS_CLIPCHILDREN` 正确创建 | 容器是谁、在哪、多大、几个、可否见，全归宿主 |
 | **L2 现成控件** | opt-in 糖 | 开箱即用的「插件面板」控件（如带 tab 的 dock） | 使用者自愿放弃部分自由换速度 |
 
-依据：ABI 层 `pi_attach(parent_window)` 本来就是宿主递容器、`pi_host_default_set_ui_window`
-支持运行时切换、`pi_set_visible` 支持 attach 后隐藏——**「窗口 / 内嵌 / 隐藏 / 不取 view」
+依据：ABI 层 `pi_plugin_attach(parent_window)` 本来就是宿主递容器、`pi_plugin_host_default_set_ui_window`
+支持运行时切换、`pi_plugin_set_visible` 支持 attach 后隐藏——**「窗口 / 内嵌 / 隐藏 / 不取 view」
 本来就是宿主的自由**，kit 不得越层。
 
 ## 纪律（新增代码必须遵守）
@@ -51,8 +51,8 @@ host_kits/
   （含 APP-06 的事件 sink 记账：`has_event_sink` / `deliver_event` / `get_host_events`，
   以及卸载序列里的"按 owner 退订 + 释放 sink"两步）。
 - **事件路由（`events/`）已落地（APP-06，可选）**：`piplugin_events` ——
-  `IPiHostEvents` 的一个现成实现（订阅表 + 有界队列 + pump + owner 退订 + 丢弃计数），
-  `pi_event_router_extra_qi()` 可直接当 `pi_host_services_create_ex()` 的钩子。
+  `IPiPluginHostEvents` 的一个现成实现（订阅表 + 有界队列 + pump + owner 退订 + 丢弃计数），
+  `pi_plugin_event_router_extra_qi()` 可直接当 `pi_plugin_host_services_create_ex()` 的钩子。
   **不用它完全没问题**：核心里的两个事件接口是零实现的契约，宿主可以自己实现；
   验收见 `tests/test_host_events`（ctest `events_two_way_loop`）。
 - **L1（`qt/`、`dx11/`）已落地**：
@@ -71,14 +71,14 @@ roadmap §APP-03 把 Qt 侧写成 `attach(view)`。实际实现是
 若控件缓存裸 `IPiPluginView*`，插件卸载后控件仍握着已释放的 view，下一次 resize 转发就是
 use-after-free。绑定 `(session, slot)` 后，每次需要 view 都向 session 现取，卸载后自动拿到
 NULL，"忘掉清理"这个出错面被彻底消掉。宿主侧仍然只有一句
-`g_embedArea->detachBinding()` + `pi_host_session_unload()`。
+`g_embedArea->detachBinding()` + `pi_plugin_host_session_unload()`。
 
 ## 库形态为什么是分层的
 
 - **L0 = 真库**（STATIC）：纯逻辑、无框架/工具包 ABI 耦合，库化零代价；session 是实例对象、
   没有进程级全局状态，因此不会重演 APP-08 那个「每 DLL 一份全局状态」的坑。
 - **事件路由 = 真库**（STATIC）：纯 C + 平台互斥量（非 Windows 链 `Threads::Threads`），
-  不碰任何 C++ ABI；它只是 `IPiHostEvents` 的一个实现，宿主可换可不用。
+  不碰任何 C++ ABI；它只是 `IPiPluginHostEvents` 的一个实现，宿主可换可不用。
 - **L1 Qt = CMake 上是库 target、物理上是源码**：`PiPluginEmbedArea` 是 `QWidget` 子类、要跑 moc，
   预编译库会把宿主的 Qt 版本 + 编译器版本 + 运行库锁死——**那正是本框架用 C ABI 要消灭的
   C++ ABI 耦合，宿主 kit 自己不该把它引回来**。所以做成 STATIC target：宿主

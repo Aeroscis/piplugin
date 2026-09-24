@@ -47,7 +47,7 @@ public static class Dm
     // FindWindow look for a window with an empty title - wrap it instead.
     public static IntPtr FindHostWindow()
     {
-        return FindWindowW("PiTestHost", null);
+        return FindWindowW("PiPluginTestHost", null);
     }
 
     [DllImport("user32.dll")]

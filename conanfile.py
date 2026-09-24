@@ -40,7 +40,7 @@ _TEST_HOST_KIT_NEEDS = {
 
 class PiPluginConan(ConanFile):
     name = "piplugin"
-    version = "0.4.0"
+    version = "0.5.0"
     license = "MIT"
     author = "Aeroscis"
     url = "https://gitee.com/Aeroscis/piplugin"
@@ -176,6 +176,10 @@ class PiPluginConan(ConanFile):
                 + ". Enable the required kit switches or disable those test switches.")
 
     def requirements(self):
+        # 家族根层：无条件依赖（结果码 / GUID / PiNativeWindow / IPiUnknown / ABI 管线宏）。
+        # header-only 包，不参与构建类型或架构的 package_id。
+        self.requires("pibase/0.1.0")
+
         # 依赖自动管理：任一需要 imgui 的部件有效开启即自动拉取（Qt5 为本地安装，非 conan 依赖）
         # - imgui adapter kit 链接 imgui::imgui
         # - imgui 测试宿主（PI_BUILD_TEST_HOST）直连 imgui，但不依赖 adapter kit

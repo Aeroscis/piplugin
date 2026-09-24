@@ -52,7 +52,7 @@ Add-Type -TypeDefinition (Get-Content -Raw (Join-Path $PSScriptRoot 'drag_measur
 [Dm]::SetProcessDPIAware() | Out-Null
 
 $exeDir = Split-Path -Parent $ExePath
-$logPath = Join-Path $exeDir 'pi_test_host.log'
+$logPath = Join-Path $exeDir 'pi_plugin_test_host.log'
 
 function Get-SharedText([string]$path) {
     try {

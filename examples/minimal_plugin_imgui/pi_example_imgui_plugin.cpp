@@ -5,7 +5,7 @@
  * about embedding, contexts and event pumping lives in the imgui adapter kit
  * (piplugin_imgui), so the plugin never touches a window handle.
  *
- * It advertises PI_IID_PLUGIN_VIEW (PROVIDES) and PI_IID_HOST_UI (OPTIONAL):
+ * It advertises PI_PLUGIN_IID_PLUGIN_VIEW (PROVIDES) and PI_PLUGIN_IID_HOST_UI (OPTIONAL):
  * a headless host loads it fine and simply never gets a view.
  *
  * Run it with examples/minimal_host:
@@ -35,17 +35,17 @@ public:
         if (m_host)   { pi_iunknown_release((IPiUnknown*)m_host);   m_host = nullptr; }
     }
 
-    PiResult Initialize(IPiHostServices* host)
+    PiResult Initialize(IPiPluginHostServices* host)
     {
         if (m_host) return PI_OK;                 /* idempotent, see write-plugin.md */
         if (!host) return PI_OK;
 
         /* The host pointer is borrowed for this call: keep a reference, and ask
-         * whether it is a GUI host (absent IPiHostUI = headless). */
+         * whether it is a GUI host (absent IPiPluginHostUI = headless). */
         m_host = host;
         pi_iunknown_add_ref((IPiUnknown*)host);
-        IPiHostUI* ui = nullptr;
-        if (PI_SUCCEEDED(pi_iunknown_query_interface((IPiUnknown*)host, &PI_IID_HOST_UI,
+        IPiPluginHostUI* ui = nullptr;
+        if (PI_SUCCEEDED(pi_iunknown_query_interface((IPiUnknown*)host, &PI_PLUGIN_IID_HOST_UI,
                                                      (void**)&ui))) {
             m_hostUI = ui;
         }
@@ -57,13 +57,13 @@ public:
         if (!out) return PI_E_INVALIDARG;
         if (!m_hostUI) { *out = nullptr; return PI_E_NOINTERFACE; }   /* headless host */
 
-        PiImGuiViewDesc desc = {};
+        PiPluginImGuiViewDesc desc = {};
         desc.init      = &SetupUi;
         desc.draw      = &DrawUi;
         desc.retain    = &Retain;
         desc.release   = &Release;
         desc.user_data = this;
-        return pi_imgui_view_create(&desc, out);
+        return pi_plugin_imgui_view_create(&desc, out);
     }
 
     /* ---- adapter callbacks (host GUI thread) ---- */
@@ -89,7 +89,7 @@ public:
             ++me->m_counter;
             /* Talking to the host is one call; the host decides what it means. */
             if (me->m_host)
-                pi_host_post_message(me->m_host, 0x8000u, (uintptr_t)me->m_counter, 0);
+                pi_plugin_host_post_message(me->m_host, 0x8000u, (uintptr_t)me->m_counter, 0);
         }
         ImGui::Text("button pressed %d time(s)", me->m_counter);
         ImGui::End();
@@ -117,12 +117,12 @@ private:
     {
         ExamplePlugin* me = (ExamplePlugin*)self_ptr;
         if (!out) return PI_E_INVALIDARG;
-        if (pi_guid_equal(iid, &PI_IID_UNKNOWN) || pi_guid_equal(iid, &PI_IID_PLUGIN_BASE)) {
+        if (pi_guid_equal(iid, &PI_IID_UNKNOWN) || pi_guid_equal(iid, &PI_PLUGIN_IID_PLUGIN_BASE)) {
             *out = me; me->m_base.unk.lpVtbl->pi_add_ref(self_ptr); return PI_OK;
         }
         *out = nullptr; return PI_E_NOINTERFACE;
     }
-    static PiResult PI_CALL Init(void* self_ptr, IPiHostServices* host)
+    static PiResult PI_CALL Init(void* self_ptr, IPiPluginHostServices* host)
     {
         return ((ExamplePlugin*)self_ptr)->Initialize(host);
     }
@@ -136,8 +136,8 @@ private:
 
     int              m_counter;
     int              m_slider;
-    IPiHostServices* m_host;      /* add-ref'd */
-    IPiHostUI*       m_hostUI;    /* add-ref'd, NULL on a headless host */
+    IPiPluginHostServices* m_host;      /* add-ref'd */
+    IPiPluginHostUI*       m_hostUI;    /* add-ref'd, NULL on a headless host */
 };
 
 const IPiPluginBaseVtbl ExamplePlugin::s_vtbl = {
@@ -156,11 +156,11 @@ public:
 
         /* Fill the descriptor in ZEROED: it has optional fields that get appended
          * over time, and this one lives on the heap (so it starts as 0xCDCDCDCD).
-         * See pi_descriptor_init() in pi_plugin_types.h. */
-        pi_descriptor_init(&m_desc);
+         * See pi_plugin_descriptor_init() in pi_plugin_types.h. */
+        pi_plugin_descriptor_init(&m_desc);
 
-        m_caps[0].iid = PI_IID_PLUGIN_VIEW; m_caps[0].flags = PI_CAP_PROVIDES;
-        m_caps[1].iid = PI_IID_HOST_UI;     m_caps[1].flags = PI_CAP_OPTIONAL;
+        m_caps[0].iid = PI_PLUGIN_IID_PLUGIN_VIEW; m_caps[0].flags = PI_PLUGIN_CAP_PROVIDES;
+        m_caps[1].iid = PI_PLUGIN_IID_HOST_UI;     m_caps[1].flags = PI_PLUGIN_CAP_OPTIONAL;
 
         m_desc.name = "Example ImGui Plugin";
         m_desc.vendor = "piplugin examples";
@@ -175,7 +175,7 @@ public:
     {
         ExampleFactory* me = (ExampleFactory*)self_ptr;
         if (!out) return PI_E_INVALIDARG;
-        if (pi_guid_equal(iid, &PI_IID_UNKNOWN) || pi_guid_equal(iid, &PI_IID_PLUGIN_FACTORY)) {
+        if (pi_guid_equal(iid, &PI_IID_UNKNOWN) || pi_guid_equal(iid, &PI_PLUGIN_IID_PLUGIN_FACTORY)) {
             *out = me; me->m_base.unk.lpVtbl->pi_add_ref(self_ptr); return PI_OK;
         }
         *out = nullptr; return PI_E_NOINTERFACE;
@@ -195,7 +195,7 @@ public:
         return PI_OK;
     }
     static PiResult PI_CALL CreateInstance(void* self, const PiGuid* guid,
-                                           IPiHostServices* host, IPiPluginBase** out)
+                                           IPiPluginHostServices* host, IPiPluginBase** out)
     {
         (void)self;
         if (!guid || !out) return PI_E_INVALIDARG;

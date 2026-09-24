@@ -8,7 +8,7 @@
  *     create the process's QApplication, and the host already has one;
  *   - it implements the app's IQtDirectWidget protocol instead: the host asks
  *     for a QWidget* and adopts it with its own layout;
- *   - it declares PI_CAP_PROVIDES for that protocol, so a host that requires it
+ *   - it declares PI_PLUGIN_CAP_PROVIDES for that protocol, so a host that requires it
  *     (see the host in this directory) rejects plugins that do not implement it
  *     BEFORE instantiating them - that is what turns "silently no UI" into a
  *     named load error.
@@ -69,7 +69,7 @@ public:
         if (m_host) { pi_iunknown_release((IPiUnknown*)m_host); m_host = nullptr; }
     }
 
-    PiResult Initialize(IPiHostServices* host)
+    PiResult Initialize(IPiPluginHostServices* host)
     {
         if (m_host) return PI_OK;                 /* idempotent */
         if (!host) return PI_OK;
@@ -79,7 +79,7 @@ public:
     }
 
     /* NO IPiPluginView, deliberately: in the direct integration the UI does not
-     * travel over PI_IID_PLUGIN_VIEW (that is the adapter kit's channel, and the
+     * travel over PI_PLUGIN_IID_PLUGIN_VIEW (that is the adapter kit's channel, and the
      * kit needs to own the event loop). It travels over the app's protocol. */
     PiResult GetView(IPiPluginView** out)
     {
@@ -119,7 +119,7 @@ public:
             ++m_clicks;
             count->setText(QString::fromUtf8("button pressed %1 time(s)").arg(m_clicks));
             if (m_host)
-                pi_host_post_message(m_host, 0x8000u, (uintptr_t)m_clicks, 0);
+                pi_plugin_host_post_message(m_host, 0x8000u, (uintptr_t)m_clicks, 0);
         });
         layout->addWidget(button);
         layout->addStretch();
@@ -140,7 +140,7 @@ public:
 
 public:
     PiRefCountedBase m_base;        /* MUST be first data member */
-    IPiHostServices* m_host;        /* add-ref'd */
+    IPiPluginHostServices* m_host;        /* add-ref'd */
 
 private:
     static void Destroy(void* self) { delete static_cast<QtDirectPlugin*>(self); }
@@ -150,10 +150,10 @@ private:
         QtDirectPlugin* me = (QtDirectPlugin*)self_ptr;
         if (!out) return PI_E_INVALIDARG;
 
-        if (pi_guid_equal(iid, &PI_IID_UNKNOWN) || pi_guid_equal(iid, &PI_IID_PLUGIN_BASE)) {
+        if (pi_guid_equal(iid, &PI_IID_UNKNOWN) || pi_guid_equal(iid, &PI_PLUGIN_IID_PLUGIN_BASE)) {
             *out = me; pi_refcounted_add_ref(me); return PI_OK;
         }
-        if (pi_guid_equal(iid, &PI_QT_DIRECT_WIDGET_IID)) {
+        if (pi_guid_equal(iid, &PI_PLUGIN_QT_DIRECT_WIDGET_IID)) {
             QtDirectWidgetIfc* ifc = new QtDirectWidgetIfc(me);
             if (!ifc) return PI_E_OUTOFMEMORY;
             *out = &ifc->m_base;
@@ -163,7 +163,7 @@ private:
         return PI_E_NOINTERFACE;
     }
 
-    static PiResult PI_CALL InitThunk(void* self_ptr, IPiHostServices* host)
+    static PiResult PI_CALL InitThunk(void* self_ptr, IPiPluginHostServices* host)
     {
         return ((QtDirectPlugin*)self_ptr)->Initialize(host);
     }
@@ -198,7 +198,7 @@ QtDirectWidgetIfc::QtDirectWidgetIfc(QtDirectPlugin* owner) : m_base(), m_owner(
 PiResult PI_CALL QtDirectWidgetIfc::Qi(void* self_ptr, const PiGuid* iid, void** out)
 {
     if (!out) return PI_E_INVALIDARG;
-    if (pi_guid_equal(iid, &PI_IID_UNKNOWN) || pi_guid_equal(iid, &PI_QT_DIRECT_WIDGET_IID)) {
+    if (pi_guid_equal(iid, &PI_IID_UNKNOWN) || pi_guid_equal(iid, &PI_PLUGIN_QT_DIRECT_WIDGET_IID)) {
         *out = self_ptr; pi_refcounted_add_ref(self_ptr); return PI_OK;
     }
     *out = nullptr;
@@ -237,13 +237,13 @@ public:
     QtDirectFactory()
     {
         pi_refcounted_init_with_destroy(&m_base, (const IPiUnknownVtbl*)&s_vtbl, &Destroy);
-        pi_descriptor_init(&m_desc);
+        pi_plugin_descriptor_init(&m_desc);
 
         /* The one declaration the host's gate reads: "I implement the app's
-         * widget protocol". Note what is NOT here: PI_IID_PLUGIN_VIEW (there is
-         * no IPiPluginView in this design) and PI_IID_HOST_UI (the host's layout
+         * widget protocol". Note what is NOT here: PI_PLUGIN_IID_PLUGIN_VIEW (there is
+         * no IPiPluginView in this design) and PI_PLUGIN_IID_HOST_UI (the host's layout
          * is the container, not a native window). */
-        m_caps[0].iid   = PI_QT_DIRECT_WIDGET_IID; m_caps[0].flags = PI_CAP_PROVIDES;
+        m_caps[0].iid   = PI_PLUGIN_QT_DIRECT_WIDGET_IID; m_caps[0].flags = PI_PLUGIN_CAP_PROVIDES;
 
         m_desc.name             = "Example Qt Direct Plugin";
         m_desc.vendor           = "piplugin examples";
@@ -258,7 +258,7 @@ public:
     {
         QtDirectFactory* me = (QtDirectFactory*)self_ptr;
         if (!out) return PI_E_INVALIDARG;
-        if (pi_guid_equal(iid, &PI_IID_UNKNOWN) || pi_guid_equal(iid, &PI_IID_PLUGIN_FACTORY)) {
+        if (pi_guid_equal(iid, &PI_IID_UNKNOWN) || pi_guid_equal(iid, &PI_PLUGIN_IID_PLUGIN_FACTORY)) {
             *out = me; pi_refcounted_add_ref(me); return PI_OK;
         }
         *out = nullptr;
@@ -277,7 +277,7 @@ public:
         return PI_OK;
     }
     static PiResult PI_CALL CreateInstance(void* self, const PiGuid* guid,
-                                           IPiHostServices* host, IPiPluginBase** out)
+                                           IPiPluginHostServices* host, IPiPluginBase** out)
     {
         (void)self;
         if (!guid || !out) return PI_E_INVALIDARG;

@@ -5,7 +5,7 @@
 #   load -> attach -> idle frames -> resize grow -> resize restore -> detach -> unload
 # repeated $Cycles times. Exit code 0 = every plugin passed, 2 = something failed.
 #
-# The host keeps pi_test_host.log open with an exclusive fopen(...,"a") while
+# The host keeps pi_plugin_test_host.log open with an exclusive fopen(...,"a") while
 # it lives, so the log is read through FileShare.ReadWrite.
 #
 # -BinDir / -OutFile default to paths derived from the repository root (this
@@ -34,7 +34,7 @@ if (-not (Test-Path $exe)) {
     Write-Host "  hint: pass -BinDir <repo>\bin\<CONFIG> matching the build configuration"
     exit 1
 }
-$log = Join-Path $BinDir "pi_test_host.log"
+$log = Join-Path $BinDir "pi_plugin_test_host.log"
 Remove-Item $log -Force -ErrorAction SilentlyContinue
 
 $p = Start-Process -FilePath $exe `

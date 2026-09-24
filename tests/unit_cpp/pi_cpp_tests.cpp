@@ -2,10 +2,10 @@
  * piplugin - C++ RAII layer tests (tests/unit_cpp)
  *
  * Covers include/piplugin/pi_cpp.h - the optional C++ sugar over the C ABI:
- *   PiPtr<T>          adopt / add_ref / put / reset / detach / move / qi_to
- *   PiIidOf<T>        interface type -> framework IID
- *   PiUniqueModule    module RAII + load + factory
- *   pi_cpp_destroy<T> the PiRefCountedBase destroy thunk
+ *   PiPluginPtr<T>          adopt / add_ref / put / reset / detach / move / qi_to
+ *   PiPluginIidOf<T>        interface type -> framework IID
+ *   PiPluginUniqueModule    module RAII + load + factory
+ *   pi_plugin_cpp_destroy<T> the PiRefCountedBase destroy thunk
  *
  * Two kinds of assertion, on purpose:
  *
@@ -17,7 +17,7 @@
  *      acceptance the roadmap asks for ("no leak"), and it is why this is an
  *      executable of its own instead of a section inside the C unit suite.
  *
- * Run with a plugin DLL as argv[1] to exercise PiUniqueModule against a real
+ * Run with a plugin DLL as argv[1] to exercise PiPluginUniqueModule against a real
  * module; without one, only the loader's failure path is checked.
  */
 #include "piplugin/pi_cpp.h"
@@ -27,7 +27,7 @@
 #include <type_traits>
 
 #if defined(_MSC_VER) && defined(_DEBUG)
-#  define PI_CPP_CRT_LEAK_CHECK 1
+#  define PI_PLUGIN_CPP_CRT_LEAK_CHECK 1
 #  include <crtdbg.h>
 #endif
 
@@ -116,36 +116,36 @@ static Counted* CountedNew()
     return obj;
 }
 
-/* 应用侧给自定义接口补 PiIidOf 特化（pi_cpp.h 顶部注释里的用法）：
+/* 应用侧给自定义接口补 PiPluginIidOf 特化（pi_cpp.h 顶部注释里的用法）：
  * 有了它，qi_to<Counted>() 不带 IID 也能编译。 */
-template <> struct PiIidOf<Counted> {
+template <> struct PiPluginIidOf<Counted> {
     static const PiGuid& get() { return COUNTED_IID; }
 };
 
 /* --------------------------------------------------------------------------
  * Compile-time contract of the handle types
  * -------------------------------------------------------------------------- */
-static_assert(!std::is_copy_constructible<PiPtr<IPiUnknown> >::value,
-              "PiPtr must not be copyable - an implicit copy is an unbalanced AddRef");
-static_assert(!std::is_copy_assignable<PiPtr<IPiUnknown> >::value,
-              "PiPtr must not be copy-assignable");
-static_assert(std::is_move_constructible<PiPtr<IPiUnknown> >::value,
-              "PiPtr must be movable");
-static_assert(std::is_move_assignable<PiPtr<IPiUnknown> >::value,
-              "PiPtr must be move-assignable");
-static_assert(!std::is_convertible<IPiUnknown*, PiPtr<IPiUnknown> >::value,
-              "PiPtr's constructor is explicit: adopting a reference must be spelled out");
-static_assert(!std::is_copy_constructible<PiUniqueModule>::value,
-              "PiUniqueModule must not be copyable - unloading twice is a double free");
-static_assert(std::is_move_constructible<PiUniqueModule>::value,
-              "PiUniqueModule must be movable");
+static_assert(!std::is_copy_constructible<PiPluginPtr<IPiUnknown> >::value,
+              "PiPluginPtr must not be copyable - an implicit copy is an unbalanced AddRef");
+static_assert(!std::is_copy_assignable<PiPluginPtr<IPiUnknown> >::value,
+              "PiPluginPtr must not be copy-assignable");
+static_assert(std::is_move_constructible<PiPluginPtr<IPiUnknown> >::value,
+              "PiPluginPtr must be movable");
+static_assert(std::is_move_assignable<PiPluginPtr<IPiUnknown> >::value,
+              "PiPluginPtr must be move-assignable");
+static_assert(!std::is_convertible<IPiUnknown*, PiPluginPtr<IPiUnknown> >::value,
+              "PiPluginPtr's constructor is explicit: adopting a reference must be spelled out");
+static_assert(!std::is_copy_constructible<PiPluginUniqueModule>::value,
+              "PiPluginUniqueModule must not be copyable - unloading twice is a double free");
+static_assert(std::is_move_constructible<PiPluginUniqueModule>::value,
+              "PiPluginUniqueModule must be movable");
 
 /* --------------------------------------------------------------------------
- * PiPtr
+ * PiPluginPtr
  * -------------------------------------------------------------------------- */
 static void TestPiPtr()
 {
-    Section("PiPtr：接管 / 加引用 / 移动 / detach / put / reset / qi_to");
+    Section("PiPluginPtr：接管 / 加引用 / 移动 / detach / put / reset / qi_to");
 
     /* 每个用例各自从零开始数：这样"放了几个引用"就是每个用例里的绝对数字，
      * 而不是靠累加推断。 */
@@ -157,7 +157,7 @@ static void TestPiPtr()
         Counted* raw = CountedNew();
         CHECK_EQ_INT(raw->base.ref_count, 1);
         {
-            PiPtr<Counted> held(raw);            /* adopt：不再加引用 */
+            PiPluginPtr<Counted> held(raw);            /* adopt：不再加引用 */
             CHECK_EQ_INT(raw->base.ref_count, 1);
             CHECK(held.is_valid());
             CHECK(held.get() == raw);
@@ -171,9 +171,9 @@ static void TestPiPtr()
     {
         g_live_objects = 0; g_destroy_calls = 0;
         Counted* raw = CountedNew();
-        PiPtr<Counted> first(raw);               /* adopt */
+        PiPluginPtr<Counted> first(raw);               /* adopt */
         {
-            PiPtr<Counted> second = PiPtr<Counted>::add_ref(first.get());
+            PiPluginPtr<Counted> second = PiPluginPtr<Counted>::add_ref(first.get());
             CHECK_EQ_INT(raw->base.ref_count, 2);
             CHECK(second.get() == raw);
         }
@@ -187,14 +187,14 @@ static void TestPiPtr()
     {
         g_live_objects = 0; g_destroy_calls = 0;
         Counted* raw = CountedNew();
-        PiPtr<Counted> source(raw);
-        PiPtr<Counted> moved(static_cast<PiPtr<Counted>&&>(source));
+        PiPluginPtr<Counted> source(raw);
+        PiPluginPtr<Counted> moved(static_cast<PiPluginPtr<Counted>&&>(source));
         CHECK(!source.is_valid());
         CHECK(moved.get() == raw);
         CHECK_EQ_INT(raw->base.ref_count, 1);
 
-        PiPtr<Counted> assigned;
-        assigned = static_cast<PiPtr<Counted>&&>(moved);
+        PiPluginPtr<Counted> assigned;
+        assigned = static_cast<PiPluginPtr<Counted>&&>(moved);
         CHECK(!moved.is_valid());
         CHECK(assigned.get() == raw);
         CHECK_EQ_INT(raw->base.ref_count, 1);
@@ -206,7 +206,7 @@ static void TestPiPtr()
     {
         g_live_objects = 0; g_destroy_calls = 0;
         Counted* raw = CountedNew();
-        PiPtr<Counted> held(raw);
+        PiPluginPtr<Counted> held(raw);
         Counted* out = held.detach();
         CHECK(out == raw);
         CHECK(!held.is_valid());
@@ -221,7 +221,7 @@ static void TestPiPtr()
     {
         g_live_objects = 0; g_destroy_calls = 0;
         Counted* first = CountedNew();            /* 我们持有 first 的初始引用 */
-        PiPtr<Counted> held(first);
+        PiPluginPtr<Counted> held(first);
 
         Counted* second = CountedNew();           /* 我们持有 second 的初始引用 */
         void* out = NULL;
@@ -245,34 +245,34 @@ static void TestPiPtr()
     }
 
     /* 6) qi_to：命中 -> 持有新引用；未命中 -> 空句柄（不是野指针）。
-     *    带 IID 与不带 IID（走 PiIidOf 特化）两种写法都要对。 */
+     *    带 IID 与不带 IID（走 PiPluginIidOf 特化）两种写法都要对。 */
     {
         g_live_objects = 0; g_destroy_calls = 0;
         Counted* raw = CountedNew();
-        PiPtr<Counted> held(raw);
+        PiPluginPtr<Counted> held(raw);
 
-        PiPtr<Counted> by_iid = held.qi_to<Counted>(COUNTED_ALT_IID);
+        PiPluginPtr<Counted> by_iid = held.qi_to<Counted>(COUNTED_ALT_IID);
         CHECK(by_iid.is_valid());
         CHECK(by_iid.get() == raw);
         CHECK_EQ_INT(raw->base.ref_count, 2);
 
-        PiPtr<Counted> by_trait = held.qi_to<Counted>();
+        PiPluginPtr<Counted> by_trait = held.qi_to<Counted>();
         CHECK(by_trait.is_valid());
         CHECK_EQ_INT(raw->base.ref_count, 3);
 
-        PiPtr<Counted> miss = held.qi_to<Counted>(PI_IID_PLUGIN_VIEW);
+        PiPluginPtr<Counted> miss = held.qi_to<Counted>(PI_PLUGIN_IID_PLUGIN_VIEW);
         CHECK(!miss.is_valid());
         CHECK(miss.get() == NULL);
         CHECK_EQ_INT(raw->base.ref_count, 3);
 
         /* 空句柄 QI 也是空句柄，不会解引用 */
-        PiPtr<Counted> empty;
+        PiPluginPtr<Counted> empty;
         CHECK(!empty.qi_to<Counted>().is_valid());
     }
     CHECK_EQ_INT(g_destroy_calls, 1);
     CHECK_EQ_INT(g_live_objects, 0);
 
-    /* 7) pi_cpp_destroy<T>：引用归零时真的跑 C++ 析构函数（插件的实际用法） */
+    /* 7) pi_plugin_cpp_destroy<T>：引用归零时真的跑 C++ 析构函数（插件的实际用法） */
     {
         struct WithDtor {
             PiRefCountedBase base;   /* MUST be first */
@@ -284,7 +284,7 @@ static void TestPiPtr()
         WithDtor* obj = new WithDtor();
         obj->dtor_calls = &dtor_calls;
         pi_refcounted_init_with_destroy(&obj->base, &s_counted_vtbl,
-                                        &pi_cpp_destroy<WithDtor>);
+                                        &pi_plugin_cpp_destroy<WithDtor>);
         CHECK_EQ_INT(dtor_calls, 0);
 
         pi_iunknown_release((IPiUnknown*)&obj->base);
@@ -293,16 +293,16 @@ static void TestPiPtr()
 }
 
 /* --------------------------------------------------------------------------
- * PiUniqueModule
+ * PiPluginUniqueModule
  * -------------------------------------------------------------------------- */
 static void TestPiUniqueModule(const char* plugin_path)
 {
-    Section("PiUniqueModule：加载失败路径 + 真实模块生命周期");
+    Section("PiPluginUniqueModule：加载失败路径 + 真实模块生命周期");
 
     /* 1) 失败路径：不存在的 DLL -> PI_E_NOTFOUND，句柄保持为空 */
     {
-        PiUniqueModule module;
-        CHECK_EQ_INT(PiUniqueModule::load("Z:\\no\\such\\piplugin\\missing.dll", module),
+        PiPluginUniqueModule module;
+        CHECK_EQ_INT(PiPluginUniqueModule::load("Z:\\no\\such\\piplugin\\missing.dll", module),
                      PI_E_NOTFOUND);
         CHECK(!module);
         CHECK(module.get() == NULL);
@@ -322,21 +322,21 @@ static void TestPiUniqueModule(const char* plugin_path)
      * 析构：plugin -> factory -> module -> host 正好就是七步卸载序列要求的顺序，
      * 模块一定在它创建的每个对象之后卸载。 */
     {
-        PiPtr<IPiHostServices> host;
-        CHECK_EQ_INT(pi_host_services_create_default(NULL, NULL, PI_INVALID_WINDOW,
+        PiPluginPtr<IPiPluginHostServices> host;
+        CHECK_EQ_INT(pi_plugin_host_services_create_default(NULL, NULL, PI_INVALID_WINDOW,
                                                      host.put()), PI_OK);
         CHECK(host.is_valid());
 
-        PiUniqueModule module;
-        CHECK_EQ_INT(PiUniqueModule::load(plugin_path, module), PI_OK);
+        PiPluginUniqueModule module;
+        CHECK_EQ_INT(PiPluginUniqueModule::load(plugin_path, module), PI_OK);
         CHECK(module);
         if (!module) return;
 
-        PiPtr<IPiPluginFactory> factory = module.factory();
+        PiPluginPtr<IPiPluginFactory> factory = module.factory();
         CHECK(factory.is_valid());
 
-        const PiPluginDescriptor* desc = NULL;   /* 借用指针：禁止包进 PiPtr */
-        pi_factory_get_descriptor(factory.get(), &desc);
+        const PiPluginDescriptor* desc = NULL;   /* 借用指针：禁止包进 PiPluginPtr */
+        pi_plugin_factory_get_descriptor(factory.get(), &desc);
         CHECK(desc != NULL);
         if (desc) {
             printf("  plugin: %s %s\n",
@@ -345,16 +345,16 @@ static void TestPiUniqueModule(const char* plugin_path)
 
         PiGuid class_guid;
         memset(&class_guid, 0, sizeof(class_guid));
-        CHECK_EQ_INT(pi_factory_get_class_guid(factory.get(), 0, &class_guid), PI_OK);
+        CHECK_EQ_INT(pi_plugin_factory_get_class_guid(factory.get(), 0, &class_guid), PI_OK);
 
-        PiPtr<IPiPluginBase> plugin;
-        CHECK_EQ_INT(pi_factory_create_instance(factory.get(), &class_guid,
+        PiPluginPtr<IPiPluginBase> plugin;
+        CHECK_EQ_INT(pi_plugin_factory_create_instance(factory.get(), &class_guid,
                                                 host.get(), plugin.put()), PI_OK);
         CHECK(plugin.is_valid());
         CHECK_EQ_INT(pi_plugin_initialize(plugin.get(), host.get()), PI_OK);
 
-        /* headless 宿主（无窗口）：IPiHostUI 必须查不到，而且失败给的是空句柄 */
-        PiPtr<IPiHostUI> ui = host.qi_to<IPiHostUI>();
+        /* headless 宿主（无窗口）：IPiPluginHostUI 必须查不到，而且失败给的是空句柄 */
+        PiPluginPtr<IPiPluginHostUI> ui = host.qi_to<IPiPluginHostUI>();
         CHECK(!ui.is_valid());
         CHECK(ui.get() == NULL);
 
@@ -373,7 +373,7 @@ static void TestPiUniqueModule(const char* plugin_path)
  * -------------------------------------------------------------------------- */
 int main(int argc, char** argv)
 {
-#if defined(PI_CPP_CRT_LEAK_CHECK)
+#if defined(PI_PLUGIN_CPP_CRT_LEAK_CHECK)
     /* Debug CRT：退出时把所有未释放的分配打出来，_CrtDumpMemoryLeaks() 的返回值
      * 决定本次运行是否算失败。 */
     _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
@@ -387,8 +387,8 @@ int main(int argc, char** argv)
 
     printf("== checks=%u failures=%u ==\n", g_checks, g_failures);
 
-#if defined(PI_CPP_CRT_LEAK_CHECK)
-    /* 最后一道闸：此刻所有 PiPtr / PiUniqueModule 都已析构，任何漏掉的
+#if defined(PI_PLUGIN_CPP_CRT_LEAK_CHECK)
+    /* 最后一道闸：此刻所有 PiPluginPtr / PiPluginUniqueModule 都已析构，任何漏掉的
      * AddRef/release 都会在这里现形。报告写到调试输出，返回值进退出码。 */
     if (_CrtDumpMemoryLeaks()) {
         ++g_failures;

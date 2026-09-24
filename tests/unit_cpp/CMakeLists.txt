@@ -40,7 +40,7 @@ add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
 
 # ------- ctest 注册 -------------
 # 只按退出码判定（0 = 全过，其中已包含 Debug CRT 的泄漏判定）。
-# 有 imgui 测试插件时把它的路径传进去，让 PiUniqueModule 对着真实模块跑一遍
+# 有 imgui 测试插件时把它的路径传进去，让 PiPluginUniqueModule 对着真实模块跑一遍
 # 完整的加载 -> 实例化 -> 卸载链；CI 上 Qt 是关的，imgui 插件则在。
 if(TARGET pi_test_plugin_imgui)
     add_test(NAME unit_cpp

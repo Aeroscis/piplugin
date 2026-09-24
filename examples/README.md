@@ -7,7 +7,7 @@ roadmap **ECO-03**：把 `docs/tutorial/` 里的代码段变成能跑的工程�
 | 例子 | 是什么 | 需要什么 | 谁驱动它 |
 |---|---|---|---|
 | `minimal_host/` | 一个窗口 + 一个容器 + 一个插件的宿主（view / service 都能驱） | 宿主 kit L0 | — |
-| `service_plugin/` | headless 服务插件（`IPiService`：start/poll/status/stop） | 无（纯 C） | `minimal_host` |
+| `service_plugin/` | headless 服务插件（`IPiPluginService`：start/poll/status/stop） | 无（纯 C） | `minimal_host` |
 | `minimal_plugin_imgui/` | 最小 imgui 插件（一个 draw 回调） | conan imgui + imgui 套件 | `minimal_host` |
 | `minimal_plugin_qt/` | 最小 Qt 插件（一个 widget 工厂） | 本地 Qt5 + Qt 套件（SHARED） | `minimal_host` |
 | `qt_host_direct/` | **Qt 宿主直连 Qt 插件**（宿主自己持有 `QApplication`，收编插件的 `QWidget*`，不走套件） | 本地 Qt5 + 宿主 kit L0 | 自己（一个 exe + 一个插件，带 `--self-test`） |

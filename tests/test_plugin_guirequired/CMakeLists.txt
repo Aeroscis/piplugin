@@ -1,6 +1,6 @@
 # ./tests/test_plugin_guirequired/CMakeLists.txt
 #
-# ECO-08 的负向测试件：一个**完全合法**但声明 `PI_IID_HOST_UI (REQUIRED)` 的插件。
+# ECO-08 的负向测试件：一个**完全合法**但声明 `PI_PLUGIN_IID_HOST_UI (REQUIRED)` 的插件。
 # 用来断言 headless 宿主在 create_instance 之前就以"缺少必需能力"为由拒绝它。
 cmake_minimum_required(VERSION 3.23)
 

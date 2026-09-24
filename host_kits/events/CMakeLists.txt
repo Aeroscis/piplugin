@@ -1,8 +1,8 @@
 # ./host_kits/events/CMakeLists.txt
 #
-# 宿主侧事件路由：IPiHostEvents 的一个现成实现（订阅表 + 有界队列 + pump + owner 退订）。
+# 宿主侧事件路由：IPiPluginHostEvents 的一个现成实现（订阅表 + 有界队列 + pump + owner 退订）。
 # 与 L0 同一形态：纯 C、零第三方依赖、STATIC、只给宿主用（插件只看到核心头里的接口）。
-# 它不是必须的 —— 宿主完全可以自己实现 IPiHostEvents；这一层只是把重复的记账消掉。
+# 它不是必须的 —— 宿主完全可以自己实现 IPiPluginHostEvents；这一层只是把重复的记账消掉。
 cmake_minimum_required(VERSION 3.23)
 
 # include GNU best practice

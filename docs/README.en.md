@@ -39,7 +39,7 @@ Existing plugin schemes each tie you to one thing:
 | **LV2-style capability negotiation** | The descriptor declares `REQUIRED` / `OPTIONAL` / `PROVIDES` per GUID, and the host decides to accept or reject **before instantiating** |
 | **Gates in both directions** | The host checks what the plugin requires *and* requires what its own ecosystem needs from the plugin — an app can define a protocol without forking the framework |
 | **Version gate** | The plugin declares `api_version`; a different major, or a plugin newer than the host, is rejected before `create_instance` (`PI_E_VERSIONMISMATCH`) |
-| **Same API GUI or headless** | A headless host simply does not expose `IPiHostUI`; plugins that marked it OPTIONAL degrade to running without a UI |
+| **Same API GUI or headless** | A headless host simply does not expose `IPiPluginHostUI`; plugins that marked it OPTIONAL degrade to running without a UI |
 | **Embeds any GUI toolkit** | The plugin hands out its native window handle and the host embeds it in its own container; adapter kits absorb the Qt / imgui differences |
 | **Zero-dependency core** | The core needs only the platform's own libraries — no C++ runtime, no vendored third-party code |
 | **Host-side kits** | Optional static libraries that fix in place loading, the gates and the seven-step unload sequence (`piplugin_host`), plus Qt and D3D11 embedding glue (`piplugin_host_qt`, `piplugin_host_dx11`) |
@@ -120,16 +120,16 @@ there too). Writing a plugin: [`tutorial/write-plugin.md`](tutorial/write-plugin
 ```
 Host
   ├─ GUI host        (imgui / Qt / raw Win32)
-  ├─ Headless host   (task server / CLI; no IPiHostUI, plugins degrade)
+  ├─ Headless host   (task server / CLI; no IPiPluginHostUI, plugins degrade)
   └─ any host
-        │  pi_module_load / pi_host_create_plugin
+        │  pi_plugin_module_load / pi_plugin_host_create_plugin
         ▼  dynamic loading (LoadLibrary / dlopen)
 Plugin DLL (.dll / .so / .dylib)
   └─ pi_plugin_entry() -> IPiPluginFactory
        ├─ PiPluginDescriptor (name / version / capabilities)
        └─ CreateInstance -> IPiPluginBase
             ├─ IPiPluginView  (GUI plugins: attach / on_idle / on_resize)
-            └─ IPiService     (headless / service plugins)
+            └─ IPiPluginService     (headless / service plugins)
 ```
 
 The full architecture, interface family and threading model are in

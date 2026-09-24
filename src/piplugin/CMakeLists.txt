@@ -41,7 +41,6 @@ set(HEADER_FILE_LIST
     ../../include/piplugin/pi_plugin_host_services.h
     ../../include/piplugin/pi_plugin_service.h
     ../../include/piplugin/pi_plugin_types.h
-    ../../include/piplugin/pi_plugin_unknown.h
     ../../include/piplugin/pi_plugin_view.h
     )
 
@@ -52,6 +51,11 @@ set(TARGET_SRC_FILE_LIST
 set(TARGET_HEADER_FILE_LIST
     ${HEADER_FILE_LIST}
     )
+
+# 家族根层（pibase）：结果码词汇 / PiGuid / PiNativeWindow / IPiUnknown / ABI 与平台管线宏。
+# 它是 header-only 的 INTERFACE target，没有二进制可链接；但它提供的 include 目录必须
+# 经由 PUBLIC 传播，否则消费者拿不到 <pibase/pi_base.h>。
+find_package(pibase REQUIRED)
 
 # add library target
 add_library(${TARGET_NAME} SHARED)                           # 本体
@@ -97,6 +101,9 @@ target_include_directories(${TARGET_NAME} PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
+
+# 家族根层依赖（PUBLIC：随导出 target 一起传播给消费者）
+target_link_libraries(${TARGET_NAME} PUBLIC pibase::pibase)
 
 # third party（框架本体无第三方依赖；windows 平台系统库）
 if(WIN32)

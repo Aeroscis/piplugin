@@ -25,13 +25,13 @@ A. install tree
    == piplugin packaged consumer ==
    PI_PLUGIN_API_VERSION = 0.4 (0x00000004)
    core + host kit L0 + event router: OK
-   imgui adapter kit linked: pi_imgui_view_create = 00007FF6BB971B3B
+   imgui adapter kit linked: pi_plugin_imgui_view_create = 00007FF6BB971B3B
    RESULT: PASS
 B. Conan package
    == piplugin packaged consumer ==
    PI_PLUGIN_API_VERSION = 0.4 (0x00000004)
    core + host kit L0 + event router: OK
-   imgui adapter kit linked: pi_imgui_view_create = 00007FF60E941B3B
+   imgui adapter kit linked: pi_plugin_imgui_view_create = 00007FF60E941B3B
    RESULT: PASS
 ```
 

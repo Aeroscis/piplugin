@@ -6,20 +6,20 @@
  * unsubscribes):
  *
  *   1. the host installs the optional router through
- *      pi_host_services_create_ex()'s extra-QI hook (channel B, APP-01), and the
+ *      pi_plugin_host_services_create_ex()'s extra-QI hook (channel B, APP-01), and the
  *      session finds it by querying the host object - the same path a plugin uses;
  *   2. the host subscribes as the broker, and checks that unsubscribe really
  *      stops delivery (and that a second unsubscribe is an error);
  *   3. plugin -> host: the plugin publishes "ready" while it is initialised;
- *   4. host -> plugin by ADDRESS: pi_host_session_deliver_event() pushes "welcome"
- *      into the plugin's IPiEventSink;
+ *   4. host -> plugin by ADDRESS: pi_plugin_host_session_deliver_event() pushes "welcome"
+ *      into the plugin's IPiPluginEventSink;
  *   5. plugin -> host: the plugin publishes "ack" from inside its sink - and the
  *      pump rule is checked too (an event published from a callback is delivered
  *      by the NEXT pump, never re-entrantly);
  *   6. host -> everyone by TOPIC: a broadcast reaches the plugin because the
  *      plugin subscribed to it itself;
  *   7. D9: the plugin deliberately never unsubscribes, so unloading it proves the
- *      host kit's pi_host_events_drop_owner() removes the subscription - the host
+ *      host kit's pi_plugin_host_events_drop_owner() removes the subscription - the host
  *      publishes the same broadcast afterwards and nothing must fire;
  *   8. graceful degradation: a plugin with no sink loads fine, and delivering to
  *      it returns PI_E_NOINTERFACE instead of failing the load.
@@ -34,8 +34,8 @@
 #include <stdio.h>
 #include <string.h>
 
-static PiEventRouter*       g_router   = NULL;
-static IPiHostServices*     g_services = NULL;
+static PiPluginEventRouter*       g_router   = NULL;
+static IPiPluginHostServices*     g_services = NULL;
 static PiPluginHostSession* g_session  = NULL;
 
 static int      g_failures = 0;
@@ -88,7 +88,7 @@ static uint32_t Pump(void)
 {
     uint32_t delivered;
     ++g_pumps;
-    delivered = pi_event_router_pump(g_router);
+    delivered = pi_plugin_event_router_pump(g_router);
     return delivered;
 }
 
@@ -106,53 +106,53 @@ static void CopyString(char* dst, size_t dst_size, const char* src)
 /* --------------------------------------------------------------------------
  * The host's own subscriptions (the "broker" role)
  * -------------------------------------------------------------------------- */
-static void OnReady(void* user_data, const PiEvent* event)
+static void OnReady(void* user_data, const PiPluginEvent* event)
 {
     (void)user_data;
     ++g_ready_count;
     g_ready_at_pump = g_pumps;
     CopyString(g_ready_plugin, sizeof(g_ready_plugin),
-               pi_test_event_payload(event, PI_TEST_EVENTS_KEY_PLUGIN));
+               pi_plugin_test_event_payload(event, PI_PLUGIN_TEST_EVENTS_KEY_PLUGIN));
 
     /* Publish from inside a callback: allowed, and the contract says it must not
      * be delivered re-entrantly - the next pump picks it up. */
     if (!g_published_from_callback) {
         PiPluginProperty prop;
-        PiEvent          nested;
+        PiPluginEvent          nested;
         g_published_from_callback = 1;
         prop.key = "origin"; prop.value = "callback";
         memset(&nested, 0, sizeof(nested));
-        nested.type          = PI_EVENT_NOTIFY;
+        nested.type          = PI_PLUGIN_EVENT_NOTIFY;
         nested.topic         = "com.example.host.from_callback";
         nested.payload       = &prop;
         nested.payload_count = 1;
-        (void)pi_host_events_publish(pi_event_router_host_events(g_router), &nested);
+        (void)pi_plugin_host_events_publish(pi_plugin_event_router_host_events(g_router), &nested);
     }
 }
 
-static void OnAck(void* user_data, const PiEvent* event)
+static void OnAck(void* user_data, const PiPluginEvent* event)
 {
     (void)user_data;
     ++g_ack_count;
     CopyString(g_ack_value, sizeof(g_ack_value),
-               pi_test_event_payload(event, PI_TEST_EVENTS_KEY_ACKED));
+               pi_plugin_test_event_payload(event, PI_PLUGIN_TEST_EVENTS_KEY_ACKED));
 }
 
-static void OnSawBroadcast(void* user_data, const PiEvent* event)
+static void OnSawBroadcast(void* user_data, const PiPluginEvent* event)
 {
     (void)user_data;
     ++g_saw_count;
     CopyString(g_saw_count_text, sizeof(g_saw_count_text),
-               pi_test_event_payload(event, PI_TEST_EVENTS_KEY_COUNT));
+               pi_plugin_test_event_payload(event, PI_PLUGIN_TEST_EVENTS_KEY_COUNT));
 }
 
-static void OnNobody(void* user_data, const PiEvent* event)
+static void OnNobody(void* user_data, const PiPluginEvent* event)
 {
     (void)user_data; (void)event;
     ++g_nobody_count;   /* must stay 0 after the subscription was dropped */
 }
 
-static void OnFromCallback(void* user_data, const PiEvent* event)
+static void OnFromCallback(void* user_data, const PiPluginEvent* event)
 {
     (void)user_data; (void)event;
     ++g_from_callback_count;
@@ -162,14 +162,14 @@ static void OnFromCallback(void* user_data, const PiEvent* event)
 /* --------------------------------------------------------------------------
  * Helpers
  * -------------------------------------------------------------------------- */
-static PiEvent MakeWelcomeEvent(PiPluginProperty* prop)
+static PiPluginEvent MakeWelcomeEvent(PiPluginProperty* prop)
 {
-    PiEvent event;
-    prop->key   = PI_TEST_EVENTS_KEY_GREETING;
+    PiPluginEvent event;
+    prop->key   = PI_PLUGIN_TEST_EVENTS_KEY_GREETING;
     prop->value = "hello";
     memset(&event, 0, sizeof(event));
-    event.type          = PI_EVENT_REQUEST;
-    event.topic         = PI_TEST_EVENTS_TOPIC_WELCOME;
+    event.type          = PI_PLUGIN_EVENT_REQUEST;
+    event.topic         = PI_PLUGIN_TEST_EVENTS_TOPIC_WELCOME;
     event.payload       = prop;
     event.payload_count = 1;
     return event;
@@ -178,23 +178,23 @@ static PiEvent MakeWelcomeEvent(PiPluginProperty* prop)
 static void PublishBroadcast(const char* which)
 {
     PiPluginProperty prop;
-    PiEvent          event;
-    prop.key = PI_TEST_EVENTS_KEY_N; prop.value = which;
+    PiPluginEvent          event;
+    prop.key = PI_PLUGIN_TEST_EVENTS_KEY_N; prop.value = which;
     memset(&event, 0, sizeof(event));
-    event.type          = PI_EVENT_NOTIFY;
-    event.topic         = PI_TEST_EVENTS_TOPIC_BROADCAST;
+    event.type          = PI_PLUGIN_EVENT_NOTIFY;
+    event.topic         = PI_PLUGIN_TEST_EVENTS_TOPIC_BROADCAST;
     event.payload       = &prop;
     event.payload_count = 1;
-    (void)pi_host_events_publish(pi_event_router_host_events(g_router), &event);
+    (void)pi_plugin_host_events_publish(pi_plugin_event_router_host_events(g_router), &event);
 }
 
 static void PublishNobody(void)
 {
-    PiEvent event;
+    PiPluginEvent event;
     memset(&event, 0, sizeof(event));
-    event.type  = PI_EVENT_NOTIFY;
-    event.topic = PI_TEST_EVENTS_TOPIC_NOBODY;
-    (void)pi_host_events_publish(pi_event_router_host_events(g_router), &event);
+    event.type  = PI_PLUGIN_EVENT_NOTIFY;
+    event.topic = PI_PLUGIN_TEST_EVENTS_TOPIC_NOBODY;
+    (void)pi_plugin_host_events_publish(pi_plugin_event_router_host_events(g_router), &event);
 }
 
 /* --------------------------------------------------------------------------
@@ -205,13 +205,13 @@ int main(int argc, char** argv)
     const char* events_plugin = (argc > 1) ? argv[1] : "pi_test_plugin_events.dll";
     const char* plain_plugin  = (argc > 2) ? argv[2] : "pi_test_plugin_imgui.dll";
 
-    IPiHostEvents*        events = NULL;
-    PiEventRouterStats    stats;
+    IPiPluginHostEvents*        events = NULL;
+    PiPluginEventRouterStats    stats;
     uint32_t              h_ready = 0, h_ack = 0, h_saw = 0, h_nobody = 0, h_callback = 0;
-    uint32_t              slot = PI_HOST_SESSION_INVALID_SLOT;
-    uint32_t              plain_slot = PI_HOST_SESSION_INVALID_SLOT;
+    uint32_t              slot = PI_PLUGIN_HOST_SESSION_INVALID_SLOT;
+    uint32_t              plain_slot = PI_PLUGIN_HOST_SESSION_INVALID_SLOT;
     PiPluginProperty      greeting;
-    PiEvent               welcome;
+    PiPluginEvent               welcome;
     uint64_t              dropped_subs_before = 0;
 
     printf("== piplugin events test host (APP-06) ==\n");
@@ -219,36 +219,36 @@ int main(int argc, char** argv)
 
     /* 1) router + host object (channel B) + session */
     printf("- wiring\n");
-    CheckEqInt(pi_event_router_create(&g_router), PI_OK, "router created");
-    CheckEqInt(pi_host_services_create_ex(&HostMessageProc, NULL, PI_INVALID_WINDOW,
-                                          &pi_event_router_extra_qi, g_router, &g_services),
+    CheckEqInt(pi_plugin_event_router_create(&g_router), PI_OK, "router created");
+    CheckEqInt(pi_plugin_host_services_create_ex(&HostMessageProc, NULL, PI_INVALID_WINDOW,
+                                          &pi_plugin_event_router_extra_qi, g_router, &g_services),
                PI_OK, "host services expose the router through extra_qi");
-    CheckEqInt(pi_host_session_create(g_services, &g_session), PI_OK, "session created");
-    Check(pi_host_session_get_host_events(g_session) == pi_event_router_host_events(g_router),
-          "the session found IPiHostEvents by querying the host object");
+    CheckEqInt(pi_plugin_host_session_create(g_services, &g_session), PI_OK, "session created");
+    Check(pi_plugin_host_session_get_host_events(g_session) == pi_plugin_event_router_host_events(g_router),
+          "the session found IPiPluginHostEvents by querying the host object");
 
-    events = pi_event_router_host_events(g_router);
+    events = pi_plugin_event_router_host_events(g_router);
 
     /* 2) the host subscribes as the broker (owner NULL = the host itself) */
     printf("\n- host subscriptions\n");
-    CheckEqInt(pi_host_events_subscribe(events, PI_TEST_EVENTS_TOPIC_READY, NULL,
+    CheckEqInt(pi_plugin_host_events_subscribe(events, PI_PLUGIN_TEST_EVENTS_TOPIC_READY, NULL,
                                         &OnReady, NULL, &h_ready), PI_OK, "subscribe ready");
-    CheckEqInt(pi_host_events_subscribe(events, PI_TEST_EVENTS_TOPIC_ACK, NULL,
+    CheckEqInt(pi_plugin_host_events_subscribe(events, PI_PLUGIN_TEST_EVENTS_TOPIC_ACK, NULL,
                                         &OnAck, NULL, &h_ack), PI_OK, "subscribe ack");
-    CheckEqInt(pi_host_events_subscribe(events, PI_TEST_EVENTS_TOPIC_SAW_BROADCAST, NULL,
+    CheckEqInt(pi_plugin_host_events_subscribe(events, PI_PLUGIN_TEST_EVENTS_TOPIC_SAW_BROADCAST, NULL,
                                         &OnSawBroadcast, NULL, &h_saw), PI_OK,
                "subscribe saw_broadcast");
-    CheckEqInt(pi_host_events_subscribe(events, "com.example.host.from_callback", NULL,
+    CheckEqInt(pi_plugin_host_events_subscribe(events, "com.example.host.from_callback", NULL,
                                         &OnFromCallback, NULL, &h_callback), PI_OK,
                "subscribe from_callback");
 
     /* unsubscribe must really stop delivery (and be strict about bad handles) */
-    CheckEqInt(pi_host_events_subscribe(events, PI_TEST_EVENTS_TOPIC_NOBODY, NULL,
+    CheckEqInt(pi_plugin_host_events_subscribe(events, PI_PLUGIN_TEST_EVENTS_TOPIC_NOBODY, NULL,
                                         &OnNobody, NULL, &h_nobody), PI_OK, "subscribe nobody");
-    CheckEqInt(pi_host_events_unsubscribe(events, h_nobody), PI_OK, "unsubscribe nobody");
-    CheckEqInt(pi_host_events_unsubscribe(events, h_nobody), PI_E_INVALIDARG,
+    CheckEqInt(pi_plugin_host_events_unsubscribe(events, h_nobody), PI_OK, "unsubscribe nobody");
+    CheckEqInt(pi_plugin_host_events_unsubscribe(events, h_nobody), PI_E_INVALIDARG,
                "unsubscribing twice is INVALIDARG");
-    CheckEqInt(pi_host_events_unsubscribe(events, PI_EVENT_INVALID_SUBSCRIPTION), PI_E_INVALIDARG,
+    CheckEqInt(pi_plugin_host_events_unsubscribe(events, PI_PLUGIN_EVENT_INVALID_SUBSCRIPTION), PI_E_INVALIDARG,
                "unsubscribing handle 0 is INVALIDARG");
     PublishNobody();
     Pump();
@@ -256,10 +256,10 @@ int main(int argc, char** argv)
 
     /* 3) load the events plugin */
     printf("\n- load and address the plugin\n");
-    CheckEqInt(pi_host_session_load(g_session, events_plugin, &slot), PI_OK,
+    CheckEqInt(pi_plugin_host_session_load(g_session, events_plugin, &slot), PI_OK,
                "events plugin loaded");
-    CheckEqInt(pi_host_session_has_event_sink(g_session, slot), 1, "plugin provides a sink");
-    if (slot == PI_HOST_SESSION_INVALID_SLOT) { printf("cannot continue without the plugin\n"); goto verdict; }
+    CheckEqInt(pi_plugin_host_session_has_event_sink(g_session, slot), 1, "plugin provides a sink");
+    if (slot == PI_PLUGIN_HOST_SESSION_INVALID_SLOT) { printf("cannot continue without the plugin\n"); goto verdict; }
 
     /* 4) plugin -> host (published during initialize) */
     Pump();
@@ -268,7 +268,7 @@ int main(int argc, char** argv)
 
     /* 5) host -> plugin by ADDRESS (the sink) */
     welcome = MakeWelcomeEvent(&greeting);
-    CheckEqInt(pi_host_session_deliver_event(g_session, slot, &welcome), PI_OK,
+    CheckEqInt(pi_plugin_host_session_deliver_event(g_session, slot, &welcome), PI_OK,
                "host -> plugin: event delivered to the sink");
 
     /* 6) plugin -> host: the reply from inside the sink */
@@ -299,13 +299,13 @@ int main(int argc, char** argv)
 
     /* 8) D9: unload drops the plugin's subscription (it never unsubscribed itself) */
     printf("\n- unload: owner subscriptions must be dropped\n");
-    pi_event_router_stats(g_router, &stats);
+    pi_plugin_event_router_stats(g_router, &stats);
     dropped_subs_before = stats.subscriptions_dropped;
-    CheckEqInt(pi_host_session_unload(g_session, slot), PI_OK, "plugin unloaded");
-    CheckEqInt(pi_host_session_has_event_sink(g_session, slot), 0, "sink is gone after unload");
-    CheckEqInt(pi_host_session_deliver_event(g_session, slot, &welcome), PI_E_NOINTERFACE,
+    CheckEqInt(pi_plugin_host_session_unload(g_session, slot), PI_OK, "plugin unloaded");
+    CheckEqInt(pi_plugin_host_session_has_event_sink(g_session, slot), 0, "sink is gone after unload");
+    CheckEqInt(pi_plugin_host_session_deliver_event(g_session, slot, &welcome), PI_E_NOINTERFACE,
                "delivering to an unloaded slot degrades to NOINTERFACE");
-    pi_event_router_stats(g_router, &stats);
+    pi_plugin_event_router_stats(g_router, &stats);
     CheckEqInt((long long)(stats.subscriptions_dropped - dropped_subs_before), 1,
                "the kit dropped exactly one subscription owned by the plugin");
     PublishBroadcast("3");
@@ -315,17 +315,17 @@ int main(int argc, char** argv)
 
     /* 9) graceful degradation: a plugin without a sink */
     printf("\n- a plugin without a sink\n");
-    CheckEqInt(pi_host_session_load(g_session, plain_plugin, &plain_slot), PI_OK,
+    CheckEqInt(pi_plugin_host_session_load(g_session, plain_plugin, &plain_slot), PI_OK,
                "plugin without a sink still loads");
-    CheckEqInt(pi_host_session_has_event_sink(g_session, plain_slot), 0,
+    CheckEqInt(pi_plugin_host_session_has_event_sink(g_session, plain_slot), 0,
                "it reports no sink");
-    CheckEqInt(pi_host_session_deliver_event(g_session, plain_slot, &welcome), PI_E_NOINTERFACE,
+    CheckEqInt(pi_plugin_host_session_deliver_event(g_session, plain_slot, &welcome), PI_E_NOINTERFACE,
                "delivering to it degrades to NOINTERFACE (no error, no crash)");
-    CheckEqInt(pi_host_session_unload(g_session, plain_slot), PI_OK, "unloaded again");
+    CheckEqInt(pi_plugin_host_session_unload(g_session, plain_slot), PI_OK, "unloaded again");
 
 verdict:
-    pi_host_session_unload_all(g_session);
-    pi_event_router_stats(g_router, &stats);
+    pi_plugin_host_session_unload_all(g_session);
+    pi_plugin_event_router_stats(g_router, &stats);
     printf("\n[host] events: ready=%u ack=%u saw_broadcast=%u nobody=%u from_callback=%u\n",
            (unsigned)g_ready_count, (unsigned)g_ack_count, (unsigned)g_saw_count,
            (unsigned)g_nobody_count, (unsigned)g_from_callback_count);
@@ -336,9 +336,9 @@ verdict:
            (unsigned long long)stats.subscriptions_dropped,
            (unsigned)stats.subscriptions);
 
-    pi_host_session_destroy(g_session); g_session = NULL;
+    pi_plugin_host_session_destroy(g_session); g_session = NULL;
     if (g_services) { pi_iunknown_release((IPiUnknown*)g_services); g_services = NULL; }
-    pi_event_router_destroy(g_router); g_router = NULL;
+    pi_plugin_event_router_destroy(g_router); g_router = NULL;
 
     printf("== checks=%u failures=%d ==\n", g_checks, g_failures);
     if (g_failures) { printf("RESULT: FAIL\n"); return 1; }

@@ -8,7 +8,7 @@ using nothing but the standard library:
 
   1. load the plugin DLL (ctypes.WinDLL / CDLL);
   2. find the exported entry point and get the factory;
-  3. QueryInterface the factory (PI_IID_PLUGIN_FACTORY) - the COM-style step;
+  3. QueryInterface the factory (PI_PLUGIN_IID_PLUGIN_FACTORY) - the COM-style step;
   4. read the descriptor (name / version / api_version / capabilities);
   5. BUILD A HOST OBJECT IN PYTHON - a vtable of Python callbacks - and create,
      initialize and terminate a plugin instance with it;
@@ -51,8 +51,8 @@ def guid(data1, data2, data3, tail):
 # The framework's exported IIDs (src/pi_plugin_unknown.c); a plugin's own IIDs
 # are random UUIDs, see docs/design/interfaces.md 5.1.
 PI_IID_UNKNOWN = guid(0x00000000, 0, 0, [0xC0, 0, 0, 0, 0, 0, 0, 0x46])
-PI_IID_PLUGIN_FACTORY = guid(0x00000001, 0, 0, [0xC0, 0, 0, 0, 0, 0, 0, 0x46])
-PI_IID_HOST_SERVICES = guid(0x00000010, 0, 0, [0xC0, 0, 0, 0, 0, 0, 0, 0x46])
+PI_PLUGIN_IID_PLUGIN_FACTORY = guid(0x00000001, 0, 0, [0xC0, 0, 0, 0, 0, 0, 0, 0x46])
+PI_PLUGIN_IID_HOST_SERVICES = guid(0x00000010, 0, 0, [0xC0, 0, 0, 0, 0, 0, 0, 0x46])
 
 QiProc = CALL(C.c_int32, C.c_void_p, C.POINTER(PiGuid), C.POINTER(C.c_void_p))
 AddRefProc = CALL(C.c_uint32, C.c_void_p)
@@ -96,14 +96,14 @@ CreateInstanceProc = CALL(C.c_int32, C.c_void_p, C.POINTER(PiGuid),
 
 class IPiPluginFactoryVtbl(C.Structure):
     _fields_ = IPiUnknownVtbl._fields_ + [
-        ("pi_get_descriptor", GetDescriptorProc),
-        ("pi_get_class_count", GetClassCountProc),
-        ("pi_get_class_guid", GetClassGuidProc),
-        ("pi_create_instance", CreateInstanceProc),
+        ("pi_plugin_get_descriptor", GetDescriptorProc),
+        ("pi_plugin_get_class_count", GetClassCountProc),
+        ("pi_plugin_get_class_guid", GetClassGuidProc),
+        ("pi_plugin_create_instance", CreateInstanceProc),
     ]
 
 
-PI_CAP_REQUIRED, PI_CAP_OPTIONAL, PI_CAP_PROVIDES = 1, 2, 4
+PI_PLUGIN_CAP_REQUIRED, PI_PLUGIN_CAP_OPTIONAL, PI_PLUGIN_CAP_PROVIDES = 1, 2, 4
 
 # libc, for the host object's allocator (declared with real types: without
 # restype/argtypes ctypes truncates pointers to 32 bits on 64-bit hosts).
@@ -131,16 +131,16 @@ FreeProc = CALL(None, C.c_void_p, C.c_void_p)
 PostProc = CALL(None, C.c_void_p, C.c_uint32, C.c_size_t, C.c_ssize_t)
 
 
-class IPiHostServicesVtbl(C.Structure):
+class IPiPluginHostServicesVtbl(C.Structure):
     _fields_ = IPiUnknownVtbl._fields_ + [
-        ("pi_host_alloc", AllocProc),
-        ("pi_host_free", FreeProc),
-        ("pi_host_post_message", PostProc),
+        ("pi_plugin_host_alloc", AllocProc),
+        ("pi_plugin_host_free", FreeProc),
+        ("pi_plugin_host_post_message", PostProc),
     ]
 
 
 class PythonHost:
-    """A minimal IPiHostServices: allocate/free/post_message + QueryInterface."""
+    """A minimal IPiPluginHostServices: allocate/free/post_message + QueryInterface."""
 
     def __init__(self):
         self.messages = []
@@ -154,7 +154,7 @@ class PythonHost:
         self._free_cb = FreeProc(self._free)
         self._post_cb = PostProc(self._post)
 
-        self._vtbl = IPiHostServicesVtbl(
+        self._vtbl = IPiPluginHostServicesVtbl(
             self._qi_cb, self._addref_cb, self._release_cb,
             self._alloc_cb, self._free_cb, self._post_cb)
         # A struct whose first member is the vtable pointer - exactly the layout
@@ -171,7 +171,7 @@ class PythonHost:
         if not out:
             return -3
         wanted = iid[0].data1
-        if wanted in (PI_IID_UNKNOWN.data1, PI_IID_HOST_SERVICES.data1):
+        if wanted in (PI_IID_UNKNOWN.data1, PI_PLUGIN_IID_HOST_SERVICES.data1):
             out[0] = this
             self._add_ref(this)
             return PI_OK
@@ -214,8 +214,8 @@ def main(argv):
     print("== piplugin FFI demo (Python / ctypes) ==")
     print(f"plugin: {dll_path}\n")
 
-    # 0) the framework core itself: FFI users call its host API (pi_module_load,
-    #    pi_factory_create_instance, ...) exactly like a C host would.
+    # 0) the framework core itself: FFI users call its host API (pi_plugin_module_load,
+    #    pi_plugin_factory_create_instance, ...) exactly like a C host would.
     loader = C.WinDLL if os.name == "nt" else C.CDLL
     bin_dir = os.path.dirname(os.path.abspath(dll_path))
     core_names = ["piplugind.dll", "piplugin.dll", "libpiplugin.so", "libpiplugin.dylib"]
@@ -225,36 +225,36 @@ def main(argv):
         print(f"framework core not found next to the plugin in {bin_dir}")
         return 1
     core = loader(core_path)
-    core.pi_module_load.restype = C.c_void_p
-    core.pi_module_load.argtypes = [C.c_char_p]
-    core.pi_module_get_factory.restype = C.c_int32
-    core.pi_module_get_factory.argtypes = [C.c_void_p, C.POINTER(C.c_void_p)]
-    core.pi_module_get_load_error.restype = C.c_char_p
-    core.pi_module_unload.restype = None
-    core.pi_module_unload.argtypes = [C.c_void_p]
+    core.pi_plugin_module_load.restype = C.c_void_p
+    core.pi_plugin_module_load.argtypes = [C.c_char_p]
+    core.pi_plugin_module_get_factory.restype = C.c_int32
+    core.pi_plugin_module_get_factory.argtypes = [C.c_void_p, C.POINTER(C.c_void_p)]
+    core.pi_plugin_module_get_load_error.restype = C.c_char_p
+    core.pi_plugin_module_unload.restype = None
+    core.pi_plugin_module_unload.argtypes = [C.c_void_p]
 
     # 1) load the module through the framework (not by hand: the loader owns the
     #    factory reference and knows the unload order)
     print("- load")
-    module = core.pi_module_load(os.path.abspath(dll_path).encode())
-    check(bool(module), "pi_module_load")
+    module = core.pi_plugin_module_load(os.path.abspath(dll_path).encode())
+    check(bool(module), "pi_plugin_module_load")
 
     factory = C.c_void_p()
-    hr = core.pi_module_get_factory(module, C.byref(factory))
-    check(hr == PI_OK and factory.value, f"pi_module_get_factory -> hr={hr}")
+    hr = core.pi_plugin_module_get_factory(module, C.byref(factory))
+    check(hr == PI_OK and factory.value, f"pi_plugin_module_get_factory -> hr={hr}")
 
     factory_vtbl = C.cast(factory, C.POINTER(IPiUnknown)).contents.lpVtbl
 
     # 2) QueryInterface the factory (COM-style, the framework's核心 step)
     print("\n- QueryInterface")
     out = C.c_void_p()
-    hr = factory_vtbl.contents.pi_query_interface(factory, C.byref(PI_IID_PLUGIN_FACTORY),
+    hr = factory_vtbl.contents.pi_query_interface(factory, C.byref(PI_PLUGIN_IID_PLUGIN_FACTORY),
                                                   C.byref(out))
-    check(hr == PI_OK and out.value, f"QI(PI_IID_PLUGIN_FACTORY) -> hr={hr}")
+    check(hr == PI_OK and out.value, f"QI(PI_PLUGIN_IID_PLUGIN_FACTORY) -> hr={hr}")
     check(out.value == factory.value, "the factory answers with a stable identity")
 
     out = C.c_void_p()
-    hr = factory_vtbl.contents.pi_query_interface(factory, C.byref(PI_IID_HOST_SERVICES),
+    hr = factory_vtbl.contents.pi_query_interface(factory, C.byref(PI_PLUGIN_IID_HOST_SERVICES),
                                                   C.byref(out))
     check(hr == PI_E_NOINTERFACE and not out.value,
           f"QI(unknown IID) -> PI_E_NOINTERFACE and *out = NULL (hr={hr})")
@@ -262,8 +262,8 @@ def main(argv):
     # 3) read the descriptor
     print("\n- descriptor")
     fvtbl = C.cast(factory, C.POINTER(C.POINTER(IPiPluginFactoryVtbl))).contents.contents
-    desc = fvtbl.pi_get_descriptor(factory)
-    check(bool(desc), "pi_get_descriptor")
+    desc = fvtbl.pi_plugin_get_descriptor(factory)
+    check(bool(desc), "pi_plugin_get_descriptor")
     d = desc.contents
     print(f"     name={d.name.decode()} vendor={d.vendor.decode()} "
           f"version={d.version.decode()} api=0x{d.api_version:08X} "
@@ -278,13 +278,13 @@ def main(argv):
     print("\n- create / initialize / terminate")
     host = PythonHost()
     guid_out = PiGuid()
-    hr = fvtbl.pi_get_class_guid(factory, 0, C.byref(guid_out))
-    check(hr == PI_OK, "pi_get_class_guid(0)")
+    hr = fvtbl.pi_plugin_get_class_guid(factory, 0, C.byref(guid_out))
+    check(hr == PI_OK, "pi_plugin_get_class_guid(0)")
 
     plugin = C.c_void_p()
-    hr = fvtbl.pi_create_instance(factory, C.byref(guid_out), host.pointer,
+    hr = fvtbl.pi_plugin_create_instance(factory, C.byref(guid_out), host.pointer,
                                   C.byref(plugin))
-    check(hr == PI_OK and plugin.value, f"pi_create_instance -> hr={hr}")
+    check(hr == PI_OK and plugin.value, f"pi_plugin_create_instance -> hr={hr}")
 
     # IPiPluginBase: initialize / terminate (the first three slots are IPiUnknown)
     base_vtbl = C.cast(plugin, C.POINTER(IPiUnknown)).contents.lpVtbl
@@ -295,9 +295,9 @@ def main(argv):
     terminate = TerminateProc(base[4])
 
     hr = initialize(plugin, host.pointer)
-    check(hr == PI_OK, f"pi_initialize -> hr={hr}")
+    check(hr == PI_OK, f"pi_plugin_initialize -> hr={hr}")
     hr = terminate(plugin)
-    check(hr == PI_OK, f"pi_terminate -> hr={hr}")
+    check(hr == PI_OK, f"pi_plugin_terminate -> hr={hr}")
 
     rc = base_vtbl.contents.pi_release(plugin)
     check(rc == 0, f"release(plugin) -> refcount {rc}")
@@ -311,10 +311,10 @@ def main(argv):
     # 5) unload, then do it all again: a clean unload is what makes the second
     #    load possible, and it is the step hosts get wrong most often.
     print("\n- unload / reload")
-    core.pi_module_unload(module)
-    module2 = core.pi_module_load(os.path.abspath(dll_path).encode())
+    core.pi_plugin_module_unload(module)
+    module2 = core.pi_plugin_module_load(os.path.abspath(dll_path).encode())
     check(bool(module2), "the plugin loads a second time after a clean unload")
-    core.pi_module_unload(module2)
+    core.pi_plugin_module_unload(module2)
 
     print("\nRESULT: PASS")
     return 0

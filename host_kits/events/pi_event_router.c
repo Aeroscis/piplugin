@@ -12,18 +12,18 @@
 
 #if PI_PLATFORM_WINDOWS
 #  include <windows.h>
-#  define PI_ROUTER_LOCK_INIT(l)   InitializeCriticalSection(l)
-#  define PI_ROUTER_LOCK_FREE(l)   DeleteCriticalSection(l)
-#  define PI_ROUTER_LOCK_ACQUIRE(l) EnterCriticalSection(l)
-#  define PI_ROUTER_LOCK_RELEASE(l) LeaveCriticalSection(l)
-typedef CRITICAL_SECTION PiRouterLock;
+#  define PI_PLUGIN_ROUTER_LOCK_INIT(l)   InitializeCriticalSection(l)
+#  define PI_PLUGIN_ROUTER_LOCK_FREE(l)   DeleteCriticalSection(l)
+#  define PI_PLUGIN_ROUTER_LOCK_ACQUIRE(l) EnterCriticalSection(l)
+#  define PI_PLUGIN_ROUTER_LOCK_RELEASE(l) LeaveCriticalSection(l)
+typedef CRITICAL_SECTION PiPluginRouterLock;
 #else
 #  include <pthread.h>
-#  define PI_ROUTER_LOCK_INIT(l)    pthread_mutex_init((l), NULL)
-#  define PI_ROUTER_LOCK_FREE(l)    pthread_mutex_destroy(l)
-#  define PI_ROUTER_LOCK_ACQUIRE(l) pthread_mutex_lock(l)
-#  define PI_ROUTER_LOCK_RELEASE(l) pthread_mutex_unlock(l)
-typedef pthread_mutex_t PiRouterLock;
+#  define PI_PLUGIN_ROUTER_LOCK_INIT(l)    pthread_mutex_init((l), NULL)
+#  define PI_PLUGIN_ROUTER_LOCK_FREE(l)    pthread_mutex_destroy(l)
+#  define PI_PLUGIN_ROUTER_LOCK_ACQUIRE(l) pthread_mutex_lock(l)
+#  define PI_PLUGIN_ROUTER_LOCK_RELEASE(l) pthread_mutex_unlock(l)
+typedef pthread_mutex_t PiPluginRouterLock;
 #endif
 
 /* --------------------------------------------------------------------------
@@ -32,46 +32,46 @@ typedef pthread_mutex_t PiRouterLock;
 
 /* A queued event owns its copies: the publisher's strings are only valid for the
  * duration of its publish() call. */
-typedef struct PiQueuedEvent {
+typedef struct PiPluginQueuedEvent {
     uint32_t          type;
     char*             topic;         /* owned, NUL-terminated            */
     PiPluginProperty* payload;       /* owned array (may be NULL)        */
     uint32_t          payload_count;
     int               has_origin;
     PiGuid            origin;
-} PiQueuedEvent;
+} PiPluginQueuedEvent;
 
-typedef struct PiRouterSubscription {
+typedef struct PiPluginRouterSubscription {
     uint32_t         handle;
     char*            topic;          /* owned */
     void*            owner;          /* NULL = the host itself */
-    PiEventCallback  callback;
+    PiPluginEventCallback  callback;
     void*            user_data;
-} PiRouterSubscription;
+} PiPluginRouterSubscription;
 
 /* What a pump collects for one event before calling anyone. */
-typedef struct PiRouterMatch {
+typedef struct PiPluginRouterMatch {
     uint32_t        handle;
-    PiEventCallback callback;
+    PiPluginEventCallback callback;
     void*           user_data;
-} PiRouterMatch;
+} PiPluginRouterMatch;
 
-struct PiEventRouter {
-    PiRefCountedBase  base;          /* MUST be first: this is an IPiHostEvents */
+struct PiPluginEventRouter {
+    PiRefCountedBase  base;          /* MUST be first: this is an IPiPluginHostEvents */
 
-    PiRouterLock      lock;          /* publish() may come from any thread */
+    PiPluginRouterLock      lock;          /* publish() may come from any thread */
 
-    PiQueuedEvent*    queue;
+    PiPluginQueuedEvent*    queue;
     uint32_t          capacity;
     uint32_t          head;          /* index of the oldest queued event */
     uint32_t          queued;
 
-    PiRouterSubscription* subs;
+    PiPluginRouterSubscription* subs;
     uint32_t          sub_count;
     uint32_t          sub_capacity;
     uint32_t          next_handle;
 
-    PiEventRouterStats stats;
+    PiPluginEventRouterStats stats;
 };
 
 /* --------------------------------------------------------------------------
@@ -89,7 +89,7 @@ static char* RouterStrdup(const char* s)
     return copy;
 }
 
-static void RouterFreeQueued(PiQueuedEvent* ev)
+static void RouterFreeQueued(PiPluginQueuedEvent* ev)
 {
     uint32_t i;
     if (!ev) return;
@@ -104,7 +104,7 @@ static void RouterFreeQueued(PiQueuedEvent* ev)
 
 /* Deep copy one event into the queue slot. Returns 0 when out of memory (the
  * caller counts it as dropped - events are best effort, never a hard failure). */
-static int RouterCopyEvent(PiQueuedEvent* dst, const PiEvent* src)
+static int RouterCopyEvent(PiPluginQueuedEvent* dst, const PiPluginEvent* src)
 {
     uint32_t i;
 
@@ -138,7 +138,7 @@ static int RouterCopyEvent(PiQueuedEvent* dst, const PiEvent* src)
     return 1;
 }
 
-static uint32_t RouterFindSubscription(PiEventRouter* router, uint32_t handle)
+static uint32_t RouterFindSubscription(PiPluginEventRouter* router, uint32_t handle)
 {
     uint32_t i;
     for (i = 0; i < router->sub_count; ++i) {
@@ -147,31 +147,31 @@ static uint32_t RouterFindSubscription(PiEventRouter* router, uint32_t handle)
     return 0xFFFFFFFFu;
 }
 
-static void RouterRemoveSubscriptionAt(PiEventRouter* router, uint32_t index)
+static void RouterRemoveSubscriptionAt(PiPluginEventRouter* router, uint32_t index)
 {
     if (index >= router->sub_count) return;
     free(router->subs[index].topic);
     if (index + 1 < router->sub_count) {
         memmove(&router->subs[index], &router->subs[index + 1],
-                (size_t)(router->sub_count - index - 1) * sizeof(PiRouterSubscription));
+                (size_t)(router->sub_count - index - 1) * sizeof(PiPluginRouterSubscription));
     }
     --router->sub_count;
 }
 
 /* --------------------------------------------------------------------------
- * IPiHostEvents implementation
+ * IPiPluginHostEvents implementation
  * -------------------------------------------------------------------------- */
-static PiResult PI_CALL Router_Publish(void* self_ptr, const PiEvent* event)
+static PiResult PI_CALL Router_Publish(void* self_ptr, const PiPluginEvent* event)
 {
-    PiEventRouter* me = (PiEventRouter*)self_ptr;
-    PiQueuedEvent* slot;
+    PiPluginEventRouter* me = (PiPluginEventRouter*)self_ptr;
+    PiPluginQueuedEvent* slot;
     size_t topic_len;
 
     if (!me || !event || !event->topic || !event->topic[0]) return PI_E_INVALIDARG;
     topic_len = strlen(event->topic);
-    if (topic_len >= PI_EVENT_TOPIC_MAX) return PI_E_INVALIDARG;   /* documented limit */
+    if (topic_len >= PI_PLUGIN_EVENT_TOPIC_MAX) return PI_E_INVALIDARG;   /* documented limit */
 
-    PI_ROUTER_LOCK_ACQUIRE(&me->lock);
+    PI_PLUGIN_ROUTER_LOCK_ACQUIRE(&me->lock);
 
     ++me->stats.published;
 
@@ -181,7 +181,7 @@ static PiResult PI_CALL Router_Publish(void* self_ptr, const PiEvent* event)
          * make the drop observable. */
         ++me->stats.dropped_full;
         me->stats.queued = me->queued;
-        PI_ROUTER_LOCK_RELEASE(&me->lock);
+        PI_PLUGIN_ROUTER_LOCK_RELEASE(&me->lock);
         return PI_OK;
     }
 
@@ -192,33 +192,33 @@ static PiResult PI_CALL Router_Publish(void* self_ptr, const PiEvent* event)
         --me->queued;
         ++me->stats.dropped_full;
         me->stats.queued = me->queued;
-        PI_ROUTER_LOCK_RELEASE(&me->lock);
+        PI_PLUGIN_ROUTER_LOCK_RELEASE(&me->lock);
         return PI_OK;
     }
 
     me->stats.queued = me->queued;
-    PI_ROUTER_LOCK_RELEASE(&me->lock);
+    PI_PLUGIN_ROUTER_LOCK_RELEASE(&me->lock);
     return PI_OK;
 }
 
 static PiResult PI_CALL Router_Subscribe(void* self_ptr, const char* topic, void* owner,
-                                         PiEventCallback callback, void* user_data,
+                                         PiPluginEventCallback callback, void* user_data,
                                          uint32_t* out_subscription)
 {
-    PiEventRouter* me = (PiEventRouter*)self_ptr;
-    PiRouterSubscription* sub;
+    PiPluginEventRouter* me = (PiPluginEventRouter*)self_ptr;
+    PiPluginRouterSubscription* sub;
 
     if (!me || !topic || !topic[0] || !callback || !out_subscription) return PI_E_INVALIDARG;
-    if (strlen(topic) >= PI_EVENT_TOPIC_MAX) return PI_E_INVALIDARG;
+    if (strlen(topic) >= PI_PLUGIN_EVENT_TOPIC_MAX) return PI_E_INVALIDARG;
 
-    PI_ROUTER_LOCK_ACQUIRE(&me->lock);
+    PI_PLUGIN_ROUTER_LOCK_ACQUIRE(&me->lock);
 
     if (me->sub_count == me->sub_capacity) {
         uint32_t grown = me->sub_capacity ? me->sub_capacity * 2 : 8;
-        PiRouterSubscription* resized =
-            (PiRouterSubscription*)realloc(me->subs, (size_t)grown * sizeof(PiRouterSubscription));
+        PiPluginRouterSubscription* resized =
+            (PiPluginRouterSubscription*)realloc(me->subs, (size_t)grown * sizeof(PiPluginRouterSubscription));
         if (!resized) {
-            PI_ROUTER_LOCK_RELEASE(&me->lock);
+            PI_PLUGIN_ROUTER_LOCK_RELEASE(&me->lock);
             return PI_E_OUTOFMEMORY;
         }
         me->subs = resized;
@@ -229,50 +229,50 @@ static PiResult PI_CALL Router_Subscribe(void* self_ptr, const char* topic, void
     memset(sub, 0, sizeof(*sub));
     sub->topic = RouterStrdup(topic);
     if (!sub->topic) {
-        PI_ROUTER_LOCK_RELEASE(&me->lock);
+        PI_PLUGIN_ROUTER_LOCK_RELEASE(&me->lock);
         return PI_E_OUTOFMEMORY;
     }
     sub->owner     = owner;
     sub->callback  = callback;
     sub->user_data = user_data;
     sub->handle    = ++me->next_handle;
-    if (sub->handle == PI_EVENT_INVALID_SUBSCRIPTION) sub->handle = ++me->next_handle;
+    if (sub->handle == PI_PLUGIN_EVENT_INVALID_SUBSCRIPTION) sub->handle = ++me->next_handle;
     ++me->sub_count;
 
     *out_subscription = sub->handle;
     me->stats.subscriptions = me->sub_count;
-    PI_ROUTER_LOCK_RELEASE(&me->lock);
+    PI_PLUGIN_ROUTER_LOCK_RELEASE(&me->lock);
     return PI_OK;
 }
 
 static PiResult PI_CALL Router_Unsubscribe(void* self_ptr, uint32_t subscription)
 {
-    PiEventRouter* me = (PiEventRouter*)self_ptr;
+    PiPluginEventRouter* me = (PiPluginEventRouter*)self_ptr;
     uint32_t index;
 
-    if (!me || subscription == PI_EVENT_INVALID_SUBSCRIPTION) return PI_E_INVALIDARG;
+    if (!me || subscription == PI_PLUGIN_EVENT_INVALID_SUBSCRIPTION) return PI_E_INVALIDARG;
 
-    PI_ROUTER_LOCK_ACQUIRE(&me->lock);
+    PI_PLUGIN_ROUTER_LOCK_ACQUIRE(&me->lock);
     index = RouterFindSubscription(me, subscription);
     if (index == 0xFFFFFFFFu) {
-        PI_ROUTER_LOCK_RELEASE(&me->lock);
+        PI_PLUGIN_ROUTER_LOCK_RELEASE(&me->lock);
         return PI_E_INVALIDARG;
     }
     RouterRemoveSubscriptionAt(me, index);
     me->stats.subscriptions = me->sub_count;
-    PI_ROUTER_LOCK_RELEASE(&me->lock);
+    PI_PLUGIN_ROUTER_LOCK_RELEASE(&me->lock);
     return PI_OK;
 }
 
 static PiResult PI_CALL Router_DropOwner(void* self_ptr, void* owner)
 {
-    PiEventRouter* me = (PiEventRouter*)self_ptr;
+    PiPluginEventRouter* me = (PiPluginEventRouter*)self_ptr;
     uint32_t i = 0;
     uint32_t dropped = 0;
 
     if (!me || !owner) return PI_E_INVALIDARG;
 
-    PI_ROUTER_LOCK_ACQUIRE(&me->lock);
+    PI_PLUGIN_ROUTER_LOCK_ACQUIRE(&me->lock);
     while (i < me->sub_count) {
         if (me->subs[i].owner == owner) {
             RouterRemoveSubscriptionAt(me, i);
@@ -283,7 +283,7 @@ static PiResult PI_CALL Router_DropOwner(void* self_ptr, void* owner)
     }
     me->stats.subscriptions_dropped += dropped;
     me->stats.subscriptions = me->sub_count;
-    PI_ROUTER_LOCK_RELEASE(&me->lock);
+    PI_PLUGIN_ROUTER_LOCK_RELEASE(&me->lock);
     return PI_OK;
 }
 
@@ -294,7 +294,7 @@ static uint32_t PI_CALL Router_Release(void* self_ptr) { return pi_refcounted_re
 static PiResult PI_CALL Router_Qi(void* self_ptr, const PiGuid* iid, void** out)
 {
     if (!out) return PI_E_INVALIDARG;
-    if (pi_guid_equal(iid, &PI_IID_UNKNOWN) || pi_guid_equal(iid, &PI_IID_HOST_EVENTS)) {
+    if (pi_guid_equal(iid, &PI_IID_UNKNOWN) || pi_guid_equal(iid, &PI_PLUGIN_IID_HOST_EVENTS)) {
         *out = self_ptr;
         pi_refcounted_add_ref(self_ptr);
         return PI_OK;
@@ -303,7 +303,7 @@ static PiResult PI_CALL Router_Qi(void* self_ptr, const PiGuid* iid, void** out)
     return PI_E_NOINTERFACE;
 }
 
-static const IPiHostEventsVtbl s_router_vtbl = {
+static const IPiPluginHostEventsVtbl s_router_vtbl = {
     { &Router_Qi, &Router_AddRef, &Router_Release },
     &Router_Publish,
     &Router_Subscribe,
@@ -316,7 +316,7 @@ static const IPiHostEventsVtbl s_router_vtbl = {
  * -------------------------------------------------------------------------- */
 static void Router_Destroy(void* self_ptr)
 {
-    PiEventRouter* me = (PiEventRouter*)self_ptr;
+    PiPluginEventRouter* me = (PiPluginEventRouter*)self_ptr;
     uint32_t i;
 
     for (i = 0; i < me->queued; ++i) {
@@ -326,26 +326,26 @@ static void Router_Destroy(void* self_ptr)
     for (i = 0; i < me->sub_count; ++i) free(me->subs[i].topic);
     free(me->subs);
 
-    PI_ROUTER_LOCK_FREE(&me->lock);
+    PI_PLUGIN_ROUTER_LOCK_FREE(&me->lock);
     free(me);
 }
 
-PiResult pi_event_router_create(PiEventRouter** out_router)
+PiResult pi_plugin_event_router_create(PiPluginEventRouter** out_router)
 {
-    PiEventRouter* router;
+    PiPluginEventRouter* router;
 
     if (!out_router) return PI_E_INVALIDARG;
     *out_router = NULL;
 
-    router = (PiEventRouter*)calloc(1, sizeof(PiEventRouter));
+    router = (PiPluginEventRouter*)calloc(1, sizeof(PiPluginEventRouter));
     if (!router) return PI_E_OUTOFMEMORY;
 
-    PI_ROUTER_LOCK_INIT(&router->lock);
+    PI_PLUGIN_ROUTER_LOCK_INIT(&router->lock);
 
-    router->capacity = PI_EVENT_ROUTER_DEFAULT_CAPACITY;
-    router->queue = (PiQueuedEvent*)calloc(router->capacity, sizeof(PiQueuedEvent));
+    router->capacity = PI_PLUGIN_EVENT_ROUTER_DEFAULT_CAPACITY;
+    router->queue = (PiPluginQueuedEvent*)calloc(router->capacity, sizeof(PiPluginQueuedEvent));
     if (!router->queue) {
-        PI_ROUTER_LOCK_FREE(&router->lock);
+        PI_PLUGIN_ROUTER_LOCK_FREE(&router->lock);
         free(router);
         return PI_E_OUTOFMEMORY;
     }
@@ -356,22 +356,22 @@ PiResult pi_event_router_create(PiEventRouter** out_router)
     return PI_OK;
 }
 
-void pi_event_router_destroy(PiEventRouter* router)
+void pi_plugin_event_router_destroy(PiPluginEventRouter* router)
 {
     if (!router) return;
     pi_iunknown_release((IPiUnknown*)&router->base);
 }
 
-IPiHostEvents* pi_event_router_host_events(PiEventRouter* router)
+IPiPluginHostEvents* pi_plugin_event_router_host_events(PiPluginEventRouter* router)
 {
-    return router ? (IPiHostEvents*)&router->base : NULL;
+    return router ? (IPiPluginHostEvents*)&router->base : NULL;
 }
 
-PiResult pi_event_router_extra_qi(void* ctx, const PiGuid* iid, void** out)
+PiResult pi_plugin_event_router_extra_qi(void* ctx, const PiGuid* iid, void** out)
 {
-    PiEventRouter* me = (PiEventRouter*)ctx;
+    PiPluginEventRouter* me = (PiPluginEventRouter*)ctx;
     if (!out) return PI_E_INVALIDARG;
-    if (me && pi_guid_equal(iid, &PI_IID_HOST_EVENTS)) {
+    if (me && pi_guid_equal(iid, &PI_PLUGIN_IID_HOST_EVENTS)) {
         *out = &me->base;
         pi_refcounted_add_ref((IPiUnknown*)*out);
         return PI_OK;
@@ -383,30 +383,30 @@ PiResult pi_event_router_extra_qi(void* ctx, const PiGuid* iid, void** out)
 /* --------------------------------------------------------------------------
  * Pump
  * -------------------------------------------------------------------------- */
-uint32_t pi_event_router_pump(PiEventRouter* router)
+uint32_t pi_plugin_event_router_pump(PiPluginEventRouter* router)
 {
     uint32_t batch, i;
     uint32_t delivered = 0;
 
     if (!router) return 0;
 
-    PI_ROUTER_LOCK_ACQUIRE(&router->lock);
+    PI_PLUGIN_ROUTER_LOCK_ACQUIRE(&router->lock);
     batch = router->queued;   /* events published BY callbacks wait for next pump */
-    PI_ROUTER_LOCK_RELEASE(&router->lock);
+    PI_PLUGIN_ROUTER_LOCK_RELEASE(&router->lock);
 
     for (i = 0; i < batch; ++i) {
-        PiQueuedEvent  event;
-        PiEvent        view;
+        PiPluginQueuedEvent  event;
+        PiPluginEvent        view;
         uint32_t       j;
 
         /* Take the oldest event out of the queue (its strings move with it). */
-        PI_ROUTER_LOCK_ACQUIRE(&router->lock);
+        PI_PLUGIN_ROUTER_LOCK_ACQUIRE(&router->lock);
         if (router->queued == 0) {
-            PI_ROUTER_LOCK_RELEASE(&router->lock);
+            PI_PLUGIN_ROUTER_LOCK_RELEASE(&router->lock);
             break;
         }
         event = router->queue[router->head];
-        memset(&router->queue[router->head], 0, sizeof(PiQueuedEvent));
+        memset(&router->queue[router->head], 0, sizeof(PiPluginQueuedEvent));
         router->head = (router->head + 1) % router->capacity;
         --router->queued;
         router->stats.queued = router->queued;
@@ -423,12 +423,12 @@ uint32_t pi_event_router_pump(PiEventRouter* router)
          * Re-checking the handle before each call keeps "everyone who was
          * subscribed at pump time gets it exactly once, unless they left". */
         {
-            PiRouterMatch* matches = NULL;
+            PiPluginRouterMatch* matches = NULL;
             uint32_t       match_count = 0;
             uint32_t       skipped = 0;
 
             if (router->sub_count > 0) {
-                matches = (PiRouterMatch*)malloc((size_t)router->sub_count * sizeof(PiRouterMatch));
+                matches = (PiPluginRouterMatch*)malloc((size_t)router->sub_count * sizeof(PiPluginRouterMatch));
             }
             if (matches) {
                 for (j = 0; j < router->sub_count; ++j) {
@@ -442,7 +442,7 @@ uint32_t pi_event_router_pump(PiEventRouter* router)
             } else if (router->sub_count > 0) {
                 skipped = 1;   /* out of memory: best effort means "lose it" */
             }
-            PI_ROUTER_LOCK_RELEASE(&router->lock);
+            PI_PLUGIN_ROUTER_LOCK_RELEASE(&router->lock);
 
             view.type          = event.type;
             view.topic         = event.topic;
@@ -453,9 +453,9 @@ uint32_t pi_event_router_pump(PiEventRouter* router)
             for (j = 0; j < match_count; ++j) {
                 uint32_t index;
 
-                PI_ROUTER_LOCK_ACQUIRE(&router->lock);
+                PI_PLUGIN_ROUTER_LOCK_ACQUIRE(&router->lock);
                 index = RouterFindSubscription(router, matches[j].handle);
-                PI_ROUTER_LOCK_RELEASE(&router->lock);
+                PI_PLUGIN_ROUTER_LOCK_RELEASE(&router->lock);
 
                 if (index != 0xFFFFFFFFu) {
                     matches[j].callback(matches[j].user_data, &view);
@@ -465,9 +465,9 @@ uint32_t pi_event_router_pump(PiEventRouter* router)
             free(matches);
 
             if (skipped) {
-                PI_ROUTER_LOCK_ACQUIRE(&router->lock);
+                PI_PLUGIN_ROUTER_LOCK_ACQUIRE(&router->lock);
                 ++router->stats.dropped_full;
-                PI_ROUTER_LOCK_RELEASE(&router->lock);
+                PI_PLUGIN_ROUTER_LOCK_RELEASE(&router->lock);
             }
         }
 
@@ -475,45 +475,45 @@ uint32_t pi_event_router_pump(PiEventRouter* router)
     }
 
     if (delivered) {
-        PI_ROUTER_LOCK_ACQUIRE(&router->lock);
+        PI_PLUGIN_ROUTER_LOCK_ACQUIRE(&router->lock);
         router->stats.delivered += delivered;
-        PI_ROUTER_LOCK_RELEASE(&router->lock);
+        PI_PLUGIN_ROUTER_LOCK_RELEASE(&router->lock);
     }
     return delivered;
 }
 
-void pi_event_router_stats(PiEventRouter* router, PiEventRouterStats* out_stats)
+void pi_plugin_event_router_stats(PiPluginEventRouter* router, PiPluginEventRouterStats* out_stats)
 {
     if (!out_stats) return;
     memset(out_stats, 0, sizeof(*out_stats));
     if (!router) return;
-    PI_ROUTER_LOCK_ACQUIRE(&router->lock);
+    PI_PLUGIN_ROUTER_LOCK_ACQUIRE(&router->lock);
     *out_stats = router->stats;
     out_stats->queued = router->queued;
     out_stats->subscriptions = router->sub_count;
-    PI_ROUTER_LOCK_RELEASE(&router->lock);
+    PI_PLUGIN_ROUTER_LOCK_RELEASE(&router->lock);
 }
 
-void pi_event_router_set_capacity(PiEventRouter* router, uint32_t capacity)
+void pi_plugin_event_router_set_capacity(PiPluginEventRouter* router, uint32_t capacity)
 {
-    PiQueuedEvent* resized;
+    PiPluginQueuedEvent* resized;
     uint32_t i;
     uint32_t keep;
 
     if (!router) return;
-    if (capacity == 0) capacity = PI_EVENT_ROUTER_DEFAULT_CAPACITY;
+    if (capacity == 0) capacity = PI_PLUGIN_EVENT_ROUTER_DEFAULT_CAPACITY;
 
-    PI_ROUTER_LOCK_ACQUIRE(&router->lock);
+    PI_PLUGIN_ROUTER_LOCK_ACQUIRE(&router->lock);
     if (capacity == router->capacity) {
-        PI_ROUTER_LOCK_RELEASE(&router->lock);
+        PI_PLUGIN_ROUTER_LOCK_RELEASE(&router->lock);
         return;
     }
 
     /* Rebuild the ring with the surviving events in order. Too small: keep the
      * NEWEST `capacity` events and count the dropped ones. */
-    resized = (PiQueuedEvent*)calloc(capacity, sizeof(PiQueuedEvent));
+    resized = (PiPluginQueuedEvent*)calloc(capacity, sizeof(PiPluginQueuedEvent));
     if (!resized) {
-        PI_ROUTER_LOCK_RELEASE(&router->lock);
+        PI_PLUGIN_ROUTER_LOCK_RELEASE(&router->lock);
         return;   /* keep the old queue; dropping nothing is the safer failure */
     }
 
@@ -536,5 +536,5 @@ void pi_event_router_set_capacity(PiEventRouter* router, uint32_t capacity)
     router->head = 0;
     router->queued = keep;
     router->stats.queued = keep;
-    PI_ROUTER_LOCK_RELEASE(&router->lock);
+    PI_PLUGIN_ROUTER_LOCK_RELEASE(&router->lock);
 }

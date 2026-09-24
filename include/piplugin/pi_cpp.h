@@ -29,93 +29,93 @@
 #include "pi_plugin.h"
 
 /* --------------------------------------------------------------------------
- * pi_cpp_destroy<T> - destroy callback for C++ objects
+ * pi_plugin_cpp_destroy<T> - destroy callback for C++ objects
  *
  * Pass it to pi_refcounted_init_with_destroy() so that the destructor runs when
  * the refcount reaches zero:
  *
  *     pi_refcounted_init_with_destroy(&m_base,
  *                                     (const IPiUnknownVtbl*)&s_vtbl,
- *                                     &pi_cpp_destroy<MyPlugin>);
+ *                                     &pi_plugin_cpp_destroy<MyPlugin>);
  * -------------------------------------------------------------------------- */
 template <typename T>
-void pi_cpp_destroy(void* self_ptr)
+void pi_plugin_cpp_destroy(void* self_ptr)
 {
     delete static_cast<T*>(self_ptr);
 }
 
 /* --------------------------------------------------------------------------
- * PiIidOf<T> - the framework IID of an interface type
+ * PiPluginIidOf<T> - the framework IID of an interface type
  *
  * Lets qi_to<T>() work without spelling the GUID out at every call site (and
  * without getting it wrong). App-defined interfaces get their own specialisation
  * in the app's header:
  *
- *     template <> struct PiIidOf<IMyService> {
+ *     template <> struct PiPluginIidOf<IMyService> {
  *         static const PiGuid& get() { return MY_SERVICE_IID; }
  *     };
  * -------------------------------------------------------------------------- */
-template <typename T> struct PiIidOf;
+template <typename T> struct PiPluginIidOf;
 
-#define PI_CPP_IID_SPEC(type, iid)                       \
-    template <> struct PiIidOf<type> {                   \
+#define PI_PLUGIN_CPP_IID_SPEC(type, iid)                       \
+    template <> struct PiPluginIidOf<type> {                   \
         static const PiGuid& get() { return (iid); }     \
     }
 
-PI_CPP_IID_SPEC(IPiUnknown,       PI_IID_UNKNOWN);
-PI_CPP_IID_SPEC(IPiHostServices,  PI_IID_HOST_SERVICES);
-PI_CPP_IID_SPEC(IPiHostUI,        PI_IID_HOST_UI);
-PI_CPP_IID_SPEC(IPiPluginFactory, PI_IID_PLUGIN_FACTORY);
-PI_CPP_IID_SPEC(IPiPluginBase,    PI_IID_PLUGIN_BASE);
-PI_CPP_IID_SPEC(IPiPluginView,    PI_IID_PLUGIN_VIEW);
-PI_CPP_IID_SPEC(IPiService,       PI_IID_SERVICE);
+PI_PLUGIN_CPP_IID_SPEC(IPiUnknown,       PI_IID_UNKNOWN);
+PI_PLUGIN_CPP_IID_SPEC(IPiPluginHostServices,  PI_PLUGIN_IID_HOST_SERVICES);
+PI_PLUGIN_CPP_IID_SPEC(IPiPluginHostUI,        PI_PLUGIN_IID_HOST_UI);
+PI_PLUGIN_CPP_IID_SPEC(IPiPluginFactory, PI_PLUGIN_IID_PLUGIN_FACTORY);
+PI_PLUGIN_CPP_IID_SPEC(IPiPluginBase,    PI_PLUGIN_IID_PLUGIN_BASE);
+PI_PLUGIN_CPP_IID_SPEC(IPiPluginView,    PI_PLUGIN_IID_PLUGIN_VIEW);
+PI_PLUGIN_CPP_IID_SPEC(IPiPluginService,       PI_PLUGIN_IID_SERVICE);
 
-#undef PI_CPP_IID_SPEC
+#undef PI_PLUGIN_CPP_IID_SPEC
 
 /* --------------------------------------------------------------------------
- * PiPtr<T> - owning handle to a reference-counted interface
+ * PiPluginPtr<T> - owning handle to a reference-counted interface
  *
- *      IPiHostUI* raw = NULL;
- *      PiPtr<IPiHostUI> ui;                       // empty
+ *      IPiPluginHostUI* raw = NULL;
+ *      PiPluginPtr<IPiPluginHostUI> ui;                       // empty
  *      if (PI_SUCCEEDED(pi_iunknown_query_interface((IPiUnknown*)host,
- *                                                   &PI_IID_HOST_UI, (void**)ui.put())))
- *          ... ui->pi_host_get_parent_window(...)
+ *                                                   &PI_PLUGIN_IID_HOST_UI, (void**)ui.put())))
+ *          ... ui->pi_plugin_host_get_parent_window(...)
  *      // ui's destructor releases it
  *
  * Ownership rules (the same ones interfaces.md 2.3 freezes):
  *   - every interface pointer the framework RETURNS is already AddRef'd for the
- *     caller, so PiPtr ADOPTS it (no extra AddRef) - see the constructor;
+ *     caller, so PiPluginPtr ADOPTS it (no extra AddRef) - see the constructor;
  *   - borrowed pointers (descriptor, native window) must NOT be wrapped: their
  *     lifetime is not the caller's, and releasing one is undefined behaviour;
- *   - pi_factory_create_instance()'s `host` argument is not AddRef'd by that
+ *   - pi_plugin_factory_create_instance()'s `host` argument is not AddRef'd by that
  *     call, so wrapping the value you passed in is your own reference, not a new
  *     one.
  *
  * Copying is deleted on purpose: copying a refcounted handle has to AddRef, and
  * an implicit copy is the classic way to end up with an unbalanced pair. Say
- * what you mean with PiPtr<T>::add_ref(p) for a second owning reference.
+ * what you mean with PiPluginPtr<T>::add_ref(p) for a second owning reference.
  * -------------------------------------------------------------------------- */
 template <typename T>
-class PiPtr {
+class PiPluginPtr {
 public:
-    PiPtr() noexcept : m_ptr(nullptr) {}
+    PiPluginPtr() noexcept : m_ptr(nullptr) {}
 
     /* ADOPT one reference (does NOT AddRef).
      *
      * Pairing form for the framework contract: the pointer you just received
-     * from pi_query_interface / pi_module_get_factory / pi_factory_create_instance
-     * / pi_plugin_get_view / pi_host_services_create_default is already a
+     * from pi_query_interface / pi_plugin_module_get_factory / pi_plugin_factory_create_instance
+     * / pi_plugin_get_view / pi_plugin_host_services_create_default is already a
      * reference of your own. Handing it over here transfers that reference, so
      * there is nothing left to release by hand.
      *
      * If the constructor AddRef'd instead, every call site would need a matching
      * manual release of the raw pointer - which is exactly the bug this header
      * exists to remove. */
-    explicit PiPtr(T* ptr) noexcept : m_ptr(ptr) {}
+    explicit PiPluginPtr(T* ptr) noexcept : m_ptr(ptr) {}
 
-    PiPtr(PiPtr&& other) noexcept : m_ptr(other.m_ptr) { other.m_ptr = nullptr; }
+    PiPluginPtr(PiPluginPtr&& other) noexcept : m_ptr(other.m_ptr) { other.m_ptr = nullptr; }
 
-    PiPtr& operator=(PiPtr&& other) noexcept
+    PiPluginPtr& operator=(PiPluginPtr&& other) noexcept
     {
         if (this != &other) {
             reset();
@@ -125,16 +125,16 @@ public:
         return *this;
     }
 
-    PiPtr(const PiPtr&) = delete;
-    PiPtr& operator=(const PiPtr&) = delete;
+    PiPluginPtr(const PiPluginPtr&) = delete;
+    PiPluginPtr& operator=(const PiPluginPtr&) = delete;
 
-    ~PiPtr() { reset(); }
+    ~PiPluginPtr() { reset(); }
 
     /* Take a SECOND owning reference to an interface you only borrowed. */
-    static PiPtr add_ref(T* ptr) noexcept
+    static PiPluginPtr add_ref(T* ptr) noexcept
     {
         if (ptr) pi_iunknown_add_ref((IPiUnknown*)ptr);
-        return PiPtr(ptr);
+        return PiPluginPtr(ptr);
     }
 
     T* get() const noexcept { return m_ptr; }
@@ -170,24 +170,24 @@ public:
     /* QueryInterface to another interface; the returned handle owns the
      * reference the framework hands out, or is empty when the query fails:
      *
-     *     PiPtr<IPiHostUI> ui = host.qi_to<IPiHostUI>();
+     *     PiPluginPtr<IPiPluginHostUI> ui = host.qi_to<IPiPluginHostUI>();
      *     if (ui) { ... }
      *
-     * The no-argument form uses PiIidOf<U>; the other takes the IID explicitly
+     * The no-argument form uses PiPluginIidOf<U>; the other takes the IID explicitly
      * (app-defined interfaces that have no trait specialisation yet). */
     template <typename U>
-    PiPtr<U> qi_to() const noexcept
+    PiPluginPtr<U> qi_to() const noexcept
     {
-        return qi_to<U>(PiIidOf<U>::get());
+        return qi_to<U>(PiPluginIidOf<U>::get());
     }
 
     template <typename U>
-    PiPtr<U> qi_to(const PiGuid& iid) const noexcept
+    PiPluginPtr<U> qi_to(const PiGuid& iid) const noexcept
     {
         void* out = nullptr;
-        if (!m_ptr) return PiPtr<U>();
-        if (PI_FAILED(pi_iunknown_query_interface((IPiUnknown*)m_ptr, &iid, &out))) return PiPtr<U>();
-        return PiPtr<U>(static_cast<U*>(out));
+        if (!m_ptr) return PiPluginPtr<U>();
+        if (PI_FAILED(pi_iunknown_query_interface((IPiUnknown*)m_ptr, &iid, &out))) return PiPluginPtr<U>();
+        return PiPluginPtr<U>(static_cast<U*>(out));
     }
 
 private:
@@ -195,32 +195,32 @@ private:
 };
 
 /* --------------------------------------------------------------------------
- * PiUniqueModule - RAII for a loaded plugin module
+ * PiPluginUniqueModule - RAII for a loaded plugin module
  *
- *      PiUniqueModule module;
- *      if (PI_FAILED(PiUniqueModule::load("my_plugin.dll", module))) { ... }
- *      PiPtr<IPiPluginFactory> factory = module.factory();
+ *      PiPluginUniqueModule module;
+ *      if (PI_FAILED(PiPluginUniqueModule::load("my_plugin.dll", module))) { ... }
+ *      PiPluginPtr<IPiPluginFactory> factory = module.factory();
  *
  * The order still matters and this class cannot enforce it for you: every
  * plugin instance, view and factory must be gone BEFORE the module is unloaded,
  * or their vtables point into unmapped code. Member declaration order in your
  * host is usually enough (declare the module before the things loaded from it).
  * -------------------------------------------------------------------------- */
-class PiUniqueModule {
+class PiPluginUniqueModule {
 public:
-    PiUniqueModule() noexcept : m_module(nullptr) {}
+    PiPluginUniqueModule() noexcept : m_module(nullptr) {}
 
-    /* ADOPT a module returned by pi_module_load(). */
-    explicit PiUniqueModule(PiPluginModule* module) noexcept : m_module(module) {}
+    /* ADOPT a module returned by pi_plugin_module_load(). */
+    explicit PiPluginUniqueModule(PiPluginModule* module) noexcept : m_module(module) {}
 
-    ~PiUniqueModule() { reset(); }
+    ~PiPluginUniqueModule() { reset(); }
 
-    PiUniqueModule(PiUniqueModule&& other) noexcept : m_module(other.m_module)
+    PiPluginUniqueModule(PiPluginUniqueModule&& other) noexcept : m_module(other.m_module)
     {
         other.m_module = nullptr;
     }
 
-    PiUniqueModule& operator=(PiUniqueModule&& other) noexcept
+    PiPluginUniqueModule& operator=(PiPluginUniqueModule&& other) noexcept
     {
         if (this != &other) {
             reset();
@@ -230,15 +230,15 @@ public:
         return *this;
     }
 
-    PiUniqueModule(const PiUniqueModule&) = delete;
-    PiUniqueModule& operator=(const PiUniqueModule&) = delete;
+    PiPluginUniqueModule(const PiPluginUniqueModule&) = delete;
+    PiPluginUniqueModule& operator=(const PiPluginUniqueModule&) = delete;
 
     /* Load + adopt in one step. Returns the framework result code instead of
      * throwing, so it stays usable in code that is built without exceptions. */
-    static PiResult load(const char* path, PiUniqueModule& out) noexcept
+    static PiResult load(const char* path, PiPluginUniqueModule& out) noexcept
     {
         out.reset();
-        PiPluginModule* module = pi_module_load(path);
+        PiPluginModule* module = pi_plugin_module_load(path);
         if (!module) return PI_E_NOTFOUND;
         out.m_module = module;
         return PI_OK;
@@ -248,19 +248,19 @@ public:
     explicit operator bool() const noexcept { return m_module != nullptr; }
 
     /* Module factory, or an empty handle. */
-    PiPtr<IPiPluginFactory> factory() const noexcept
+    PiPluginPtr<IPiPluginFactory> factory() const noexcept
     {
         IPiPluginFactory* f = nullptr;
-        if (!m_module) return PiPtr<IPiPluginFactory>();
-        if (PI_FAILED(pi_module_get_factory(m_module, &f))) return PiPtr<IPiPluginFactory>();
-        return PiPtr<IPiPluginFactory>(f);
+        if (!m_module) return PiPluginPtr<IPiPluginFactory>();
+        if (PI_FAILED(pi_plugin_module_get_factory(m_module, &f))) return PiPluginPtr<IPiPluginFactory>();
+        return PiPluginPtr<IPiPluginFactory>(f);
     }
 
     /* Unload the module we hold and adopt `module` instead (default: nothing). */
     void reset(PiPluginModule* module = nullptr) noexcept
     {
         if (m_module) {
-            pi_module_unload(m_module);
+            pi_plugin_module_unload(m_module);
             m_module = nullptr;
         }
         m_module = module;
