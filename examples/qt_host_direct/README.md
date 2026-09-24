@@ -7,7 +7,7 @@
 
 Qt 适配器套件（`piplugin_qt`）面向**非 Qt 宿主**：它负责创建进程里唯一的
 `QApplication` 并从宿主的 `pi_plugin_on_idle()` 里驱动 Qt。宿主自己已经有 `QApplication`
-时这条路径**不可用**——套件在 `piqt_app_create()` 里就会撞上宿主的实例（Qt 只允许
+时这条路径**不可用**——套件在 `pi_plugin_qt_app_create()` 里就会撞上宿主的实例（Qt 只允许
 一个 application object），`PI_PLUGIN_QT_VIEW_TRACE=1` 时日志只到 `attach: enter` 就不再前进。
 详见 `docs/tutorial/qt-host-direct.md`。
 

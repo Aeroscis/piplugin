@@ -122,7 +122,7 @@ bool PiPluginImGuiView::create_resources(PiNativeWindow parent)
     /* Unique per view: it cannot collide with another plugin's class, and
      * destroy_resources() unregisters it again. */
     swprintf_s(m_className, _countof(m_className),
-               L"PiImGuiViewWnd_%p", (void*)this);
+               L"PiPluginImGuiViewWnd_%p", (void*)this);
     wc.style         = CS_CLASSDC;
     wc.lpfnWndProc   = &PiPluginImGuiViewWndProc;
     wc.hInstance     = module;
@@ -252,7 +252,7 @@ void PiPluginImGuiView::destroy_resources()
  * vtable slots (host GUI thread)
  * ------------------------------------------------------------------------ */
 
-PiResult PI_CALL piimgui_qi(void* self_ptr, const PiGuid* iid, void** out)
+PiResult PI_CALL pi_plugin_imgui_qi(void* self_ptr, const PiGuid* iid, void** out)
 {
     if (!out) return PI_E_INVALIDARG;
     PiPluginImGuiView* me = PiPluginImGuiView::from_iface(self_ptr);
@@ -265,7 +265,7 @@ PiResult PI_CALL piimgui_qi(void* self_ptr, const PiGuid* iid, void** out)
     return PI_E_NOINTERFACE;
 }
 
-PiResult PI_CALL piimgui_attach(void* self_ptr, PiNativeWindow parent)
+PiResult PI_CALL pi_plugin_imgui_attach(void* self_ptr, PiNativeWindow parent)
 {
     if (!PI_IS_VALID_WINDOW(parent)) return PI_E_INVALIDARG;
     PiPluginImGuiView* me = PiPluginImGuiView::from_iface(self_ptr);
@@ -280,7 +280,7 @@ PiResult PI_CALL piimgui_attach(void* self_ptr, PiNativeWindow parent)
     return PI_OK;
 }
 
-PiResult PI_CALL piimgui_detach(void* self_ptr)
+PiResult PI_CALL pi_plugin_imgui_detach(void* self_ptr)
 {
     PiPluginImGuiView* me = PiPluginImGuiView::from_iface(self_ptr);
     if (!me->m_attached) return PI_OK;
@@ -292,13 +292,13 @@ PiResult PI_CALL piimgui_detach(void* self_ptr)
     return PI_OK;
 }
 
-PiNativeWindow PI_CALL piimgui_get_native_window(void* self_ptr)
+PiNativeWindow PI_CALL pi_plugin_imgui_get_native_window(void* self_ptr)
 {
     PiPluginImGuiView* me = PiPluginImGuiView::from_iface(self_ptr);
     return (PiNativeWindow)me->m_hwnd;
 }
 
-PiResult PI_CALL piimgui_on_resize(void* self_ptr, int32_t w, int32_t h)
+PiResult PI_CALL pi_plugin_imgui_on_resize(void* self_ptr, int32_t w, int32_t h)
 {
     PiPluginImGuiView* me = PiPluginImGuiView::from_iface(self_ptr);
     if (!me->m_attached || !me->m_hwnd) return PI_OK;
@@ -307,7 +307,7 @@ PiResult PI_CALL piimgui_on_resize(void* self_ptr, int32_t w, int32_t h)
     return PI_OK;
 }
 
-PiResult PI_CALL piimgui_on_idle(void* self_ptr)
+PiResult PI_CALL pi_plugin_imgui_on_idle(void* self_ptr)
 {
     PiPluginImGuiView* me = PiPluginImGuiView::from_iface(self_ptr);
     if (!me->m_attached || !me->m_imguiCtx) return PI_OK;
@@ -330,7 +330,7 @@ PiResult PI_CALL piimgui_on_idle(void* self_ptr)
     return PI_OK;
 }
 
-PiResult PI_CALL piimgui_get_preferred_size(void* self_ptr, int32_t* w, int32_t* h)
+PiResult PI_CALL pi_plugin_imgui_get_preferred_size(void* self_ptr, int32_t* w, int32_t* h)
 {
     (void)self_ptr;
     if (w) *w = 400;
@@ -338,7 +338,7 @@ PiResult PI_CALL piimgui_get_preferred_size(void* self_ptr, int32_t* w, int32_t*
     return PI_OK;
 }
 
-PiResult PI_CALL piimgui_set_visible(void* self_ptr, int32_t visible)
+PiResult PI_CALL pi_plugin_imgui_set_visible(void* self_ptr, int32_t visible)
 {
     PiPluginImGuiView* me = PiPluginImGuiView::from_iface(self_ptr);
     if (!me->m_hwnd) return PI_OK;
@@ -347,17 +347,17 @@ PiResult PI_CALL piimgui_set_visible(void* self_ptr, int32_t visible)
 }
 
 const IPiPluginViewVtbl PiPluginImGuiView::s_vtbl = {
-    { &piimgui_qi, &pi_refcounted_add_ref, &pi_refcounted_release },
-    &piimgui_attach,
-    &piimgui_detach,
-    &piimgui_get_native_window,
-    &piimgui_on_resize,
-    &piimgui_on_idle,
-    &piimgui_get_preferred_size,
-    &piimgui_set_visible
+    { &pi_plugin_imgui_qi, &pi_refcounted_add_ref, &pi_refcounted_release },
+    &pi_plugin_imgui_attach,
+    &pi_plugin_imgui_detach,
+    &pi_plugin_imgui_get_native_window,
+    &pi_plugin_imgui_on_resize,
+    &pi_plugin_imgui_on_idle,
+    &pi_plugin_imgui_get_preferred_size,
+    &pi_plugin_imgui_set_visible
 };
 
-static void piimgui_view_destroy(void* self_ptr)
+static void pi_plugin_imgui_view_destroy(void* self_ptr)
 {
     PiPluginImGuiView* me = PiPluginImGuiView::from_iface(self_ptr);
     /* Synchronous model: same thread, no pending work - just tear down
@@ -387,7 +387,7 @@ PiResult pi_plugin_imgui_view_create(const PiPluginImGuiViewDesc* desc, IPiPlugi
     if (!view) return PI_E_OUTOFMEMORY;
     pi_refcounted_init_with_destroy(&view->base,
                                     (const IPiUnknownVtbl*)&PiPluginImGuiView::s_vtbl,
-                                    &piimgui_view_destroy);
+                                    &pi_plugin_imgui_view_destroy);
     *out_view = (IPiPluginView*)&view->base;
     return PI_OK;
 }

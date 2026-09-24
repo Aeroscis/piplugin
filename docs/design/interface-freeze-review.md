@@ -182,6 +182,25 @@ pi_plugin_host_services_create_default, pi_plugin_host_default_set_ui_window, pi
 > `PiPluginEvent` 的字段集本身视为冻结（它没有 `api_version`
 > 可判别布局，插件在运行期不知道宿主的 API 版本），将来要携带更多数据走新接口
 > （`IPiPluginEventSink2`），见 `docs/design/events.md` §8.3。
+>
+> **发布后第四次（0.5）——导出面首次缩小**：本库自有标识符改前缀
+> （函数 `pi_plugin_*` / 类型 `PiPlugin*` / 宏 `PI_PLUGIN_*`），家族根词汇移到
+> 基础层 `pibase`：结果码词汇、`PiGuid`、`PiNativeWindow`、`IPiUnknown` 与引用计数、
+> `PI_IID_UNKNOWN`，以及 ABI / 平台管线宏。导出面 **27 → 22**
+> （`dumpbin /exports lib/Debug/piplugind.dll` 实测）：
+> - 5 个函数离开导出面，改为头文件里的 `static inline`：`pi_guid_equal`、
+>   `pi_refcounted_init`、`pi_refcounted_init_with_destroy`、
+>   `pi_refcounted_add_ref`、`pi_refcounted_release`；
+> - `PI_IID_UNKNOWN` 由导出数据符号改为头常量。
+>
+> 余下 22 个符号 = **14 个 `pi_plugin_*` 函数 + 8 个 `PI_PLUGIN_IID_*` 数据符号**，
+> 裸 `pi_` / `PI_` / `Pi` / `IPi` 前缀**已不再出现在导出面**——这正是本次改动的目的，
+> 而且是从二进制可验证的。
+> 这一条**不是纯新增**：所有导出符号名都变了，插件与宿主必须一起重建。入口名
+> `pi_plugin_entry` 未变（宿主仍能找到它），但它导入的符号名没了，旧模块会加载失败。
+> `PI_PLUGIN_API_VERSION` minor 4 → 5（`tests/unit` 的 tripwire 因此又失败过一次，
+> 设计如此）。第 3 节列出的 7 个 vtbl / 26 个槽位、描述符布局、`api_version` 语义
+> 均未变。
 
 ### 4.2 记录在案（不阻断发布，1.0 前需要结论）
 

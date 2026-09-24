@@ -32,7 +32,7 @@
  * ======================================================================== */
 namespace {
 
-bool piqt_trace_enabled()
+bool pi_plugin_qt_trace_enabled()
 {
     static const bool enabled = []() {
         char buf[8] = { 0 };
@@ -52,7 +52,7 @@ bool piqt_trace_enabled()
     return enabled;
 }
 
-void piqt_trace_impl(const char* fmt, va_list ap)
+void pi_plugin_qt_trace_impl(const char* fmt, va_list ap)
 {
 #if PI_PLATFORM_WINDOWS
     static FILE* f = nullptr;
@@ -77,12 +77,12 @@ void piqt_trace_impl(const char* fmt, va_list ap)
 #endif
 }
 
-void piqt_trace(const char* fmt, ...)
+void pi_plugin_qt_trace(const char* fmt, ...)
 {
-    if (!piqt_trace_enabled()) return;
+    if (!pi_plugin_qt_trace_enabled()) return;
     va_list ap;
     va_start(ap, fmt);
-    piqt_trace_impl(fmt, ap);
+    pi_plugin_qt_trace_impl(fmt, ap);
     va_end(ap);
 }
 
@@ -160,17 +160,17 @@ QApplication* g_app = nullptr;
 QThread*      g_app_thread = nullptr;   /* thread that created it */
 bool          g_app_shutdown = false;   /* teardown in progress */
 
-void piqt_views_register(PiPluginQtView* v);
-void piqt_views_unregister(PiPluginQtView* v);
+void pi_plugin_qt_views_register(PiPluginQtView* v);
+void pi_plugin_qt_views_unregister(PiPluginQtView* v);
 
-bool piqt_on_gui_thread()
+bool pi_plugin_qt_on_gui_thread()
 {
     return g_app_thread == nullptr || g_app_thread == QThread::currentThread();
 }
 
 /* Drain everything Qt has queued while all the participating modules are
  * still mapped. */
-void piqt_drain_events()
+void pi_plugin_qt_drain_events()
 {
     QCoreApplication::sendPostedEvents(NULL, QEvent::DeferredDelete);
     QCoreApplication::sendPostedEvents(NULL, 0);
@@ -217,14 +217,14 @@ public:
 
 /* ---------- live-view registry ---------- */
 
-void piqt_views_register(PiPluginQtView* v)
+void pi_plugin_qt_views_register(PiPluginQtView* v)
 {
     QMutexLocker lock(&g_views_mutex);
     if (!g_live_views) g_live_views = new QList<PiPluginQtView*>();
     g_live_views->append(v);
 }
 
-void piqt_views_unregister(PiPluginQtView* v)
+void pi_plugin_qt_views_unregister(PiPluginQtView* v)
 {
     QMutexLocker lock(&g_views_mutex);
     if (g_live_views) g_live_views->removeAll(v);
@@ -249,7 +249,7 @@ void piqt_views_unregister(PiPluginQtView* v)
  * ------------------------------------------------------------------ */
 
 /* 只有 GUI 线程会调用它（析构与 detach 都发生在 GUI 线程），故无需加锁视图内部 */
-bool piqt_view_post_target_alive(PiPluginQtView* v)
+bool pi_plugin_qt_view_post_target_alive(PiPluginQtView* v)
 {
     QMutexLocker lock(&g_views_mutex);
     if (!g_live_views || !g_live_views->contains(v)) return false;
@@ -283,8 +283,8 @@ protected:
         }
         for (int i = 0; i < calls.size(); ++i) {
             const Call& c = calls.at(i);
-            if (!piqt_view_post_target_alive(c.view)) {
-                piqt_trace("post: dropped a queued call (view %p detached or gone)",
+            if (!pi_plugin_qt_view_post_target_alive(c.view)) {
+                pi_plugin_qt_trace("post: dropped a queued call (view %p detached or gone)",
                            (void*)c.view);
                 continue;
             }
@@ -313,12 +313,12 @@ PiPluginQtPostMarshaller* g_post_marshaller = nullptr;
 
 /* ---------- QApplication lifetime (host GUI thread only) ---------- */
 
-bool piqt_app_create()
+bool pi_plugin_qt_app_create()
 {
     if (g_app) return true;
     if (g_app_shutdown) return false;
-    if (!piqt_on_gui_thread()) {
-        piqt_trace("app_create: refused - not on the creating thread");
+    if (!pi_plugin_qt_on_gui_thread()) {
+        pi_plugin_qt_trace("app_create: refused - not on the creating thread");
         return false;
     }
 
@@ -332,25 +332,25 @@ bool piqt_app_create()
         QMutexLocker lock(&g_post_mutex);
         if (!g_post_marshaller) g_post_marshaller = new PiPluginQtPostMarshaller();
     }
-    piqt_trace("app: QApplication created on host GUI thread");
+    pi_plugin_qt_trace("app: QApplication created on host GUI thread");
     return true;
 }
 
-void piqt_app_destroy()
+void pi_plugin_qt_app_destroy()
 {
     if (!g_app) return;
-    if (!piqt_on_gui_thread()) {
+    if (!pi_plugin_qt_on_gui_thread()) {
         /* Never destroy Qt objects from the wrong thread. */
-        piqt_trace("app_destroy: SKIPPED - wrong thread");
+        pi_plugin_qt_trace("app_destroy: SKIPPED - wrong thread");
         return;
     }
 
-    piqt_trace("app_destroy: begin");
-    piqt_drain_events();
+    pi_plugin_qt_trace("app_destroy: begin");
+    pi_plugin_qt_drain_events();
     delete g_app;
     g_app = nullptr;
     g_app_thread = nullptr;
-    piqt_trace("app_destroy: done");
+    pi_plugin_qt_trace("app_destroy: done");
 }
 
 } // namespace
@@ -376,7 +376,7 @@ void PiPluginQtView::embed_into_host()
      * the host; QWidget::destroy() (the only public-ish way to force a
      * re-creation) is protected, so such a widget takes the raw path instead. */
     if (m_widget->internalWinId()) {
-        piqt_trace("embed: widget %p already owns native window %p - "
+        pi_plugin_qt_trace("embed: widget %p already owns native window %p - "
                    "cannot pre-announce the host, will use SetParent",
                    (void*)m_widget, (void*)(uintptr_t)m_widget->internalWinId());
         return;
@@ -384,7 +384,7 @@ void PiPluginQtView::embed_into_host()
 
     m_widget->setProperty(kEmbeddedNativeParentHandle,
                           QVariant::fromValue((WId)(quintptr)m_parent));
-    piqt_trace("embed: widget %p will be created as a child of container %p",
+    pi_plugin_qt_trace("embed: widget %p will be created as a child of container %p",
                (void*)m_widget, (void*)(uintptr_t)m_parent);
 #endif
 }
@@ -395,7 +395,7 @@ void PiPluginQtView::adopt_host_window_raw(HWND parent_hwnd)
     HWND hwnd = (HWND)m_widget->winId();
     if (!hwnd) return;
 
-    piqt_trace("embed: Qt did not parent %p to %p - falling back to SetParent",
+    pi_plugin_qt_trace("embed: Qt did not parent %p to %p - falling back to SetParent",
                (void*)hwnd, (void*)parent_hwnd);
 
     /* Order matters: make it a child *before* reparenting, so the window
@@ -453,7 +453,7 @@ void PiPluginQtView::apply_geometry()
     if (GetParent(hwnd) != parent_hwnd)
         adopt_host_window_raw(parent_hwnd);
 
-    piqt_trace("geometry: container=%ldx%ld widget=%dx%d hwnd=%p parent=%p",
+    pi_plugin_qt_trace("geometry: container=%ldx%ld widget=%dx%d hwnd=%p parent=%p",
                r.right, r.bottom, w, h, (void*)hwnd,
                (void*)GetParent(hwnd));
 #endif
@@ -473,9 +473,9 @@ void PiPluginQtView::repaint_embedded()
 
 bool PiPluginQtView::attach(PiNativeWindow parent)
 {
-    piqt_trace("attach: enter parent=%p", (void*)(uintptr_t)parent);
+    pi_plugin_qt_trace("attach: enter parent=%p", (void*)(uintptr_t)parent);
     if (m_attached) return true;
-    if (!piqt_app_create()) return false;
+    if (!pi_plugin_qt_app_create()) return false;
 
     m_parent = parent;
     m_attached = true;
@@ -486,7 +486,7 @@ bool PiPluginQtView::attach(PiNativeWindow parent)
 
     QWidget* w = m_desc.create_widget(m_desc.user_data);
     if (!w) {
-        piqt_trace("attach: widget factory returned NULL");
+        pi_plugin_qt_trace("attach: widget factory returned NULL");
         if (m_desc.release) m_desc.release(m_desc.user_data);
         m_attached = false;
         return false;
@@ -499,7 +499,7 @@ bool PiPluginQtView::attach(PiNativeWindow parent)
     apply_geometry();
     w->show();
     repaint_embedded();
-    piqt_trace("attach: widget=%p hwnd=%p embedded", (void*)w,
+    pi_plugin_qt_trace("attach: widget=%p hwnd=%p embedded", (void*)w,
                (void*)(uintptr_t)m_hwnd);
     return true;
 }
@@ -511,15 +511,15 @@ void PiPluginQtView::destroy_widget()
     m_hwnd = PI_INVALID_WINDOW;
     if (!w) return;
 
-    piqt_trace("destroy: deleting widget %p", (void*)w);
+    pi_plugin_qt_trace("destroy: deleting widget %p", (void*)w);
     /* Runs on the host GUI thread - the thread that owns the parent window -
      * so Qt's window destruction cannot deadlock against the host's loop. */
     if (m_desc.destroy_widget)
         m_desc.destroy_widget(m_desc.user_data, w);
     else
         delete w;
-    piqt_drain_events();
-    piqt_trace("destroy: widget gone");
+    pi_plugin_qt_drain_events();
+    pi_plugin_qt_trace("destroy: widget gone");
 }
 
 void PiPluginQtView::detach()
@@ -532,14 +532,14 @@ void PiPluginQtView::detach()
     destroy_widget();
     if (m_desc.release) {
         m_desc.release(m_desc.user_data);
-        piqt_trace("detach: user_data released");
+        pi_plugin_qt_trace("detach: user_data released");
     }
     m_parent = PI_INVALID_WINDOW;
 }
 
 /* ---------- vtable slots ---------- */
 
-PiResult PI_CALL piqt_qi(void* self_ptr, const PiGuid* iid, void** out)
+PiResult PI_CALL pi_plugin_qt_qi(void* self_ptr, const PiGuid* iid, void** out)
 {
     if (!out) return PI_E_INVALIDARG;
     PiPluginQtView* me = PiPluginQtView::from_iface(self_ptr);
@@ -552,29 +552,29 @@ PiResult PI_CALL piqt_qi(void* self_ptr, const PiGuid* iid, void** out)
     return PI_E_NOINTERFACE;
 }
 
-PiResult PI_CALL piqt_attach(void* self_ptr, PiNativeWindow parent)
+PiResult PI_CALL pi_plugin_qt_attach(void* self_ptr, PiNativeWindow parent)
 {
     if (!PI_IS_VALID_WINDOW(parent)) return PI_E_INVALIDARG;
     PiPluginQtView* me = PiPluginQtView::from_iface(self_ptr);
     return me->attach(parent) ? PI_OK : PI_FAIL;
 }
 
-PiResult PI_CALL piqt_detach(void* self_ptr)
+PiResult PI_CALL pi_plugin_qt_detach(void* self_ptr)
 {
     PiPluginQtView* me = PiPluginQtView::from_iface(self_ptr);
     me->detach();
-    piqt_trace("detach: done");
+    pi_plugin_qt_trace("detach: done");
     return PI_OK;
 }
 
-PiNativeWindow PI_CALL piqt_get_native_window(void* self_ptr)
+PiNativeWindow PI_CALL pi_plugin_qt_get_native_window(void* self_ptr)
 {
     PiPluginQtView* me = PiPluginQtView::from_iface(self_ptr);
     QMutexLocker lock(&me->m_mutex);
     return me->m_hwnd;
 }
 
-PiResult PI_CALL piqt_on_resize(void* self_ptr, int32_t w, int32_t h)
+PiResult PI_CALL pi_plugin_qt_on_resize(void* self_ptr, int32_t w, int32_t h)
 {
     PiPluginQtView* me = PiPluginQtView::from_iface(self_ptr);
     if (!me->m_attached || !me->m_widget) return PI_OK;
@@ -592,7 +592,7 @@ PiResult PI_CALL piqt_on_resize(void* self_ptr, int32_t w, int32_t h)
     return PI_OK;
 }
 
-PiResult PI_CALL piqt_on_idle(void* self_ptr)
+PiResult PI_CALL pi_plugin_qt_on_idle(void* self_ptr)
 {
     (void)self_ptr;
     /* The host owns the message loop; we only hand Qt its slice of it.
@@ -606,7 +606,7 @@ PiResult PI_CALL piqt_on_idle(void* self_ptr)
     return PI_OK;
 }
 
-PiResult PI_CALL piqt_get_preferred_size(void* self_ptr, int32_t* w, int32_t* h)
+PiResult PI_CALL pi_plugin_qt_get_preferred_size(void* self_ptr, int32_t* w, int32_t* h)
 {
     (void)self_ptr;
     if (w) *w = 400;
@@ -614,7 +614,7 @@ PiResult PI_CALL piqt_get_preferred_size(void* self_ptr, int32_t* w, int32_t* h)
     return PI_OK;
 }
 
-PiResult PI_CALL piqt_set_visible(void* self_ptr, int32_t visible)
+PiResult PI_CALL pi_plugin_qt_set_visible(void* self_ptr, int32_t visible)
 {
     PiPluginQtView* me = PiPluginQtView::from_iface(self_ptr);
     if (!me->m_widget) return PI_OK;
@@ -624,22 +624,22 @@ PiResult PI_CALL piqt_set_visible(void* self_ptr, int32_t visible)
 }
 
 const IPiPluginViewVtbl PiPluginQtView::s_vtbl = {
-    { &piqt_qi, &pi_refcounted_add_ref, &pi_refcounted_release },
-    &piqt_attach,
-    &piqt_detach,
-    &piqt_get_native_window,
-    &piqt_on_resize,
-    &piqt_on_idle,
-    &piqt_get_preferred_size,
-    &piqt_set_visible
+    { &pi_plugin_qt_qi, &pi_refcounted_add_ref, &pi_refcounted_release },
+    &pi_plugin_qt_attach,
+    &pi_plugin_qt_detach,
+    &pi_plugin_qt_get_native_window,
+    &pi_plugin_qt_on_resize,
+    &pi_plugin_qt_on_idle,
+    &pi_plugin_qt_get_preferred_size,
+    &pi_plugin_qt_set_visible
 };
 
-static void piqt_view_destroy(void* self_ptr)
+static void pi_plugin_qt_view_destroy(void* self_ptr)
 {
     PiPluginQtView* me = PiPluginQtView::from_iface(self_ptr);
-    piqt_trace("view_destroy: enter");
+    pi_plugin_qt_trace("view_destroy: enter");
     me->detach();
-    piqt_views_unregister(me);
+    pi_plugin_qt_views_unregister(me);
     delete me;
 
     /* Last view gone: drop the QApplication now, on this thread, while the
@@ -651,10 +651,10 @@ static void piqt_view_destroy(void* self_ptr)
     }
     if (g_app) {
         g_app_shutdown = true;
-        piqt_drain_events();
-        piqt_app_destroy();
+        pi_plugin_qt_drain_events();
+        pi_plugin_qt_app_destroy();
     }
-    piqt_trace("view_destroy: done");
+    pi_plugin_qt_trace("view_destroy: done");
 }
 } // namespace
 
@@ -672,15 +672,15 @@ extern "C" PI_PLUGIN_QT_API PiResult pi_plugin_qt_view_create(const PiPluginQtVi
     if (!view) return PI_E_OUTOFMEMORY;
     pi_refcounted_init_with_destroy(&view->base,
                                     (const IPiUnknownVtbl*)&PiPluginQtView::s_vtbl,
-                                    &piqt_view_destroy);
-    piqt_views_register(view);
+                                    &pi_plugin_qt_view_destroy);
+    pi_plugin_qt_views_register(view);
     *out_view = (IPiPluginView*)&view->base;
     return PI_OK;
 }
 
 extern "C" PI_PLUGIN_QT_API void pi_plugin_qt_view_shutdown_owner(void* owner)
 {
-    piqt_trace("shutdown_owner: begin owner=%p", owner);
+    pi_plugin_qt_trace("shutdown_owner: begin owner=%p", owner);
     /* Force every view OF THIS OWNER through a full detach while that plugin is
      * still mapped. The host normally detaches first; this covers hosts that
      * simply drop the module. View ownership stays with the host, so the view
@@ -689,7 +689,7 @@ extern "C" PI_PLUGIN_QT_API void pi_plugin_qt_view_shutdown_owner(void* owner)
      * Scoped on purpose: the kit is SHARED now, so an unscoped sweep would
      * destroy the widgets of other Qt plugins that are still loaded. The
      * QApplication is NOT touched here - it belongs to the process and is
-     * destroyed by the last view that dies (see piqt_view_destroy). */
+     * destroyed by the last view that dies (see pi_plugin_qt_view_destroy). */
     for (int round = 0; round < 1000; ++round) {
         bool any = false;
         {
@@ -704,12 +704,12 @@ extern "C" PI_PLUGIN_QT_API void pi_plugin_qt_view_shutdown_owner(void* owner)
         }
         if (!any) break;
     }
-    piqt_trace("shutdown_owner: done owner=%p", owner);
+    pi_plugin_qt_trace("shutdown_owner: done owner=%p", owner);
 }
 
 extern "C" PI_PLUGIN_QT_API void pi_plugin_qt_view_shutdown(void)
 {
-    piqt_trace("shutdown: begin");
+    pi_plugin_qt_trace("shutdown: begin");
     /* The process-wide hammer: the same sweep without the owner filter, plus the
      * QApplication. Only correct when the caller owns every Qt plugin in the
      * process (a diagnostic / last-resort path). */
@@ -728,9 +728,9 @@ extern "C" PI_PLUGIN_QT_API void pi_plugin_qt_view_shutdown(void)
     }
 
     g_app_shutdown = true;
-    piqt_drain_events();
-    piqt_app_destroy();
-    piqt_trace("shutdown: done");
+    pi_plugin_qt_drain_events();
+    pi_plugin_qt_app_destroy();
+    pi_plugin_qt_trace("shutdown: done");
 }
 
 extern "C" PI_PLUGIN_QT_API QWidget* pi_plugin_qt_view_widget(IPiPluginView* view)
@@ -758,7 +758,7 @@ extern "C" PI_PLUGIN_QT_API void pi_plugin_qt_view_post(IPiPluginView* view, voi
     if (!marshaller) {
         /* 还没有宿主 GUI 线程（一个视图都没 attach 过）：没有可 marshal 的目标，
          * 丢掉并留痕。契约里"任意线程可调"的前提是进程里已经有这条 GUI 线程。 */
-        piqt_trace("post: dropped - the kit has no host GUI thread (no view attached yet)");
+        pi_plugin_qt_trace("post: dropped - the kit has no host GUI thread (no view attached yet)");
         return;
     }
 

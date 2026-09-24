@@ -21,12 +21,12 @@
 ```cpp
 bool PiPluginQtView::attach(PiNativeWindow parent)
 {
-    piqt_trace("attach: enter parent=%p", ...);
+    pi_plugin_qt_trace("attach: enter parent=%p", ...);
     if (m_attached) return true;
-    if (!piqt_app_create()) return false;      /* <- 这里就出局了 */
+    if (!pi_plugin_qt_app_create()) return false;      /* <- 这里就出局了 */
 ```
 
-而 `piqt_app_create()`（同文件 `:232-249`）会 `new QApplication(argc, argv)`：**进程里
+而 `pi_plugin_qt_app_create()`（同文件 `:232-249`）会 `new QApplication(argc, argv)`：**进程里
 已经有一个宿主的 `QApplication`**，Qt 只允许一个 application object（Qt Debug 构建里
 是 `Q_ASSERT_X` 断言，Release 里断言被编掉、行为更加不可预期）。
 

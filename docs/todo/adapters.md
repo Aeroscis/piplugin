@@ -27,7 +27,7 @@ X11 嵌入。README（`adapters/qt/README.md`）已预留此方向。
 ## 4. Qt 宿主内嵌 Qt 插件的一等用法 [P2] —— 已完成（W-06）
 
 > **结论**：这类组合**不可用**（而不是"能用但不完美"）——套件的 `attach()` 在
-> `piqt_app_create()` 就失败，因为进程里已存在宿主的 `QApplication`，套件的
+> `pi_plugin_qt_app_create()` 就失败，因为进程里已存在宿主的 `QApplication`，套件的
 > `PI_PLUGIN_QT_VIEW_TRACE=1` 表现为日志只到 `attach: enter` 一行。正确姿势是宿主直连插件的
 > `QWidget*`（插件不链接 `piplugin_qt`），并用能力门禁把走错路的插件在实例化**之前**
 > 挡下（`pi_plugin_host_session_require()` → `plugin does not provide iid ...`）。
