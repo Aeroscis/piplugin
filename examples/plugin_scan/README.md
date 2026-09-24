@@ -18,8 +18,8 @@ cmake --build --preset conan-debug --parallel
 cd bin\Debug
 
 # 3) 扫（不给参数就扫当前目录）
-.\pi_example_plugin_scan.exe
-.\pi_example_plugin_scan.exe ..\..\build\some_plugin_folder
+.\pi_plugin_example_plugin_scan.exe
+.\pi_plugin_example_plugin_scan.exe ..\..\build\some_plugin_folder
 ```
 
 实测输出（`bin\Debug`，节选）：
@@ -30,7 +30,7 @@ directory: .
 
 candidates: 18 file(s), 18 inspected
 
-[13] pi_test_plugin_qt.dll
+[13] pi_plugin_test_plugin_qt.dll
      name     : Qt Test Plugin
      vendor   : piplugin
      version  : 1.2.0
@@ -44,17 +44,17 @@ candidates: 18 file(s), 18 inspected
 
 == inventory: usable plugins ==
 name                               version   category          file
-Example ImGui Plugin               1.0.0     Example/UI        pi_example_plugin_imgui.dll
-Example Qt Plugin                  1.0.0     Example/UI        pi_example_plugin_qt.dll
-Qt Test Plugin                     1.2.0     UI/Test           pi_test_plugin_qt.dll
-Qt Test Plugin B                   1.2.0     UI/Test           pi_test_plugin_qt2.dll
+Example ImGui Plugin               1.0.0     Example/UI        pi_plugin_example_plugin_imgui.dll
+Example Qt Plugin                  1.0.0     Example/UI        pi_plugin_example_plugin_qt.dll
+Qt Test Plugin                     1.2.0     UI/Test           pi_plugin_test_plugin_qt.dll
+Qt Test Plugin B                   1.2.0     UI/Test           pi_plugin_test_plugin_qt2.dll
 ...（共 11 个）
 
 == rejected / not a plugin ==
 piplugind.dll                      pi_plugin_module_load failed: ".\piplugind.dll" does not export pi_plugin_entry
 piplugin_qtd.dll                   pi_plugin_module_load failed: ".\piplugin_qtd.dll" does not export pi_plugin_entry
-pi_test_plugin_badversion.dll      plugin api_version 0x00020000 (major 2, minor 0) is incompatible with host 0x00000004 (major 0, minor 4) ...
-pi_test_plugin_guirequired.dll     plugin requires capability iid data1=0x00000011 but this host does not provide it
+pi_plugin_test_plugin_badversion.dll      plugin api_version 0x00020000 (major 2, minor 0) is incompatible with host 0x00000004 (major 0, minor 4) ...
+pi_plugin_test_plugin_guirequired.dll     plugin requires capability iid data1=0x00000011 but this host does not provide it
 Qt5Core.dll                        pi_plugin_module_load failed: ".\Qt5Core.dll" does not export pi_plugin_entry
 ...（共 7 个）
 
@@ -86,9 +86,9 @@ no descriptor name appears twice - nothing to choose
 
 ```powershell
 mkdir build\scan_demo
-copy bin\Debug\pi_test_plugin_qt.dll build\scan_demo\dup_a.dll
-copy bin\Debug\pi_test_plugin_qt.dll build\scan_demo\dup_b.dll
-cd bin\Debug ; .\pi_example_plugin_scan.exe ..\..\build\scan_demo
+copy bin\Debug\pi_plugin_test_plugin_qt.dll build\scan_demo\dup_a.dll
+copy bin\Debug\pi_plugin_test_plugin_qt.dll build\scan_demo\dup_b.dll
+cd bin\Debug ; .\pi_plugin_example_plugin_scan.exe ..\..\build\scan_demo
 # => 'Qt Test Plugin': 2 candidate(s) -> picks 1.2.0 (dup_a.dll)
 ```
 

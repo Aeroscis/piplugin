@@ -71,7 +71,7 @@ static const char* CapKind(uint32_t flags)
 
 int main(int argc, char** argv)
 {
-    const char* dllPath = (argc > 1) ? argv[1] : "pi_test_plugin_qt.dll";
+    const char* dllPath = (argc > 1) ? argv[1] : "pi_plugin_test_plugin_qt.dll";
     printf("== piplugin headless host ==\n");
     printf("Loading plugin: %s\n\n", dllPath);
 

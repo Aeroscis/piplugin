@@ -18,7 +18,7 @@
 
 param(
     [int]$Cycles = 3,
-    [string]$Plugin = "pi_test_plugin_qt.dll,pi_test_plugin_imgui.dll",
+    [string]$Plugin = "pi_plugin_test_plugin_qt.dll,pi_plugin_test_plugin_imgui.dll",
     [int]$IdleFrames = 12,
     [string]$BinDir = "",
     [string]$OutFile = ""
@@ -28,7 +28,7 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 if (-not $BinDir)  { $BinDir  = Join-Path $repoRoot "bin\Debug" }
 if (-not $OutFile) { $OutFile = Join-Path $repoRoot "build\selftest.txt" }
 
-$exe = Join-Path $BinDir "pi_test_host_imgui.exe"
+$exe = Join-Path $BinDir "pi_plugin_test_host_imgui.exe"
 if (-not (Test-Path $exe)) {
     Write-Host ("RESULT: FAIL - host not found: {0}" -f $exe) -ForegroundColor Red
     Write-Host "  hint: pass -BinDir <repo>\bin\<CONFIG> matching the build configuration"

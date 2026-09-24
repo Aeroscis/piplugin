@@ -13,7 +13,7 @@
 #include "piplugin/pi_plugin.h"
 #include "pi_host_session.h"
 #include "pi_event_router.h"
-#ifdef PI_CONSUMER_WITH_IMGUI
+#ifdef PI_PLUGIN_CONSUMER_WITH_IMGUI
 #include "pi_imgui_view.h"
 #endif
 
@@ -42,7 +42,7 @@ int main(void)
     printf("core + host kit L0 + event router: OK\n");
     pi_plugin_event_router_destroy(router);
 
-#ifdef PI_CONSUMER_WITH_IMGUI
+#ifdef PI_PLUGIN_CONSUMER_WITH_IMGUI
     printf("imgui adapter kit linked: pi_plugin_imgui_view_create = %p\n",
            (void*)(uintptr_t)&pi_plugin_imgui_view_create);
 #else

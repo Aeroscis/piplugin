@@ -3,7 +3,7 @@
 # 服务插件示例：纯 C，无 UI，实现 IPiPluginService（start/poll/status/stop）。
 cmake_minimum_required(VERSION 3.23)
 
-set(TARGET_NAME pi_example_service)
+set(TARGET_NAME pi_plugin_example_service)
 pi_tar_msg(STATUS ${TARGET_NAME} "building example: service plugin...")
 
 if(NOT WIN32)

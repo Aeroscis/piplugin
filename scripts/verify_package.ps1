@@ -92,7 +92,7 @@ if ($LASTEXITCODE -ne 0) {
         $failures += "install-tree build"
         Write-Host "FAIL - build against the install tree" -ForegroundColor Red
     } else {
-        $exe = Join-Path $installConsumer "$Config\pi_consumer.exe"
+        $exe = Join-Path $installConsumer "$Config\pi_plugin_consumer.exe"
         # the core is SHARED: put the installed runtime next to the exe
         Copy-Item (Join-Path $prefix "bin\$Config\*.dll") (Split-Path $exe) -Force
         & $exe
@@ -115,7 +115,7 @@ if ($SkipConan) {
     Write-Section "B. Conan package"
 
     Push-Location $repoRoot
-    & conan create . --build=missing -s build_type=$Config -o PI_BUILD_TESTS=False 2>&1 |
+    & conan create . --build=missing -s build_type=$Config -o PI_PLUGIN_BUILD_TESTS=False 2>&1 |
         ForEach-Object { Write-Host "    $_" }
     $createExit = $LASTEXITCODE
     Pop-Location
@@ -189,7 +189,7 @@ CMakeToolchain
                     $failures += "conan consumer build"
                     Write-Host "FAIL - build against the Conan package" -ForegroundColor Red
                 } else {
-                    $exe = Join-Path $conanConsumer "$Config\pi_consumer.exe"
+                    $exe = Join-Path $conanConsumer "$Config\pi_plugin_consumer.exe"
                     # the deployed dependency tree carries the runtime DLL; take the
                     # CORE one (piplugind.dll), not an adapter kit's
                     $coreNames = @("piplugind.dll", "piplugin.dll")
@@ -299,7 +299,7 @@ if ($SkipCpack) {
                 $failures += "cpack consumer build"
                 Write-Host "FAIL - build against the unpacked archive" -ForegroundColor Red
             } else {
-                $exe = Join-Path $zipConsumer "$Config\pi_consumer.exe"
+                $exe = Join-Path $zipConsumer "$Config\pi_plugin_consumer.exe"
                 $pkgBin = Join-Path $pkgRoot "bin\$Config"
                 # the host finds the SHARED core either next to itself (copy, as in
                 # phase A) or on PATH; take the copy so the run cannot silently pick

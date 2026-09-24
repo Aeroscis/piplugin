@@ -202,8 +202,8 @@ static void PublishNobody(void)
  * -------------------------------------------------------------------------- */
 int main(int argc, char** argv)
 {
-    const char* events_plugin = (argc > 1) ? argv[1] : "pi_test_plugin_events.dll";
-    const char* plain_plugin  = (argc > 2) ? argv[2] : "pi_test_plugin_imgui.dll";
+    const char* events_plugin = (argc > 1) ? argv[1] : "pi_plugin_test_plugin_events.dll";
+    const char* plain_plugin  = (argc > 2) ? argv[2] : "pi_plugin_test_plugin_imgui.dll";
 
     IPiPluginHostEvents*        events = NULL;
     PiPluginEventRouterStats    stats;

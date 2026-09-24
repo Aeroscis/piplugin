@@ -28,7 +28,7 @@
  * With the kit built as a DLL there is one copy of that state, and the second
  * plugin reuses the QApplication the first one created.
  *
- * What every mode does with failures: print to stdout and to pi_multi_host.log,
+ * What every mode does with failures: print to stdout and to pi_plugin_multi_host.log,
  * then exit 1. ctest judges only the exit code.
  */
 #include "piplugin/pi_plugin.h"
@@ -90,7 +90,7 @@ static int           g_marshal_wrong_thread = 0;
 static int           g_marshal_overflow    = 0;
 
 /* --------------------------------------------------------------------------
- * Diagnostics: stdout + pi_multi_host.log next to the exe, like the other hosts
+ * Diagnostics: stdout + pi_plugin_multi_host.log next to the exe, like the other hosts
  * -------------------------------------------------------------------------- */
 static FILE* g_log = NULL;
 
@@ -105,7 +105,7 @@ static void LogStatus(const char* fmt, ...)
         char* slash = (len > 0 && len < MAX_PATH) ? strrchr(path, '\\') : NULL;
         if (slash) {
             *(slash + 1) = 0;
-            strncat_s(path, sizeof(path), "pi_multi_host.log", _TRUNCATE);
+            strncat_s(path, sizeof(path), "pi_plugin_multi_host.log", _TRUNCATE);
             fopen_s(&g_log, path, "a");
         }
     }
@@ -946,6 +946,6 @@ int main(int argc, char** argv)
     if (argc > 3 && strcmp(argv[1], "--imgui-pair") == 0)
         return RunImguiPairMode(argv[2], argv[3]);
 
-    return RunMultiPluginMode((argc > 1) ? argv[1] : "pi_test_plugin_qt.dll",
-                              (argc > 2) ? argv[2] : "pi_test_plugin_qt2.dll");
+    return RunMultiPluginMode((argc > 1) ? argv[1] : "pi_plugin_test_plugin_qt.dll",
+                              (argc > 2) ? argv[2] : "pi_plugin_test_plugin_qt2.dll");
 }

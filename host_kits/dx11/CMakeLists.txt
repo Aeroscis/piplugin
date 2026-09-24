@@ -61,7 +61,7 @@ install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/pi_host_dx11.h
 install(EXPORT pipluginHostDx11Targets
     FILE pipluginHostDx11Targets.cmake
     NAMESPACE ${NAMESPACE_NAME}::
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/${PI_CMAKE_PACKAGE_SUBDIR}
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/${PI_PLUGIN_CMAKE_PACKAGE_SUBDIR}
 )
 
 # ------- Windows 版本资源（W-07） -------

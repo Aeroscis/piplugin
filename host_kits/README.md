@@ -41,9 +41,9 @@ host_kits/
 
 开关树与 `adapters/` 同构（Conan 侧同名选项整批转发，见 `conanfile.py`）：
 
-- `PI_BUILD_HOST_KITS` —— 总开关；关死后所有宿主 kit 一律不编；
-- `PI_BUILD_HOST_KIT_CORE` / `PI_BUILD_HOST_KIT_EVENTS` / `PI_BUILD_HOST_KIT_QT` /
-  `PI_BUILD_HOST_KIT_DX11` —— 分层分开关。
+- `PI_PLUGIN_BUILD_HOST_KITS` —— 总开关；关死后所有宿主 kit 一律不编；
+- `PI_PLUGIN_BUILD_HOST_KIT_CORE` / `PI_PLUGIN_BUILD_HOST_KIT_EVENTS` / `PI_PLUGIN_BUILD_HOST_KIT_QT` /
+  `PI_PLUGIN_BUILD_HOST_KIT_DX11` —— 分层分开关。
 
 ## 当前状态
 

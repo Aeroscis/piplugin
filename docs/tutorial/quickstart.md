@@ -49,7 +49,7 @@ cmake --build --preset conan-debug      # Debug 版
 |---|---|
 | `piplugind.dll`（核心库） | `lib/Debug/` |
 | 测试宿主 exe / 插件 dll | `build/tests/.../Debug/` 及 `bin/Debug/`（install 后） |
-| `pi_test_host_headless.exe` | console 宿主（可独立运行验证） |
+| `pi_plugin_test_host_headless.exe` | console 宿主（可独立运行验证） |
 
 ## 3. 运行演示
 
@@ -57,7 +57,7 @@ cmake --build --preset conan-debug      # Debug 版
 
 ```bash
 cd bin/Debug
-pi_test_host_headless.exe pi_test_plugin_qt.dll
+pi_plugin_test_host_headless.exe pi_plugin_test_plugin_qt.dll
 ```
 
 输出应显示：宿主无 UI 能力探测、插件能力清单、能力门（requirement 检查）通过、
@@ -67,7 +67,7 @@ pi_test_host_headless.exe pi_test_plugin_qt.dll
 
 ```bash
 cd bin/Debug
-pi_test_host_imgui.exe pi_test_plugin_imgui.dll
+pi_plugin_test_host_imgui.exe pi_plugin_test_plugin_imgui.dll
 ```
 
 启动一个 imgui + D3D11 窗口，左侧控制面板，右侧嵌入插件的 imgui 界面（滑动条、心跳动画）。
@@ -76,11 +76,11 @@ pi_test_host_imgui.exe pi_test_plugin_imgui.dll
 
 ```bash
 cd bin/Debug
-pi_test_host_qt.exe pi_test_plugin_imgui.dll
+pi_plugin_test_host_qt.exe pi_plugin_test_plugin_imgui.dll
 ```
 
 Qt 窗口内嵌入**imgui 插件**——演示"宿主与插件 UI 工具包不同"的交叉嵌入。
-（反之，imgui 宿主加载 Qt 插件：`pi_test_host_imgui.exe pi_test_plugin_qt.dll`。）
+（反之，imgui 宿主加载 Qt 插件：`pi_plugin_test_host_imgui.exe pi_plugin_test_plugin_qt.dll`。）
 
 ## 4. 自动化验证
 
@@ -110,7 +110,7 @@ ctest --test-dir build -C Debug --output-on-failure
 
 ```bash
 cd bin/Debug
-pi_test_host_imgui.exe --cycles 3 --plugin pi_test_plugin_qt.dll --idle-frames 12
+pi_plugin_test_host_imgui.exe --cycles 3 --plugin pi_plugin_test_plugin_qt.dll --idle-frames 12
 echo %errorlevel%        # 0 = PASS
 ```
 
@@ -128,7 +128,7 @@ powershell -ExecutionPolicy Bypass -File scripts\run_selftest.ps1 -Cycles 3
 ### 4.3 截图证明（`--screenshot`）
 
 ```bash
-pi_test_host_imgui.exe pi_test_plugin_qt.dll --screenshot shot.bmp
+pi_plugin_test_host_imgui.exe pi_plugin_test_plugin_qt.dll --screenshot shot.bmp
 ```
 
 加载插件、渲染若干帧后把**合成后的窗口**截成 bmp 并退出，
@@ -209,7 +209,7 @@ rm -rf build CMakeUserPresets.json   # Windows: Remove-Item -Recurse -Force buil
 conan install . --build=missing       # 重新生成单 include
 ```
 
-### 5.3 `pi_test_host_imgui` 被 DISABLED
+### 5.3 `pi_plugin_test_host_imgui` 被 DISABLED
 
 它的 Win32/DX11 backend 来自 `adapters/imgui/backends`，若找不到会以 WARNING 跳过。
 运行 `conan install . --build=missing` 提供 imgui 后重新 configure 即可。
@@ -296,7 +296,7 @@ cmake_install.cmake
 所以必须用：
 
 ```bash
-cmake --build build --config Debug --target pi_test_host_imgui
+cmake --build build --config Debug --target pi_plugin_test_host_imgui
 ```
 
 用 `--config Release` 会因 Conan 生成的 `imgui` 包数据不匹配而报

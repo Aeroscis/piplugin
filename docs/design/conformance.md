@@ -28,7 +28,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run_selftest.ps1 `
 或者直接调宿主（日志写在 exe 同目录的 `pi_plugin_test_host.log`）：
 
 ```
-pi_test_host_imgui.exe --cycles 3 --plugin my_plugin.dll --idle-frames 12
+pi_plugin_test_host_imgui.exe --cycles 3 --plugin my_plugin.dll --idle-frames 12
 ```
 
 | 参数 | 含义 |

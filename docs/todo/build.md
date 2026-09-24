@@ -42,7 +42,7 @@
 
 ## 4. Qt 依赖策略 [P1] —— 已完成（roadmap ECO-05）
 
-> **结论**：已去硬编码。查找顺序 `PI_QT_PREFIX` → `Qt5_DIR` / `CMAKE_PREFIX_PATH`
+> **结论**：已去硬编码。查找顺序 `PI_PLUGIN_QT_PREFIX` → `Qt5_DIR` / `CMAKE_PREFIX_PATH`
 > （含环境与 PATH）；维护者常用路径只在「本机存在」时作为提示；缺 Qt 时四个 Qt 目标带
 > 指引自动禁用，不破坏 configure。conan `qt` 包替代方案**未采纳**（维持「本地安装
 > Qt」策略）。

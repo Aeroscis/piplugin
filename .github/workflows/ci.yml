@@ -63,9 +63,9 @@ jobs:
       - name: Conan install
         run: >-
           conan install . --build=missing -s build_type=Debug
-          -o PI_BUILD_ADAPTER_QT=False
-          -o PI_BUILD_TEST_HOST_QT=False
-          -o PI_BUILD_TEST_PLUGIN=False
+          -o PI_PLUGIN_BUILD_ADAPTER_QT=False
+          -o PI_PLUGIN_BUILD_TEST_HOST_QT=False
+          -o PI_PLUGIN_BUILD_TEST_PLUGIN=False
 
       - name: Configure
         run: cmake --preset conan-default
@@ -118,9 +118,9 @@ jobs:
       - name: Conan install
         run: >-
           conan install . --build=missing -s build_type=Debug
-          -o PI_BUILD_ADAPTER_QT=False
-          -o PI_BUILD_TEST_HOST_QT=False
-          -o PI_BUILD_TEST_PLUGIN=False
+          -o PI_PLUGIN_BUILD_ADAPTER_QT=False
+          -o PI_PLUGIN_BUILD_TEST_HOST_QT=False
+          -o PI_PLUGIN_BUILD_TEST_PLUGIN=False
 
       - name: Configure
         run: cmake --preset conan-default
@@ -206,7 +206,7 @@ jobs:
 
             # Exit code is the verdict: the binary prints "RESULT: PASS" and its
             # own check/failure counts (52 checks today).
-            ./bin/Debug/pi_unit_cpp_tests
+            ./bin/Debug/pi_plugin_unit_cpp_tests
 
             # bin/Debug holds what this round deployed; the next round overwrites it.
             echo "deployed: $(ls -1 bin/Debug | tr '\n' ' ')"

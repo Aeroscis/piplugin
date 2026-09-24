@@ -53,7 +53,7 @@
 宿主 GUI 线程                         Qt
 ──────────────────────────────────────────────────────────────
 pi_plugin_view_attach()
-  └─ pi_qt_view::attach()             QApplication 构造（本线程）
+  └─ pi_plugin_qt_view::attach()             QApplication 构造（本线程）
      ├─ create_widget()               QWidget 构造 + 布局
      ├─ 告知 Qt 宿主容器 HWND          Qt 把控件窗口建成容器的 WS_CHILD
      ├─ setGeometry(0,0,容器客户区)     子窗口坐标 = 父客户区坐标，无边框
@@ -155,7 +155,7 @@ target_link_libraries(my_plugin PRIVATE piplugin piplugin_qt)
 ## 调试
 
 设环境变量 `PI_PLUGIN_QT_VIEW_TRACE=1`，套件会把每一步生命周期写到
-`<exe 目录>/pi_qt_view.log`，带线程 id 和时间戳。排查"插件卸载崩"“界面不动”
+`<exe 目录>/pi_plugin_qt_view.log`，带线程 id 和时间戳。排查"插件卸载崩"“界面不动”
 这类问题时先看这个文件——每一步应该都发生在同一个线程 id 上。
 
 ## 边界与限制

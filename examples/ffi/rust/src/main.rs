@@ -12,7 +12,7 @@
 //!
 //! Run from the repository root (the plugin must sit next to piplugind.dll):
 //!
-//!     cargo run --manifest-path examples/ffi/rust/Cargo.toml -- bin/Debug/pi_test_plugin_imgui.dll
+//!     cargo run --manifest-path examples/ffi/rust/Cargo.toml -- bin/Debug/pi_plugin_test_plugin_imgui.dll
 //!
 //! Exit code 0 = every step succeeded.
 
@@ -222,7 +222,7 @@ fn cstr_or_empty(p: *const c_char) -> String {
 fn main() {
     let args: Vec<String> = env::args().collect();
     let plugin_arg = args.get(1).cloned().unwrap_or_else(|| {
-        Path::new("bin").join("Debug").join("pi_test_plugin_imgui.dll").to_string_lossy().into_owned()
+        Path::new("bin").join("Debug").join("pi_plugin_test_plugin_imgui.dll").to_string_lossy().into_owned()
     });
     let plugin_path = PathBuf::from(&plugin_arg);
     if !plugin_path.exists() {

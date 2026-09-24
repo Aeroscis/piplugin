@@ -30,7 +30,7 @@ bool PiPluginQtView::attach(PiNativeWindow parent)
 已经有一个宿主的 `QApplication`**，Qt 只允许一个 application object（Qt Debug 构建里
 是 `Q_ASSERT_X` 断言，Release 里断言被编掉、行为更加不可预期）。
 
-实测记录（本仓库复核，2026-09-23）：`pi_test_host_qt.exe pi_test_plugin_qt.dll`
+实测记录（本仓库复核，2026-09-23）：`pi_plugin_test_host_qt.exe pi_plugin_test_plugin_qt.dll`
 （Qt 宿主 × Qt 插件）时，trace 只到 `attach: enter`，进程 5 秒后仍在运行、需要强杀；
 `docs/todo/adapters.md` #4 更早的一次实测记录为"静默失败"。两种表现指向同一结论：
 
@@ -167,8 +167,8 @@ target_link_libraries(my_qt_plugin PRIVATE piplugin Qt5::Widgets)   # 没有 pip
 
 ```powershell
 cd bin\Debug
-.\pi_example_qt_direct_host.exe --self-test        # RESULT: PASS / exit 0
+.\pi_plugin_example_qt_direct_host.exe --self-test        # RESULT: PASS / exit 0
 ```
 
-它同时是"走错路会怎样"的验证器：`--self-test pi_example_plugin_qt.dll` 应当失败在
+它同时是"走错路会怎样"的验证器：`--self-test pi_plugin_example_plugin_qt.dll` 应当失败在
 能力门禁上（§4.3）。

@@ -5,7 +5,7 @@
 cmake_minimum_required(VERSION 3.23)
 
 # target name
-set(TARGET_NAME pi_test_plugin_events)
+set(TARGET_NAME pi_plugin_test_plugin_events)
 pi_tar_msg(STATUS ${TARGET_NAME} "building events test plugin...")
 
 # source files（纯 C，无第三方依赖）
@@ -30,7 +30,7 @@ target_sources(${TARGET_NAME}
     )
 
 # 测试共用头：事件 topic / payload key 的唯一来源
-target_include_directories(${TARGET_NAME} PRIVATE ${PI_TESTS_COMMON_DIR})
+target_include_directories(${TARGET_NAME} PRIVATE ${PI_PLUGIN_TESTS_COMMON_DIR})
 
 # first party
 target_link_libraries(${TARGET_NAME} PRIVATE piplugin)

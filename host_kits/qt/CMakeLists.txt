@@ -27,7 +27,7 @@ set(CMAKE_AUTOMOC ON)
 find_package(Qt5 COMPONENTS Widgets Core QUIET)
 if(NOT Qt5_FOUND)
     message(STATUS "Qt5 not found -> Qt host kit (${TARGET_NAME}) disabled
-  ${PI_QT_MISSING_HINT}")
+  ${PI_PLUGIN_QT_MISSING_HINT}")
     return()
 endif()
 if(NOT TARGET piplugin_host)
@@ -71,7 +71,7 @@ install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/pi_host_embed_area.h
 install(EXPORT pipluginHostQtTargets
     FILE pipluginHostQtTargets.cmake
     NAMESPACE ${NAMESPACE_NAME}::
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/${PI_CMAKE_PACKAGE_SUBDIR}
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/${PI_PLUGIN_CMAKE_PACKAGE_SUBDIR}
 )
 
 # ------- Windows 版本资源（W-07） -------

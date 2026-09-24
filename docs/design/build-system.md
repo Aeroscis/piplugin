@@ -19,13 +19,13 @@ class PiPluginConan(ConanFile):
     # 开关树：选项与 CMake 缓存选项同名（PI_BUILD_*），generate() 整批转发给 CMake
     options = {
         "shared": [True, False], "fPIC": [True, False],
-        "PI_BUILD_ADAPTERS": [True, False],        # adapter kits 总开关
-        "PI_BUILD_ADAPTER_QT": [True, False],      # qt adapter 分开关（Qt5 本地安装）
-        "PI_BUILD_ADAPTER_IMGUI": [True, False],   # imgui adapter 分开关（conan imgui）
-        "PI_BUILD_TESTS": [True, False],           # 测试件总开关
-        "PI_BUILD_TEST_HOST": [True, False], "PI_BUILD_TEST_HOST_QT": [True, False],
-        "PI_BUILD_HEADLESS_HOST": [True, False],
-        "PI_BUILD_TEST_PLUGIN": [True, False], "PI_BUILD_TEST_PLUGIN_IMGUI": [True, False],
+        "PI_PLUGIN_BUILD_ADAPTERS": [True, False],        # adapter kits 总开关
+        "PI_PLUGIN_BUILD_ADAPTER_QT": [True, False],      # qt adapter 分开关（Qt5 本地安装）
+        "PI_PLUGIN_BUILD_ADAPTER_IMGUI": [True, False],   # imgui adapter 分开关（conan imgui）
+        "PI_PLUGIN_BUILD_TESTS": [True, False],           # 测试件总开关
+        "PI_PLUGIN_BUILD_TEST_HOST": [True, False], "PI_PLUGIN_BUILD_TEST_HOST_QT": [True, False],
+        "PI_PLUGIN_BUILD_HEADLESS_HOST": [True, False],
+        "PI_PLUGIN_BUILD_TEST_PLUGIN": [True, False], "PI_PLUGIN_BUILD_TEST_PLUGIN_IMGUI": [True, False],
     }
     generators = "CMakeDeps"   # CMakeToolchain 由 generate() 手动实例化（注入 conf/env 路径）
 ```
@@ -70,7 +70,7 @@ endif()
 
 add_subdirectory(${GLOBAL_PROJECT_SRC_PATH})  # src/
 add_subdirectory(.../adapters)                # adapters/
-option(PI_BUILD_TESTS "..." ON)
+option(PI_PLUGIN_BUILD_TESTS "..." ON)
 add_subdirectory(${GLOBAL_PROJECT_TESTS_PATH})# tests/
 ```
 
@@ -139,7 +139,7 @@ target_link_libraries(... PUBLIC piplugin imgui::imgui)
 | `piplugin_qt` | Qt5 Widgets | **SHARED**（APP-08：进程内共享一个 `QApplication`） | 找不到 Qt5 则禁用 |
 | `piplugin_imgui` | imgui (conan) | STATIC | 找不到 imgui 则禁用 |
 
-总开关 `PI_BUILD_ADAPTERS`（Conan 侧同名选项透传）：关死时所有 kit 一律不编。
+总开关 `PI_PLUGIN_BUILD_ADAPTERS`（Conan 侧同名选项透传）：关死时所有 kit 一律不编。
 每个 kit 另有独立安装规则：库 → `lib/<CONFIG>/`（SHARED 的 Windows 运行时 DLL 走
 `bin/<CONFIG>/`），公共头 → `include/piplugin/adapters/<kit>/`，导出目标 → 独立
 `piplugin<Kit>AdapterTargets.cmake`（由伞配置按存在性挂接）。
@@ -147,25 +147,25 @@ SHARED 的 Qt 套件 DLL 与核心库一样在 POST_BUILD 阶段自动部署到 
 插件运行时必须能找到它。
 
 **Qt5 怎么被找到（ECO-05）**：仓库不写死任何 Qt 路径。根 `CMakeLists.txt` 暴露缓存变量
-`PI_QT_PREFIX`（默认空）；查找顺序是 `PI_QT_PREFIX` → `Qt5_DIR` → `CMAKE_PREFIX_PATH`
+`PI_PLUGIN_QT_PREFIX`（默认空）；查找顺序是 `PI_PLUGIN_QT_PREFIX` → `Qt5_DIR` → `CMAKE_PREFIX_PATH`
 （含环境变量）→ Windows 上 PATH 里的 Qt。只有以上都没给线索、且本机常见的
 `C:/Qt/5.15.2/msvc2019_64` 恰好存在时，才把它当**提示**用一次并打印说明。
-找不到 Qt 时，四处 Qt 相关目标各自打印一条带指引的消息（`PI_QT_MISSING_HINT`）后禁用，
+找不到 Qt 时，四处 Qt 相关目标各自打印一条带指引的消息（`PI_PLUGIN_QT_MISSING_HINT`）后禁用，
 configure 仍然成功 —— 别人给出自己的路径即可构建 Qt 目标，不必改仓库文件。
 
 ### 3.5 例子（examples/）
 
 roadmap ECO-03：每个例子一个目录、一个 `CMakeLists.txt`、一份 README（三步跑通），
-只依赖公开 API，不引用 `tests/`。开关 `PI_BUILD_EXAMPLES`（默认 ON；Conan 侧同名选项）。
+只依赖公开 API，不引用 `tests/`。开关 `PI_PLUGIN_BUILD_EXAMPLES`（默认 ON；Conan 侧同名选项）。
 
 | 目标 | 依赖 | 类型 |
 |---|---|---|
-| `pi_example_minimal_host` | 核心 + 宿主 kit L0 | exe（console + 一个窗口） |
-| `pi_example_service` | 仅核心 | dll（纯 C 服务插件） |
-| `pi_example_plugin_imgui` | imgui + imgui 套件 | dll |
-| `pi_example_plugin_qt` | Qt5 + Qt 套件（SHARED） | dll（仅 Windows） |
-| `pi_example_kit_win32` / `pi_plugin_example_plugin_win32` | 仅核心（Windows） | STATIC 套件 + dll（ECO-01 的可执行附录：照 `docs/design/adapter-spec.md` 写的最小套件） |
-| `pi_example_specialized_plugin` / `pi_example_specialized_app` | 核心 + 宿主 kit L0 | dll + exe（通道 A/B 示范） |
+| `pi_plugin_example_minimal_host` | 核心 + 宿主 kit L0 | exe（console + 一个窗口） |
+| `pi_plugin_example_service` | 仅核心 | dll（纯 C 服务插件） |
+| `pi_plugin_example_plugin_imgui` | imgui + imgui 套件 | dll |
+| `pi_plugin_example_plugin_qt` | Qt5 + Qt 套件（SHARED） | dll（仅 Windows） |
+| `pi_plugin_example_kit_win32` / `pi_plugin_example_plugin_win32` | 仅核心（Windows） | STATIC 套件 + dll（ECO-01 的可执行附录：照 `docs/design/adapter-spec.md` 写的最小套件） |
+| `pi_plugin_example_specialized_plugin` / `pi_plugin_example_specialized_app` | 核心 + 宿主 kit L0 | dll + exe（通道 A/B 示范） |
 
 其中两个无 GUI 工具包依赖的例子同时注册为 ctest（`example_minimal_host_service`、
 `example_specialized_app`）；GUI 例子留给 README 的人工三步。
@@ -217,15 +217,15 @@ roadmap ECO-03：每个例子一个目录、一个 `CMakeLists.txt`、一份 REA
 
 | 目标 | 依赖 | 类型 |
 |---|---|---|
-| `pi_test_host_imgui` | imgui + backends | exe（Win32） |
-| `pi_test_host_qt` | Qt5 + imgui 套件 | exe（Win32） |
-| `pi_test_host_headless` | 仅核心 | exe（console，纯 C） |
-| `pi_test_host_multi` | 仅核心 + 宿主 kit L0 | exe（console，APP-08 多插件同进程验收） |
-| `pi_test_host_events` | 仅核心 + 宿主 kit L0/events | exe（console，APP-06 事件验收） |
-| `pi_test_plugin_qt` / `pi_test_plugin_qt2` | Qt5 + Qt 套件（SHARED） | dll（仅 Windows，同一份源码两个变体） |
-| `pi_test_plugin_service` | 仅核心 | dll（纯 C 服务插件，APP-07） |
-| `pi_test_plugin_events` | 仅核心 | dll（纯 C 事件插件，APP-06） |
-| `pi_test_plugin_imgui` | imgui + imgui 套件 | dll |
+| `pi_plugin_test_host_imgui` | imgui + backends | exe（Win32） |
+| `pi_plugin_test_host_qt` | Qt5 + imgui 套件 | exe（Win32） |
+| `pi_plugin_test_host_headless` | 仅核心 | exe（console，纯 C） |
+| `pi_plugin_test_host_multi` | 仅核心 + 宿主 kit L0 | exe（console，APP-08 多插件同进程验收） |
+| `pi_plugin_test_host_events` | 仅核心 + 宿主 kit L0/events | exe（console，APP-06 事件验收） |
+| `pi_plugin_test_plugin_qt` / `pi_plugin_test_plugin_qt2` | Qt5 + Qt 套件（SHARED） | dll（仅 Windows，同一份源码两个变体） |
+| `pi_plugin_test_plugin_service` | 仅核心 | dll（纯 C 服务插件，APP-07） |
+| `pi_plugin_test_plugin_events` | 仅核心 | dll（纯 C 事件插件，APP-06） |
+| `pi_plugin_test_plugin_imgui` | imgui + imgui 套件 | dll |
 
 Qt 运行时部署：宿主/插件构建后自动复制 `Qt5Core/Gui/Widgets.dll` + `platforms/qwindows.dll`
 到目标目录；install 时也一并安装到 `<root>/bin/<CONFIG>`。
@@ -239,7 +239,7 @@ SHARED 的 `piplugin_qt` 套件 DLL 同样由自身 POST_BUILD 部署到 `bin/<C
 
 - `default`：VS 2022 / x64，构建目录 `build/generic`（与 conan 的 `build/` 互不干扰）；
 - `default-unix`：Ninja + 单配置 Debug（非 Windows）；
-- 配套 build / test 预设同名；缓存变量只声明 `PI_BUILD_TESTS` / `PI_BUILD_EXAMPLES`，
+- 配套 build / test 预设同名；缓存变量只声明 `PI_PLUGIN_BUILD_TESTS` / `PI_PLUGIN_BUILD_EXAMPLES`，
   其余交给默认值 + "找不到依赖即禁用"的既有逻辑（缺 Qt/imgui 时相关目标自己打印提示并跳过）；
 - 可追加缓存变量，例如 `cmake --preset default -DPI_QT_PREFIX="C:/Qt/5.15.2/msvc2019_64"`。
 
@@ -278,7 +278,7 @@ target_link_libraries(app PRIVATE pi::piplugin_imgui)
 Conan 打包（adapters 已随核心一并打包，测试件不进包）：
 
 ```bash
-conan create . -pr MSVC2022-amd64-Cpp17-Debug -o PI_BUILD_TESTS=False
+conan create . -pr MSVC2022-amd64-Cpp17-Debug -o PI_PLUGIN_BUILD_TESTS=False
 ```
 
 包内容：核心 `bin/<CONFIG>/` + `lib/<CONFIG>/` + `include/piplugin/`、

@@ -89,7 +89,7 @@ static void PiPluginWin32Trace(const char* fmt, ...)
             if (!slash) return;
             *(slash + 1) = 0;
         }
-        strncat_s(path, sizeof(path), "pi_win32_view.log", _TRUNCATE);
+        strncat_s(path, sizeof(path), "pi_plugin_win32_view.log", _TRUNCATE);
         if (fopen_s(&log, path, "a") != 0) { log = NULL; return; }
     }
 

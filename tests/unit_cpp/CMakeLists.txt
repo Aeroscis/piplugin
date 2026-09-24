@@ -6,7 +6,7 @@
 cmake_minimum_required(VERSION 3.23)
 
 # target name
-set(TARGET_NAME pi_unit_cpp_tests)
+set(TARGET_NAME pi_plugin_unit_cpp_tests)
 pi_tar_msg(STATUS ${TARGET_NAME} "building C++ RAII layer tests...")
 
 # source files（C++17，仅依赖框架核心）
@@ -42,9 +42,9 @@ add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
 # 只按退出码判定（0 = 全过，其中已包含 Debug CRT 的泄漏判定）。
 # 有 imgui 测试插件时把它的路径传进去，让 PiPluginUniqueModule 对着真实模块跑一遍
 # 完整的加载 -> 实例化 -> 卸载链；CI 上 Qt 是关的，imgui 插件则在。
-if(TARGET pi_test_plugin_imgui)
+if(TARGET pi_plugin_test_plugin_imgui)
     add_test(NAME unit_cpp
-        COMMAND "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}/${TARGET_NAME}.exe" "pi_test_plugin_imgui.dll"
+        COMMAND "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}/${TARGET_NAME}.exe" "pi_plugin_test_plugin_imgui.dll"
         WORKING_DIRECTORY "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
         )
 else()

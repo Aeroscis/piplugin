@@ -10,13 +10,13 @@
  *   5. unload in the order the kit guarantees, then exit.
  *
  * Everything host-side that is mechanism (loading, gates, the seven-step unload
- * sequence) comes from the L0 host kit (`pi_host_session`), so this file only
+ * sequence) comes from the L0 host kit (`pi_plugin_host_session`), so this file only
  * contains decisions a host has to make anyway: what the window looks like,
  * where the container is, and when to pump.
  *
  * Build:  see README.md (three steps)
- * Run:    pi_example_minimal_host.exe [plugin.dll]
- *         defaults to pi_example_plugin_imgui.dll (built by CI as well)
+ * Run:    pi_plugin_example_minimal_host.exe [plugin.dll]
+ *         defaults to pi_plugin_example_plugin_imgui.dll (built by CI as well)
  */
 #include "piplugin/pi_plugin.h"
 #include "pi_host_session.h"
@@ -81,7 +81,7 @@ static LRESULT WINAPI WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 
 int main(int argc, char** argv)
 {
-    const char* dll = (argc > 1) ? argv[1] : "pi_example_plugin_imgui.dll";
+    const char* dll = (argc > 1) ? argv[1] : "pi_plugin_example_plugin_imgui.dll";
     WNDCLASSEXW wc;
     PiResult hr;
     DWORD start;

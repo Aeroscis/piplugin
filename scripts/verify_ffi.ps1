@@ -21,7 +21,7 @@ param(
     # plugin is only built when imgui is available, so defaulting to it makes
     # this check either fail or - worse - silently exercise whatever stale
     # binary happens to sit in bin/ from an earlier build.
-    [string]$Plugin = "pi_test_plugin_service.dll",
+    [string]$Plugin = "pi_plugin_test_plugin_service.dll",
     [string]$BinDir = ""
 )
 

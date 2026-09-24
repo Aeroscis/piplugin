@@ -95,9 +95,9 @@ ctest --preset default
 
 ```powershell
 cd bin\Debug
-.\pi_test_host_headless.exe pi_test_plugin_qt.dll     # headless: negotiation + full lifecycle
-.\pi_test_host_imgui.exe  pi_test_plugin_qt.dll       # imgui host embedding a Qt plugin
-.\pi_test_host_qt.exe     pi_test_plugin_imgui.dll    # Qt host embedding an imgui plugin
+.\pi_plugin_test_host_headless.exe pi_plugin_test_plugin_qt.dll     # headless: negotiation + full lifecycle
+.\pi_plugin_test_host_imgui.exe  pi_plugin_test_plugin_qt.dll       # imgui host embedding a Qt plugin
+.\pi_plugin_test_host_qt.exe     pi_plugin_test_plugin_imgui.dll    # Qt host embedding an imgui plugin
 ```
 
 Want to write one yourself? [`../examples`](../examples/README.md) has runnable minimal demos
@@ -105,8 +105,8 @@ Want to write one yourself? [`../examples`](../examples/README.md) has runnable 
 project:
 
 ```powershell
-.\pi_example_minimal_host.exe pi_example_plugin_imgui.dll
-.\pi_example_specialized_app.exe pi_example_specialized_plugin.dll pi_example_service.dll
+.\pi_plugin_example_minimal_host.exe pi_plugin_example_plugin_imgui.dll
+.\pi_plugin_example_specialized_app.exe pi_plugin_example_specialized_plugin.dll pi_plugin_example_service.dll
 ```
 
 Writing a host: [`tutorial/write-host.md`](tutorial/write-host.md) (the host kits are documented

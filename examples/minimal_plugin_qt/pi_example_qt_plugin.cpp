@@ -9,7 +9,7 @@
  * piplugin_qt<debug-suffix>.dll next to it (the build deploys it into bin/<CONFIG>).
  *
  * Run it with examples/minimal_host:
- *     pi_example_minimal_host.exe pi_example_plugin_qt.dll
+ *     pi_plugin_example_minimal_host.exe pi_plugin_example_plugin_qt.dll
  */
 #include "piplugin/pi_plugin.h"
 #include "pi_qt_view.h"

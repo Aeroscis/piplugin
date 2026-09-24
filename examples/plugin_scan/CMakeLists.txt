@@ -12,7 +12,7 @@ if(NOT WIN32)
     return()
 endif()
 
-set(TARGET_NAME pi_example_plugin_scan)
+set(TARGET_NAME pi_plugin_example_plugin_scan)
 pi_tar_msg(STATUS ${TARGET_NAME} "building example: plugin scanner (discovery, FUT-07)...")
 
 if(NOT TARGET piplugin_host)

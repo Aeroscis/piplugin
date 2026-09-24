@@ -22,8 +22,8 @@
       },
       "binaryDir": "${sourceDir}/build/generic",
       "cacheVariables": {
-        "PI_BUILD_TESTS": "ON",
-        "PI_BUILD_EXAMPLES": "ON"
+        "PI_PLUGIN_BUILD_TESTS": "ON",
+        "PI_PLUGIN_BUILD_EXAMPLES": "ON"
       }
     },
     {
@@ -39,8 +39,8 @@
       "binaryDir": "${sourceDir}/build/generic",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "PI_BUILD_TESTS": "ON",
-        "PI_BUILD_EXAMPLES": "ON"
+        "PI_PLUGIN_BUILD_TESTS": "ON",
+        "PI_PLUGIN_BUILD_EXAMPLES": "ON"
       }
     }
   ],

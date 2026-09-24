@@ -15,8 +15,8 @@
  * can forward anything it likes to whichever plugin it likes. (Kept out of this
  * example's code to stay short; see tests/test_host_events.)
  *
- * Run: pi_specialized_app.exe [plugin.dll] [non-conforming-plugin.dll]
- *      defaults: pi_example_specialized_plugin.dll, pi_example_service.dll
+ * Run: pi_plugin_specialized_app.exe [plugin.dll] [non-conforming-plugin.dll]
+ *      defaults: pi_plugin_example_specialized_plugin.dll, pi_plugin_example_service.dll
  *      (the second one only needs to be a plugin that does NOT implement the
  *      protocol - ANY plugin works, which is the point of the gate)
  */
@@ -136,8 +136,8 @@ static int LoadAndCheck(const char* dll, IMyAppJobQueue** out_jobs)
 
 int main(int argc, char** argv)
 {
-    const char* good_dll = (argc > 1) ? argv[1] : "pi_example_specialized_plugin.dll";
-    const char* bad_dll  = (argc > 2) ? argv[2] : "pi_example_service.dll";
+    const char* good_dll = (argc > 1) ? argv[1] : "pi_plugin_example_specialized_plugin.dll";
+    const char* bad_dll  = (argc > 2) ? argv[2] : "pi_plugin_example_service.dll";
 
     IPiPluginHostServices* services = NULL;
     IMyAppJobQueue*  jobs = NULL;

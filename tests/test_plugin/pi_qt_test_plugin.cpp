@@ -53,9 +53,9 @@ static bool PostThreadProbeEnabled()
  * 一份进程级状态"的问题根本测不出来。变体之间只差：显示名、class GUID，以及
  * 心跳消息码（宿主据此分别确认两个插件都真的在跑）。
  *
- * 变体 A = pi_test_plugin_qt.dll（默认），变体 B = 由 CMake 传
- * PI_TEST_QT_VARIANT_B 编出的 pi_test_plugin_qt2.dll。 */
-#if defined(PI_TEST_QT_VARIANT_B)
+ * 变体 A = pi_plugin_test_plugin_qt.dll（默认），变体 B = 由 CMake 传
+ * PI_PLUGIN_TEST_QT_VARIANT_B 编出的 pi_plugin_test_plugin_qt2.dll。 */
+#if defined(PI_PLUGIN_TEST_QT_VARIANT_B)
 static const PiGuid QT_PLUGIN_CLASS_GUID =
     PI_GUID(0x7F83A101, 0x5C4D, 0x4E2A,
             0x91, 0xD3, 0x8A, 0xFC, 0x2E, 0xB1, 0x44, 0x00);

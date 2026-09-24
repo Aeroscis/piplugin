@@ -7,13 +7,13 @@ cmake_minimum_required(VERSION 3.23)
 
 set(CMAKE_AUTOMOC ON)
 
-set(TARGET_NAME pi_example_plugin_qt)
+set(TARGET_NAME pi_plugin_example_plugin_qt)
 pi_tar_msg(STATUS ${TARGET_NAME} "building example: minimal Qt plugin...")
 
 find_package(Qt5 COMPONENTS Widgets Core QUIET)
 if(NOT Qt5_FOUND)
     message(STATUS "Qt5 not found -> ${TARGET_NAME} skipped
-  ${PI_QT_MISSING_HINT}")
+  ${PI_PLUGIN_QT_MISSING_HINT}")
     return()
 endif()
 if(NOT TARGET piplugin_qt)

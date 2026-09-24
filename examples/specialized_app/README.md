@@ -17,7 +17,7 @@
 cmake --preset conan-default
 cmake --build --preset conan-debug --parallel
 cd bin\Debug
-.\pi_example_specialized_app.exe pi_example_specialized_plugin.dll pi_example_service.dll
+.\pi_plugin_example_specialized_app.exe pi_plugin_example_specialized_plugin.dll pi_plugin_example_service.dll
 ```
 
 期望输出（节选）：
@@ -26,12 +26,12 @@ cd bin\Debug
 [app] this app requires com.example job-queue plugins
 [kit] load[0]: gate passed (category=Example/Worker, capabilities=2)
 [job plugin] running inside 'ExampleApp' (the app says 1 plugin(s) are loaded)   <- 通道 B
-[app] accepted 'pi_example_specialized_plugin.dll'
+[app] accepted 'pi_plugin_example_specialized_plugin.dll'
 [job plugin] accepted job 'import-photo' as #0 (total 1)                          <- 通道 A
 [job plugin] accepted job 'export-video' as #1 (total 2)
 [app] the plugin accepted 2 job(s)
-[kit] load[1]: pi_example_service.dll
-[app] rejected 'pi_example_service.dll' (hr=-8): plugin does not provide iid data1=0x8E52B1D7 …
+[kit] load[1]: pi_plugin_example_service.dll
+[app] rejected 'pi_plugin_example_service.dll' (hr=-8): plugin does not provide iid data1=0x8E52B1D7 …
 [app] as expected: the gate kept a non-conforming plugin out
 RESULT: PASS
 ```

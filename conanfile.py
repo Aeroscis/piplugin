@@ -11,30 +11,30 @@ _CMAKE_EXCLUDED_OPTIONS = ("shared", "fPIC")
 
 # 各测试件对 adapter kit 的需求（经 CMakeLists.txt 逐一核实；None = 仅依赖核心或直连 conan 依赖）
 _TEST_ADAPTER_NEEDS = {
-    "PI_BUILD_TEST_HOST": None,            # imgui 测试宿主：直连 imgui(conan)，无需 adapter kit
-    "PI_BUILD_TEST_HOST_QT": "IMGUI",      # qt 测试宿主：渲染 imgui 插件 -> 需要 imgui adapter kit
-    "PI_BUILD_HEADLESS_HOST": None,        # headless 宿主：仅核心
-    "PI_BUILD_TEST_HOST_MULTI": None,      # 多插件同进程宿主（APP-08）：仅核心 + L0 kit
-    "PI_BUILD_TEST_HOST_EVENTS": None,     # 事件宿主（APP-06）：仅核心 + L0/events kit
-    "PI_BUILD_TEST_PLUGIN": "QT",          # qt 测试插件：需要 qt adapter kit
-    "PI_BUILD_TEST_PLUGIN_IMGUI": "IMGUI",  # imgui 测试插件：需要 imgui adapter kit
-    "PI_BUILD_TEST_PLUGIN_BADVERSION": None,   # 坏版本测试插件（BLK-03）：仅核心
-    "PI_BUILD_TEST_PLUGIN_GUIREQUIRED": None,  # GUI-required 测试插件（ECO-08）：仅核心
-    "PI_BUILD_TEST_PLUGIN_SERVICE": None,      # 服务测试插件（APP-07）：仅核心
-    "PI_BUILD_TEST_PLUGIN_EVENTS": None,       # 事件测试插件（APP-06）：仅核心
-    "PI_BUILD_UNIT_TESTS": None,               # 核心单测（BLK-06）：仅核心
-    "PI_BUILD_UNIT_CPP_TESTS": None,           # C++ RAII 层测试（APP-05）：仅核心
+    "PI_PLUGIN_BUILD_TEST_HOST": None,            # imgui 测试宿主：直连 imgui(conan)，无需 adapter kit
+    "PI_PLUGIN_BUILD_TEST_HOST_QT": "IMGUI",      # qt 测试宿主：渲染 imgui 插件 -> 需要 imgui adapter kit
+    "PI_PLUGIN_BUILD_HEADLESS_HOST": None,        # headless 宿主：仅核心
+    "PI_PLUGIN_BUILD_TEST_HOST_MULTI": None,      # 多插件同进程宿主（APP-08）：仅核心 + L0 kit
+    "PI_PLUGIN_BUILD_TEST_HOST_EVENTS": None,     # 事件宿主（APP-06）：仅核心 + L0/events kit
+    "PI_PLUGIN_BUILD_TEST_PLUGIN": "QT",          # qt 测试插件：需要 qt adapter kit
+    "PI_PLUGIN_BUILD_TEST_PLUGIN_IMGUI": "IMGUI",  # imgui 测试插件：需要 imgui adapter kit
+    "PI_PLUGIN_BUILD_TEST_PLUGIN_BADVERSION": None,   # 坏版本测试插件（BLK-03）：仅核心
+    "PI_PLUGIN_BUILD_TEST_PLUGIN_GUIREQUIRED": None,  # GUI-required 测试插件（ECO-08）：仅核心
+    "PI_PLUGIN_BUILD_TEST_PLUGIN_SERVICE": None,      # 服务测试插件（APP-07）：仅核心
+    "PI_PLUGIN_BUILD_TEST_PLUGIN_EVENTS": None,       # 事件测试插件（APP-06）：仅核心
+    "PI_PLUGIN_BUILD_UNIT_TESTS": None,               # 核心单测（BLK-06）：仅核心
+    "PI_PLUGIN_BUILD_UNIT_CPP_TESTS": None,           # C++ RAII 层测试（APP-05）：仅核心
 }
 
 # 各测试宿主对宿主 kit 的需求（三个测试宿主都已改用宿主 kit；
 # 关闭对应 kit 时 CMake 侧会禁用该宿主，这里显式报错而不是静默降级）
 #   值 = 需要的宿主 kit 分开关名，对应 PI_BUILD_HOST_KIT_<名>
 _TEST_HOST_KIT_NEEDS = {
-    "PI_BUILD_TEST_HOST": ("CORE", "DX11"),     # imgui 宿主：L0 会话 + L1 dx11 交换链
-    "PI_BUILD_TEST_HOST_QT": ("CORE", "QT"),    # qt 宿主：L0 会话 + L1 qt 嵌入区域
-    "PI_BUILD_HEADLESS_HOST": ("CORE",),        # headless 宿主：仅 L0 会话
-    "PI_BUILD_TEST_HOST_MULTI": ("CORE",),      # 多插件宿主（APP-08）：仅 L0 会话
-    "PI_BUILD_TEST_HOST_EVENTS": ("CORE", "EVENTS"),  # 事件宿主（APP-06）：L0 会话 + 事件路由
+    "PI_PLUGIN_BUILD_TEST_HOST": ("CORE", "DX11"),     # imgui 宿主：L0 会话 + L1 dx11 交换链
+    "PI_PLUGIN_BUILD_TEST_HOST_QT": ("CORE", "QT"),    # qt 宿主：L0 会话 + L1 qt 嵌入区域
+    "PI_PLUGIN_BUILD_HEADLESS_HOST": ("CORE",),        # headless 宿主：仅 L0 会话
+    "PI_PLUGIN_BUILD_TEST_HOST_MULTI": ("CORE",),      # 多插件宿主（APP-08）：仅 L0 会话
+    "PI_PLUGIN_BUILD_TEST_HOST_EVENTS": ("CORE", "EVENTS"),  # 事件宿主（APP-06）：L0 会话 + 事件路由
 }
 
 
@@ -50,69 +50,69 @@ class PiPluginConan(ConanFile):
 
     # ------------------------- 开关树（与 CMake 选项同名，一一对应）-------------------------
     # 结构：核心（必编，无开关）
-    #      + adapter kits   ：总开关 PI_BUILD_ADAPTERS          + 每框架分开关 PI_BUILD_ADAPTER_*
-    #      + host kits      ：总开关 PI_BUILD_HOST_KITS         + 每层分开关 PI_BUILD_HOST_KIT_*
+    #      + adapter kits   ：总开关 PI_PLUGIN_BUILD_ADAPTERS          + 每框架分开关 PI_BUILD_ADAPTER_*
+    #      + host kits      ：总开关 PI_PLUGIN_BUILD_HOST_KITS         + 每层分开关 PI_BUILD_HOST_KIT_*
     #        （宿主侧机制库；L0 core 已抽出，三个测试宿主都已改用它）
-    #      + tests          ：总开关 PI_BUILD_TESTS             + 每测试件分开关 PI_BUILD_TEST_*
+    #      + tests          ：总开关 PI_PLUGIN_BUILD_TESTS             + 每测试件分开关 PI_BUILD_TEST_*
     # 依赖：开任一需要 imgui 的开关 -> requirements() 自动拉取；总开关关死 -> 下层分开关有效关闭
     #      （有效状态计算见 _adapter_enabled/_host_kit_enabled/_test_enabled，与 CMake 侧守卫语义一致）。
     options = {
         "shared": [True, False],
         "fPIC": [True, False],
         # adapter kits（产品部件，默认全开）
-        "PI_BUILD_ADAPTERS": [True, False],       # 总开关
-        "PI_BUILD_ADAPTER_QT": [True, False],     # 分开关：Qt5 为本地安装，非 conan 依赖
-        "PI_BUILD_ADAPTER_IMGUI": [True, False],  # 分开关：依赖 conan imgui
+        "PI_PLUGIN_BUILD_ADAPTERS": [True, False],       # 总开关
+        "PI_PLUGIN_BUILD_ADAPTER_QT": [True, False],     # 分开关：Qt5 为本地安装，非 conan 依赖
+        "PI_PLUGIN_BUILD_ADAPTER_IMGUI": [True, False],  # 分开关：依赖 conan imgui
         # host kits（宿主侧 kit，产品部件，默认全开；无 conan 依赖）
-        "PI_BUILD_HOST_KITS": [True, False],      # 总开关
-        "PI_BUILD_HOST_KIT_CORE": [True, False],  # 分开关：L0 会话库（仅依赖核心）
-        "PI_BUILD_HOST_KIT_EVENTS": [True, False],  # 分开关：宿主侧事件路由 piplugin_events（APP-06）
-        "PI_BUILD_HOST_KIT_QT": [True, False],    # 分开关：L1 Qt 嵌入区域（Qt5 本地安装 + L0）
-        "PI_BUILD_HOST_KIT_DX11": [True, False],  # 分开关：L1 DX11 嵌入胶水（Windows）
-        # tests（测试件，默认全开；conan create 打包时建议 -o PI_BUILD_TESTS=False）
+        "PI_PLUGIN_BUILD_HOST_KITS": [True, False],      # 总开关
+        "PI_PLUGIN_BUILD_HOST_KIT_CORE": [True, False],  # 分开关：L0 会话库（仅依赖核心）
+        "PI_PLUGIN_BUILD_HOST_KIT_EVENTS": [True, False],  # 分开关：宿主侧事件路由 piplugin_events（APP-06）
+        "PI_PLUGIN_BUILD_HOST_KIT_QT": [True, False],    # 分开关：L1 Qt 嵌入区域（Qt5 本地安装 + L0）
+        "PI_PLUGIN_BUILD_HOST_KIT_DX11": [True, False],  # 分开关：L1 DX11 嵌入胶水（Windows）
+        # tests（测试件，默认全开；conan create 打包时建议 -o PI_PLUGIN_BUILD_TESTS=False）
         # examples（ECO-03：可构建的最小示范；只依赖公开 API，不进包）
-        "PI_BUILD_EXAMPLES": [True, False],       # 总开关
-        "PI_BUILD_TESTS": [True, False],          # 总开关
-        "PI_BUILD_UNIT_TESTS": [True, False],     # 核心回归单测（ctest 的 unit 用例）
-        "PI_BUILD_UNIT_CPP_TESTS": [True, False],  # C++ RAII 层测试（ctest 的 unit_cpp 用例）
-        "PI_BUILD_TEST_HOST": [True, False],      # imgui 测试宿主（依赖 imgui）
-        "PI_BUILD_TEST_HOST_QT": [True, False],   # qt 测试宿主（依赖 Qt5 + imgui adapter kit）
-        "PI_BUILD_HEADLESS_HOST": [True, False],  # headless 测试宿主（仅依赖核心）
-        "PI_BUILD_TEST_HOST_MULTI": [True, False],  # 多插件同进程验收宿主（仅依赖核心 + L0 kit）
-        "PI_BUILD_TEST_HOST_EVENTS": [True, False],  # 事件机制验收宿主（仅依赖核心 + L0/events kit）
-        "PI_BUILD_TEST_PLUGIN": [True, False],     # qt 测试插件（依赖 Qt5 + qt adapter kit）
-        "PI_BUILD_TEST_PLUGIN_IMGUI": [True, False],  # imgui 测试插件（依赖 imgui + imgui adapter kit）
-        "PI_BUILD_TEST_PLUGIN_BADVERSION": [True, False],  # 声明不兼容 api_version 的测试插件（BLK-03 负向用例，仅依赖核心）
-        "PI_BUILD_TEST_PLUGIN_GUIREQUIRED": [True, False],  # 声明 HOST_UI REQUIRED 的测试插件（ECO-08 负向用例，仅依赖核心）
-        "PI_BUILD_TEST_PLUGIN_SERVICE": [True, False],  # 服务测试插件（APP-07，仅依赖核心）
-        "PI_BUILD_TEST_PLUGIN_EVENTS": [True, False],   # 事件测试插件（APP-06，仅依赖核心）
+        "PI_PLUGIN_BUILD_EXAMPLES": [True, False],       # 总开关
+        "PI_PLUGIN_BUILD_TESTS": [True, False],          # 总开关
+        "PI_PLUGIN_BUILD_UNIT_TESTS": [True, False],     # 核心回归单测（ctest 的 unit 用例）
+        "PI_PLUGIN_BUILD_UNIT_CPP_TESTS": [True, False],  # C++ RAII 层测试（ctest 的 unit_cpp 用例）
+        "PI_PLUGIN_BUILD_TEST_HOST": [True, False],      # imgui 测试宿主（依赖 imgui）
+        "PI_PLUGIN_BUILD_TEST_HOST_QT": [True, False],   # qt 测试宿主（依赖 Qt5 + imgui adapter kit）
+        "PI_PLUGIN_BUILD_HEADLESS_HOST": [True, False],  # headless 测试宿主（仅依赖核心）
+        "PI_PLUGIN_BUILD_TEST_HOST_MULTI": [True, False],  # 多插件同进程验收宿主（仅依赖核心 + L0 kit）
+        "PI_PLUGIN_BUILD_TEST_HOST_EVENTS": [True, False],  # 事件机制验收宿主（仅依赖核心 + L0/events kit）
+        "PI_PLUGIN_BUILD_TEST_PLUGIN": [True, False],     # qt 测试插件（依赖 Qt5 + qt adapter kit）
+        "PI_PLUGIN_BUILD_TEST_PLUGIN_IMGUI": [True, False],  # imgui 测试插件（依赖 imgui + imgui adapter kit）
+        "PI_PLUGIN_BUILD_TEST_PLUGIN_BADVERSION": [True, False],  # 声明不兼容 api_version 的测试插件（BLK-03 负向用例，仅依赖核心）
+        "PI_PLUGIN_BUILD_TEST_PLUGIN_GUIREQUIRED": [True, False],  # 声明 HOST_UI REQUIRED 的测试插件（ECO-08 负向用例，仅依赖核心）
+        "PI_PLUGIN_BUILD_TEST_PLUGIN_SERVICE": [True, False],  # 服务测试插件（APP-07，仅依赖核心）
+        "PI_PLUGIN_BUILD_TEST_PLUGIN_EVENTS": [True, False],   # 事件测试插件（APP-06，仅依赖核心）
     }
     default_options = {
         "shared": True,
         "fPIC": True,
-        "PI_BUILD_ADAPTERS": True,
-        "PI_BUILD_ADAPTER_QT": True,
-        "PI_BUILD_ADAPTER_IMGUI": True,
-        "PI_BUILD_HOST_KITS": True,
-        "PI_BUILD_HOST_KIT_CORE": True,
-        "PI_BUILD_HOST_KIT_EVENTS": True,
-        "PI_BUILD_HOST_KIT_QT": True,
-        "PI_BUILD_HOST_KIT_DX11": True,
-        "PI_BUILD_EXAMPLES": True,
-        "PI_BUILD_TESTS": True,
-        "PI_BUILD_UNIT_TESTS": True,
-        "PI_BUILD_UNIT_CPP_TESTS": True,
-        "PI_BUILD_TEST_HOST": True,
-        "PI_BUILD_TEST_HOST_QT": True,
-        "PI_BUILD_HEADLESS_HOST": True,
-        "PI_BUILD_TEST_HOST_MULTI": True,
-        "PI_BUILD_TEST_HOST_EVENTS": True,
-        "PI_BUILD_TEST_PLUGIN": True,
-        "PI_BUILD_TEST_PLUGIN_IMGUI": True,
-        "PI_BUILD_TEST_PLUGIN_BADVERSION": True,
-        "PI_BUILD_TEST_PLUGIN_GUIREQUIRED": True,
-        "PI_BUILD_TEST_PLUGIN_SERVICE": True,
-        "PI_BUILD_TEST_PLUGIN_EVENTS": True,
+        "PI_PLUGIN_BUILD_ADAPTERS": True,
+        "PI_PLUGIN_BUILD_ADAPTER_QT": True,
+        "PI_PLUGIN_BUILD_ADAPTER_IMGUI": True,
+        "PI_PLUGIN_BUILD_HOST_KITS": True,
+        "PI_PLUGIN_BUILD_HOST_KIT_CORE": True,
+        "PI_PLUGIN_BUILD_HOST_KIT_EVENTS": True,
+        "PI_PLUGIN_BUILD_HOST_KIT_QT": True,
+        "PI_PLUGIN_BUILD_HOST_KIT_DX11": True,
+        "PI_PLUGIN_BUILD_EXAMPLES": True,
+        "PI_PLUGIN_BUILD_TESTS": True,
+        "PI_PLUGIN_BUILD_UNIT_TESTS": True,
+        "PI_PLUGIN_BUILD_UNIT_CPP_TESTS": True,
+        "PI_PLUGIN_BUILD_TEST_HOST": True,
+        "PI_PLUGIN_BUILD_TEST_HOST_QT": True,
+        "PI_PLUGIN_BUILD_HEADLESS_HOST": True,
+        "PI_PLUGIN_BUILD_TEST_HOST_MULTI": True,
+        "PI_PLUGIN_BUILD_TEST_HOST_EVENTS": True,
+        "PI_PLUGIN_BUILD_TEST_PLUGIN": True,
+        "PI_PLUGIN_BUILD_TEST_PLUGIN_IMGUI": True,
+        "PI_PLUGIN_BUILD_TEST_PLUGIN_BADVERSION": True,
+        "PI_PLUGIN_BUILD_TEST_PLUGIN_GUIREQUIRED": True,
+        "PI_PLUGIN_BUILD_TEST_PLUGIN_SERVICE": True,
+        "PI_PLUGIN_BUILD_TEST_PLUGIN_EVENTS": True,
     }
 
     # 根文档（LICENSE / README.md / CHANGELOG.md）一并导出：CMake install 规则会把它们
@@ -139,21 +139,21 @@ class PiPluginConan(ConanFile):
     # Conan 2 在 configure() 阶段禁止改写选项值（应用 -o 后即 freeze），
     # 因此不做选项归一化/联动，而是在使用处计算"有效状态"：总开关 AND 分开关。
     # generate() 仍把原始选项原样透传给 CMake，门控由 CMake 侧同构的守卫完成
-    #（adapters/CMakeLists.txt 的 if(NOT PI_BUILD_ADAPTERS) return() 等）。
+    #（adapters/CMakeLists.txt 的 if(NOT PI_PLUGIN_BUILD_ADAPTERS) return() 等）。
 
     def _adapter_enabled(self, kit):
-        """adapter kit 有效状态：总开关 PI_BUILD_ADAPTERS AND 分开关 PI_BUILD_ADAPTER_<kit>"""
-        return bool(self.options.PI_BUILD_ADAPTERS) and bool(getattr(self.options,
+        """adapter kit 有效状态：总开关 PI_PLUGIN_BUILD_ADAPTERS AND 分开关 PI_BUILD_ADAPTER_<kit>"""
+        return bool(self.options.PI_PLUGIN_BUILD_ADAPTERS) and bool(getattr(self.options,
                                                                     f"PI_BUILD_ADAPTER_{kit}"))
 
     def _host_kit_enabled(self, kit):
-        """宿主 kit 有效状态：总开关 PI_BUILD_HOST_KITS AND 分开关 PI_BUILD_HOST_KIT_<kit>"""
-        return bool(self.options.PI_BUILD_HOST_KITS) and bool(getattr(self.options,
+        """宿主 kit 有效状态：总开关 PI_PLUGIN_BUILD_HOST_KITS AND 分开关 PI_BUILD_HOST_KIT_<kit>"""
+        return bool(self.options.PI_PLUGIN_BUILD_HOST_KITS) and bool(getattr(self.options,
                                                                      f"PI_BUILD_HOST_KIT_{kit}"))
 
     def _test_enabled(self, test_switch):
-        """测试件有效状态：总开关 PI_BUILD_TESTS AND 分开关；无需 adapter 的测试件不在表内"""
-        return bool(self.options.PI_BUILD_TESTS) and bool(getattr(self.options, test_switch))
+        """测试件有效状态：总开关 PI_PLUGIN_BUILD_TESTS AND 分开关；无需 adapter 的测试件不在表内"""
+        return bool(self.options.PI_PLUGIN_BUILD_TESTS) and bool(getattr(self.options, test_switch))
 
     def validate(self):
         # 真正无法自洽的矛盾：有效开启的测试件需要某 adapter kit，而该 kit 有效关闭
@@ -161,7 +161,7 @@ class PiPluginConan(ConanFile):
         problems = []
         for test_switch, adapter in _TEST_ADAPTER_NEEDS.items():
             if adapter and self._test_enabled(test_switch) and not self._adapter_enabled(adapter):
-                problems.append(f"{test_switch} requires PI_BUILD_ADAPTERS=True "
+                problems.append(f"{test_switch} requires PI_PLUGIN_BUILD_ADAPTERS=True "
                                 f"and PI_BUILD_ADAPTER_{adapter}=True")
         # 同理：测试宿主需要宿主 kit（各自需要哪几个见 _TEST_HOST_KIT_NEEDS）
         for test_switch, kits in _TEST_HOST_KIT_NEEDS.items():
@@ -169,7 +169,7 @@ class PiPluginConan(ConanFile):
                 continue
             if not all(self._host_kit_enabled(kit) for kit in kits):
                 need = ", ".join(f"PI_BUILD_HOST_KIT_{kit}=True" for kit in kits)
-                problems.append(f"{test_switch} requires PI_BUILD_HOST_KITS=True and {need}")
+                problems.append(f"{test_switch} requires PI_PLUGIN_BUILD_HOST_KITS=True and {need}")
         if problems:
             raise ConanException(
                 "; ".join(problems)
@@ -182,8 +182,8 @@ class PiPluginConan(ConanFile):
 
         # 依赖自动管理：任一需要 imgui 的部件有效开启即自动拉取（Qt5 为本地安装，非 conan 依赖）
         # - imgui adapter kit 链接 imgui::imgui
-        # - imgui 测试宿主（PI_BUILD_TEST_HOST）直连 imgui，但不依赖 adapter kit
-        need_imgui = self._adapter_enabled("IMGUI") or self._test_enabled("PI_BUILD_TEST_HOST")
+        # - imgui 测试宿主（PI_PLUGIN_BUILD_TEST_HOST）直连 imgui，但不依赖 adapter kit
+        need_imgui = self._adapter_enabled("IMGUI") or self._test_enabled("PI_PLUGIN_BUILD_TEST_HOST")
         if need_imgui:
             self.requires("imgui/1.92.8")
 
@@ -313,7 +313,7 @@ class PiPluginConan(ConanFile):
             # "unresolved external symbol D3D11CreateDeviceAndSwapChain"（实测）。
             if self.settings.get_safe("os") == "Windows":
                 comp.system_libs = ["user32", "d3d11", "dxgi", "d3dcompiler"]
-        elif self._test_enabled("PI_BUILD_TEST_HOST"):
+        elif self._test_enabled("PI_PLUGIN_BUILD_TEST_HOST"):
             # imgui 仅为测试宿主拉取（adapter kit 未开启）：测试件不进包，但其依赖须在
             # 包信息中可见，否则 Conan 组件一致性检查会拒绝该变体
             self.cpp_info.requires = ["imgui::imgui"]

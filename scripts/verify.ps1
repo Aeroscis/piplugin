@@ -75,9 +75,9 @@ if ($LASTEXITCODE -ne 0) {
 # ---------------------------------------------------------------------------
 Write-Section "2/5  conformance harness"
 $available = @()
-foreach ($name in 'pi_test_plugin_qt.dll', 'pi_test_plugin_imgui.dll',
-                  'pi_example_plugin_imgui.dll', 'pi_example_plugin_qt.dll',
-                  'pi_example_plugin_win32.dll') {
+foreach ($name in 'pi_plugin_test_plugin_qt.dll', 'pi_plugin_test_plugin_imgui.dll',
+                  'pi_plugin_example_plugin_imgui.dll', 'pi_plugin_example_plugin_qt.dll',
+                  'pi_plugin_example_plugin_win32.dll') {
     if (Test-Path (Join-Path $BinDir $name)) { $available += $name }
 }
 
@@ -85,7 +85,7 @@ if ($SkipGui) {
     Write-Host "SKIP - -SkipGui was given (the harness needs a GUI session)" -ForegroundColor Yellow
 } elseif ($available.Count -eq 0) {
     Write-Host ("SKIP - no test plugin found in {0}" -f $BinDir) -ForegroundColor Yellow
-} elseif (-not (Test-Path (Join-Path $BinDir "pi_test_host_imgui.exe"))) {
+} elseif (-not (Test-Path (Join-Path $BinDir "pi_plugin_test_host_imgui.exe"))) {
     Write-Host ("SKIP - no imgui test host in {0}" -f $BinDir) -ForegroundColor Yellow
 } else {
     & (Join-Path $PSScriptRoot "run_selftest.ps1") -Plugin ($available -join ',') -Cycles $Cycles -BinDir $BinDir

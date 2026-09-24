@@ -153,7 +153,7 @@ endif()
 install(EXPORT ${FULL_NAME}Targets
     FILE ${FULL_NAME}Targets.cmake
     NAMESPACE ${NAMESPACE_NAME}:: # 此处需要带冒号，CMAKE遵循显式原则。外部库引用使用${NAMESPACE_NAME}::${TARGET_NAME}
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/${PI_CMAKE_PACKAGE_SUBDIR}
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/${PI_PLUGIN_CMAKE_PACKAGE_SUBDIR}
 )
 
 # ------- 生成 CMake config 文件（核心组件） -------
@@ -163,13 +163,13 @@ include(CMakePackageConfigHelpers)
 configure_package_config_file(
     cmake/${FULL_NAME}Config.cmake.in
     "${CMAKE_CURRENT_BINARY_DIR}/${FULL_NAME}CoreConfig.cmake"
-    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/${PI_CMAKE_PACKAGE_SUBDIR}
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/${PI_PLUGIN_CMAKE_PACKAGE_SUBDIR}
 )
 
 # ------- 安装 CMake config 文件 -------
 install(FILES
     "${CMAKE_CURRENT_BINARY_DIR}/${FULL_NAME}CoreConfig.cmake"
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/${PI_CMAKE_PACKAGE_SUBDIR}
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/${PI_PLUGIN_CMAKE_PACKAGE_SUBDIR}
 )
 
 # ------- Windows 版本资源（W-07） -------

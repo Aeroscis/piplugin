@@ -105,17 +105,17 @@ ctest --preset default
 
 ```powershell
 cd bin\Debug
-.\pi_test_host_headless.exe pi_test_plugin_qt.dll     # 无头宿主：能力协商 + 完整生命周期
-.\pi_test_host_imgui.exe  pi_test_plugin_qt.dll       # imgui 宿主：把 Qt 插件嵌进自己的窗口
-.\pi_test_host_qt.exe     pi_test_plugin_imgui.dll    # Qt 宿主：把 imgui 插件嵌进 Qt
+.\pi_plugin_test_host_headless.exe pi_plugin_test_plugin_qt.dll     # 无头宿主：能力协商 + 完整生命周期
+.\pi_plugin_test_host_imgui.exe  pi_plugin_test_plugin_qt.dll       # imgui 宿主：把 Qt 插件嵌进自己的窗口
+.\pi_plugin_test_host_qt.exe     pi_plugin_test_plugin_imgui.dll    # Qt 宿主：把 imgui 插件嵌进 Qt
 ```
 
 **想自己写一个？** [`examples/`](examples/README.md) 里有可构建运行的最小示范
 （宿主、imgui 插件、Qt 插件、服务插件、特化 app），每个都是"三步跑通"的独立工程：
 
 ```powershell
-.\pi_example_minimal_host.exe pi_example_plugin_imgui.dll
-.\pi_example_specialized_app.exe pi_example_specialized_plugin.dll pi_example_service.dll
+.\pi_plugin_example_minimal_host.exe pi_plugin_example_plugin_imgui.dll
+.\pi_plugin_example_specialized_app.exe pi_plugin_example_specialized_plugin.dll pi_plugin_example_service.dll
 ```
 
 宿主侧 kit 的用法见 [`docs/tutorial/write-host.md`](docs/tutorial/write-host.md)，

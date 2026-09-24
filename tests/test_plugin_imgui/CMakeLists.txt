@@ -1,7 +1,7 @@
 # ./tests/test_plugin_imgui/CMakeLists.txt
 #
-# imgui 测试插件的两个变体：A = pi_test_plugin_imgui.dll（默认），
-# B = pi_test_plugin_imgui2.dll。同一份源码，只差 class GUID / 显示名 /
+# imgui 测试插件的两个变体：A = pi_plugin_test_plugin_imgui.dll（默认），
+# B = pi_plugin_test_plugin_imgui2.dll。同一份源码，只差 class GUID / 显示名 /
 # 心跳消息码（见 pi_imgui_test_plugin.cpp）。
 #
 # 为什么要两个（W-05）：imgui 套件是 STATIC 库，每个插件模块各带一份套件与
@@ -21,13 +21,13 @@ if(NOT TARGET piplugin_imgui)
     return()
 endif()
 
-foreach(PI_IMGUI_VARIANT IN ITEMS 1 2)
-    if(PI_IMGUI_VARIANT STREQUAL "1")
-        set(TARGET_NAME pi_test_plugin_imgui)
+foreach(PI_PLUGIN_IMGUI_VARIANT IN ITEMS 1 2)
+    if(PI_PLUGIN_IMGUI_VARIANT STREQUAL "1")
+        set(TARGET_NAME pi_plugin_test_plugin_imgui)
     else()
-        set(TARGET_NAME pi_test_plugin_imgui2)
+        set(TARGET_NAME pi_plugin_test_plugin_imgui2)
     endif()
-    pi_tar_msg(STATUS ${TARGET_NAME} "building imgui-based test plugin (variant ${PI_IMGUI_VARIANT})...")
+    pi_tar_msg(STATUS ${TARGET_NAME} "building imgui-based test plugin (variant ${PI_PLUGIN_IMGUI_VARIANT})...")
 
     # source files
     set(SRC_FILE_LIST
@@ -45,15 +45,15 @@ foreach(PI_IMGUI_VARIANT IN ITEMS 1 2)
 
     # self header + 测试共用头（app 自定义宿主服务：插件侧 QI 它）
     target_include_directories(${TARGET_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-    target_include_directories(${TARGET_NAME} PRIVATE ${PI_TESTS_COMMON_DIR})
+    target_include_directories(${TARGET_NAME} PRIVATE ${PI_PLUGIN_TESTS_COMMON_DIR})
 
     # first party
     target_link_libraries(${TARGET_NAME} PRIVATE piplugin)
     target_link_libraries(${TARGET_NAME} PRIVATE piplugin_imgui)
 
-    if(PI_IMGUI_VARIANT STREQUAL "2")
+    if(PI_PLUGIN_IMGUI_VARIANT STREQUAL "2")
         # 变体 B：不同 class GUID / 显示名 / 心跳消息码
-        target_compile_definitions(${TARGET_NAME} PRIVATE PI_TEST_IMGUI_VARIANT_B)
+        target_compile_definitions(${TARGET_NAME} PRIVATE PI_PLUGIN_TEST_IMGUI_VARIANT_B)
     endif()
 
     # ------- 部署到开发目录 bin/<CONFIG>（POST_BUILD：构建即就绪，不依赖 install 阶段） -------------

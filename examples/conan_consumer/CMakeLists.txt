@@ -10,21 +10,21 @@
 cmake_minimum_required(VERSION 3.23)
 project(piplugin_conan_consumer C)
 
-option(PI_CONSUMER_LINK_IMGUI "Link the imgui adapter kit as well" ON)
+option(PI_PLUGIN_CONSUMER_LINK_IMGUI "Link the imgui adapter kit as well" ON)
 
 find_package(piplugin REQUIRED)
 message(STATUS "consumer: piplugin_VERSION=${piplugin_VERSION}")
 
-add_executable(pi_consumer main.c)
+add_executable(pi_plugin_consumer main.c)
 
-target_link_libraries(pi_consumer PRIVATE pi::piplugin)
+target_link_libraries(pi_plugin_consumer PRIVATE pi::piplugin)
 if(TARGET pi::piplugin_host)
-    target_link_libraries(pi_consumer PRIVATE pi::piplugin_host)
+    target_link_libraries(pi_plugin_consumer PRIVATE pi::piplugin_host)
 else()
     message(WARNING "consumer: pi::piplugin_host missing from the package")
 endif()
 if(TARGET pi::piplugin_events)
-    target_link_libraries(pi_consumer PRIVATE pi::piplugin_events)
+    target_link_libraries(pi_plugin_consumer PRIVATE pi::piplugin_events)
 else()
     message(WARNING "consumer: pi::piplugin_events missing from the package")
 endif()
@@ -44,9 +44,9 @@ endif()
 #        cpp_info.system_libs 提供（已修：漏掉时报 unresolved external
 #        D3D11CreateDeviceAndSwapChain）。
 # ---------------------------------------------------------------------------
-if(PI_CONSUMER_LINK_IMGUI AND TARGET pi::piplugin_imgui)
-    target_link_libraries(pi_consumer PRIVATE pi::piplugin_imgui)
-    target_compile_definitions(pi_consumer PRIVATE PI_CONSUMER_WITH_IMGUI)
-elseif(PI_CONSUMER_LINK_IMGUI)
+if(PI_PLUGIN_CONSUMER_LINK_IMGUI AND TARGET pi::piplugin_imgui)
+    target_link_libraries(pi_plugin_consumer PRIVATE pi::piplugin_imgui)
+    target_compile_definitions(pi_plugin_consumer PRIVATE PI_PLUGIN_CONSUMER_WITH_IMGUI)
+elseif(PI_PLUGIN_CONSUMER_LINK_IMGUI)
     message(WARNING "consumer: pi::piplugin_imgui missing from the package")
 endif()

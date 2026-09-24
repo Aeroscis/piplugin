@@ -3,88 +3,88 @@
 # 测试共用头目录：宿主与插件两侧都要用到同一份"app 自定义宿主服务"定义
 # （同一 128 位 IID + 同一 vtbl 布局），故集中放 tests/common/，由下面的
 # 子目录各自加进 include 路径。
-set(PI_TESTS_COMMON_DIR "${CMAKE_CURRENT_SOURCE_DIR}/common")
+set(PI_PLUGIN_TESTS_COMMON_DIR "${CMAKE_CURRENT_SOURCE_DIR}/common")
 
 #------------------------- build option-------------------------
-option(PI_BUILD_UNIT_TESTS "Build the core unit tests (ctest target 'unit')" ON)      # 依赖: framework core
-option(PI_BUILD_UNIT_CPP_TESTS "Build the C++ RAII layer tests (ctest target 'unit_cpp')" ON)  # 依赖: framework core
-option(PI_BUILD_TEST_PLUGIN "Build the Qt-based test plugin" ON)                   # 依赖: Qt5 framework qt adapter
-option(PI_BUILD_TEST_PLUGIN_IMGUI "Build the ImGui-based test plugin" ON)          # 依赖: imgui framework imgui adapter
-option(PI_BUILD_TEST_PLUGIN_BADVERSION "Build the bad-api_version test plugin (BLK-03 negative case)" ON)  # 依赖: framework core
-option(PI_BUILD_TEST_PLUGIN_GUIREQUIRED "Build the GUI-required test plugin (ECO-08 negative case)" ON)  # 依赖: framework core
-option(PI_BUILD_TEST_PLUGIN_SERVICE "Build the service (headless, IPiPluginService) test plugin (APP-07)" ON)  # 依赖: framework core
-option(PI_BUILD_TEST_PLUGIN_EVENTS "Build the events (IPiPluginEventSink + publish/subscribe) test plugin (APP-06)" ON)  # 依赖: framework core
-option(PI_BUILD_TEST_HOST "Build the imgui-based test host" ON)                    # 依赖: imgui
-option(PI_BUILD_TEST_HOST_QT "Build the Qt-based test host" ON)                    # 依赖: Qt5 imgui adapter
-option(PI_BUILD_HEADLESS_HOST "Build the headless (console) test host" ON)         # 依赖: framework core
-option(PI_BUILD_TEST_HOST_MULTI "Build the multi-plugin test host (APP-08 acceptance)" ON)  # 依赖: framework core + host kit L0
-option(PI_BUILD_TEST_HOST_EVENTS "Build the events test host (APP-06 acceptance)" ON)  # 依赖: framework core + host kits L0/events
+option(PI_PLUGIN_BUILD_UNIT_TESTS "Build the core unit tests (ctest target 'unit')" ON)      # 依赖: framework core
+option(PI_PLUGIN_BUILD_UNIT_CPP_TESTS "Build the C++ RAII layer tests (ctest target 'unit_cpp')" ON)  # 依赖: framework core
+option(PI_PLUGIN_BUILD_TEST_PLUGIN "Build the Qt-based test plugin" ON)                   # 依赖: Qt5 framework qt adapter
+option(PI_PLUGIN_BUILD_TEST_PLUGIN_IMGUI "Build the ImGui-based test plugin" ON)          # 依赖: imgui framework imgui adapter
+option(PI_PLUGIN_BUILD_TEST_PLUGIN_BADVERSION "Build the bad-api_version test plugin (BLK-03 negative case)" ON)  # 依赖: framework core
+option(PI_PLUGIN_BUILD_TEST_PLUGIN_GUIREQUIRED "Build the GUI-required test plugin (ECO-08 negative case)" ON)  # 依赖: framework core
+option(PI_PLUGIN_BUILD_TEST_PLUGIN_SERVICE "Build the service (headless, IPiPluginService) test plugin (APP-07)" ON)  # 依赖: framework core
+option(PI_PLUGIN_BUILD_TEST_PLUGIN_EVENTS "Build the events (IPiPluginEventSink + publish/subscribe) test plugin (APP-06)" ON)  # 依赖: framework core
+option(PI_PLUGIN_BUILD_TEST_HOST "Build the imgui-based test host" ON)                    # 依赖: imgui
+option(PI_PLUGIN_BUILD_TEST_HOST_QT "Build the Qt-based test host" ON)                    # 依赖: Qt5 imgui adapter
+option(PI_PLUGIN_BUILD_HEADLESS_HOST "Build the headless (console) test host" ON)         # 依赖: framework core
+option(PI_PLUGIN_BUILD_TEST_HOST_MULTI "Build the multi-plugin test host (APP-08 acceptance)" ON)  # 依赖: framework core + host kit L0
+option(PI_PLUGIN_BUILD_TEST_HOST_EVENTS "Build the events test host (APP-06 acceptance)" ON)  # 依赖: framework core + host kits L0/events
 
 # unit tests（核心回归；ctest 一条命令跑完）
-if(PI_BUILD_UNIT_TESTS)
+if(PI_PLUGIN_BUILD_UNIT_TESTS)
     add_subdirectory(unit)
 endif()
 
 # C++ RAII 层测试（pi_cpp.h）：与上面分开，因为它是 C++ 且带 Debug CRT 泄漏判定
-if(PI_BUILD_UNIT_CPP_TESTS)
+if(PI_PLUGIN_BUILD_UNIT_CPP_TESTS)
     add_subdirectory(unit_cpp)
 endif()
 
 # ---- 插件先加：宿主里注册的 ctest 冒烟用例要引用插件目标（if(TARGET ...) 守卫）----
 
 # qt-based test plugin
-if(PI_BUILD_TEST_PLUGIN)
+if(PI_PLUGIN_BUILD_TEST_PLUGIN)
     add_subdirectory(test_plugin)
 endif()
 
 # imgui-based test plugin
-if(PI_BUILD_TEST_PLUGIN_IMGUI)
+if(PI_PLUGIN_BUILD_TEST_PLUGIN_IMGUI)
     add_subdirectory(test_plugin_imgui)
 endif()
 
 # bad-api_version test plugin（BLK-03 负向用例，纯 C 无依赖）
-if(PI_BUILD_TEST_PLUGIN_BADVERSION)
+if(PI_PLUGIN_BUILD_TEST_PLUGIN_BADVERSION)
     add_subdirectory(test_plugin_badversion)
 endif()
 
 # gui-required test plugin（ECO-08 负向用例：HOST_UI REQUIRED，纯 C 无依赖）
-if(PI_BUILD_TEST_PLUGIN_GUIREQUIRED)
+if(PI_PLUGIN_BUILD_TEST_PLUGIN_GUIREQUIRED)
     add_subdirectory(test_plugin_guirequired)
 endif()
 
 # service (headless) test plugin（APP-07：IPiPluginService 全生命周期，纯 C 无依赖）
-if(PI_BUILD_TEST_PLUGIN_SERVICE)
+if(PI_PLUGIN_BUILD_TEST_PLUGIN_SERVICE)
     add_subdirectory(test_plugin_service)
 endif()
 
 # events test plugin（APP-06：sink + 发布/订阅，纯 C 无依赖）
-if(PI_BUILD_TEST_PLUGIN_EVENTS)
+if(PI_PLUGIN_BUILD_TEST_PLUGIN_EVENTS)
     add_subdirectory(test_plugin_events)
 endif()
 
 # ---- 宿主 ----
 
 # imgui-based test host
-if(PI_BUILD_TEST_HOST)
+if(PI_PLUGIN_BUILD_TEST_HOST)
     add_subdirectory(test_host)
 endif()
 
 # qt-based test host
-if(PI_BUILD_TEST_HOST_QT)
+if(PI_PLUGIN_BUILD_TEST_HOST_QT)
     add_subdirectory(test_host_qt)
 endif()
 
 # headless (console) test host
-if(PI_BUILD_HEADLESS_HOST)
+if(PI_PLUGIN_BUILD_HEADLESS_HOST)
     add_subdirectory(test_headless_host)
 endif()
 
 # multi-plugin test host（roadmap APP-08 的验收：一进程两个 Qt 插件）
-if(PI_BUILD_TEST_HOST_MULTI)
+if(PI_PLUGIN_BUILD_TEST_HOST_MULTI)
     add_subdirectory(test_host_multi)
 endif()
 
 # events test host（roadmap APP-06 的验收：双向事件闭环 + owner 退订）
-if(PI_BUILD_TEST_HOST_EVENTS)
+if(PI_PLUGIN_BUILD_TEST_HOST_EVENTS)
     add_subdirectory(test_host_events)
 endif()

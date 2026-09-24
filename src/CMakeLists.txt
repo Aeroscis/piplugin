@@ -5,13 +5,13 @@ include(GNUInstallDirs)
 
 #------------------------- build option-------------------------
 # pi plugin framework core lib（框架核心，C 实现）
-option(PI_BUILD_FRAMEWORK "build pi plugin framework core lib" ON)
+option(PI_PLUGIN_BUILD_FRAMEWORK "build pi plugin framework core lib" ON)
 
 
 # pi plugin framework core
 set(LIB_PIPLUGIN_PATH ${CMAKE_CURRENT_SOURCE_DIR}/piplugin)
 # pi_exam_var(LIB_PIPLUGIN_PATH)
-if (PI_BUILD_FRAMEWORK)
+if (PI_PLUGIN_BUILD_FRAMEWORK)
     add_subdirectory(${LIB_PIPLUGIN_PATH})
 endif ()
 
@@ -24,7 +24,7 @@ include(CMakePackageConfigHelpers)
 configure_package_config_file(
     cmake/piConfig.cmake.in
     "${CMAKE_CURRENT_BINARY_DIR}/pipluginConfig.cmake"
-    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/${PI_CMAKE_PACKAGE_SUBDIR}
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/${PI_PLUGIN_CMAKE_PACKAGE_SUBDIR}
 )
 
 write_basic_package_version_file(
@@ -50,7 +50,7 @@ write_basic_package_version_file(
 install(FILES
     "${CMAKE_CURRENT_BINARY_DIR}/pipluginConfig.cmake"
     "${CMAKE_CURRENT_BINARY_DIR}/pipluginConfigVersion.cmake"
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/${PI_CMAKE_PACKAGE_SUBDIR}
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/${PI_PLUGIN_CMAKE_PACKAGE_SUBDIR}
 )
 
 install(FILES

@@ -41,9 +41,9 @@
 |---|---|
 | imgui 宿主 + imgui 插件 | ✅ 已演示 |
 | Qt 宿主 + imgui 插件 | ✅ 已演示 |
-| imgui 宿主 + Qt 插件 | ✅ 可跑（`pi_test_host_imgui.exe pi_test_plugin_qt.dll`），未纳入自动化（已核实 `tests/test_host_multi` 是纯 Win32 宿主、无 D3D，APP-08 的用例不覆盖此格） |
+| imgui 宿主 + Qt 插件 | ✅ 可跑（`pi_plugin_test_host_imgui.exe pi_plugin_test_plugin_qt.dll`），未纳入自动化（已核实 `tests/test_host_multi` 是纯 Win32 宿主、无 D3D，APP-08 的用例不覆盖此格） |
 | headless 宿主 + GUI 插件 | ✅ 已演示（插件无头运行、不建 UI） |
-| headless 宿主 + service 插件 | ✅ 已有示例并纳入自动化（APP-07：`pi_test_plugin_service.dll` + ctest `headless_host_service_lifecycle`，断言 start/poll/status/stop 全生命周期） |
+| headless 宿主 + service 插件 | ✅ 已有示例并纳入自动化（APP-07：`pi_plugin_test_plugin_service.dll` + ctest `headless_host_service_lifecycle`，断言 start/poll/status/stop 全生命周期） |
 | 多插件同进程 | ✅ 已覆盖（APP-08：`tests/test_host_multi` / ctest `multi_plugin_qt_in_one_process`，两个不同的 Qt 插件 DLL 同时加载、各自有 UI、各自跑定时器、一起卸载；W-05 补上 imgui 变体：ctest `multi_plugin_imgui_in_one_process`，两个不同的 **imgui** 插件模块各自渲染若干帧、各自心跳推进、一起干净卸载） |
 | 嵌入窗口动态切换 | ✅ 已覆盖（W-02：`tests/test_host_multi --container-switch`，ctest `container_switch_runtime`（imgui 插件）/ `container_switch_runtime_qt`（Qt 插件）—— attach A → 切到 B → 切回 A → 尺寸往返 → 卸载，每步断言"插件窗口是**指定容器**的子窗口、可见、尺寸与容器客户区一致"，并断言 `pi_plugin_view_detach()` 后旧窗口确实已销毁） |
 

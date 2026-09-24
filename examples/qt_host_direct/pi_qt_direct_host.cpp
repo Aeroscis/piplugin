@@ -16,8 +16,8 @@
  *     destroy_widget() slot at all. See TearDown() below for the order.
  *
  * Three steps: see README.md. Two ways to run:
- *   pi_example_qt_direct_host.exe [plugin.dll]              interactive
- *   pi_example_qt_direct_host.exe --self-test [plugin.dll]  scriptable, exit code
+ *   pi_plugin_example_qt_direct_host.exe [plugin.dll]              interactive
+ *   pi_plugin_example_qt_direct_host.exe --self-test [plugin.dll]  scriptable, exit code
  */
 #include "piplugin/pi_plugin.h"
 #include "pi_host_session.h"          /* host kit L0: load / gate / unload order */
@@ -37,8 +37,8 @@
 #include <vector>
 
 /* CMake defines this for the platform's plugin file name. */
-#ifndef PI_QT_DIRECT_DEFAULT_PLUGIN
-#  define PI_QT_DIRECT_DEFAULT_PLUGIN "pi_example_plugin_qt_direct.dll"
+#ifndef PI_PLUGIN_QT_DIRECT_DEFAULT_PLUGIN
+#  define PI_PLUGIN_QT_DIRECT_DEFAULT_PLUGIN "pi_plugin_example_plugin_qt_direct.dll"
 #endif
 
 /* --------------------------------------------------------------------------
@@ -141,7 +141,7 @@ int main(int argc, char** argv)
         else if (args[i] == "--ms" && i + 1 < args.size()) self_test_ms = atoi(args[++i].c_str());
         else if (!args[i].empty() && args[i][0] != '-')    plugin = args[i];
     }
-    if (plugin.empty()) plugin = PI_QT_DIRECT_DEFAULT_PLUGIN;
+    if (plugin.empty()) plugin = PI_PLUGIN_QT_DIRECT_DEFAULT_PLUGIN;
 
     /* THE line that makes this a "Qt host": the host owns the QApplication. */
     QApplication app(argc, argv);

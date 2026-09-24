@@ -141,7 +141,7 @@
 | **F1** | `CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON` 把 CRT 内部符号一并导出：实测 DLL 导出 26 个符号，多出 `__local_stdio_printf_options`、`snprintf`、`vsnprintf` | 关掉该全局开关（公开 API 一律显式 `PI_PLUGIN_API`，插件入口显式 dllexport），导出数 **26 → 23**，全部为预期符号 |
 | **F2** | `pi_plugin_host_ui_thread_id` 非 Windows 分支返回 `getpid()` —— **把进程 id 当线程 id 给插件** | Linux 改 `syscall(SYS_gettid)`（glibc 2.30 以下也有 `gettid`，用 syscall 免依赖），macOS 改 `pthread_self()` 转 64 位；契约写进头文件；Windows 侧有单测精确断言 |
 | **F3** | `pi_plugin_host_create_plugin` 失败时不给 `*out_plugin` / `*out_module` 赋值，调用方会读到自己残留的旧值 | 入口处预置 NULL，并写入头文件注释与 2.4 约定 |
-| **F4** | `PI_PLUGIN_ENTRY_DECL` 展开成 `PI_PLUGIN_API`，而 `PI_PLUGIN_API` 在插件侧是 **dllimport** —— 该宏按其字面用途（定义插件入口）**根本无法编译** | 新增 `PI_PLUGIN_ENTRY_EXPORT`（插件侧的 dllexport / visibility default），`PI_PLUGIN_ENTRY_DECL` 改用它；`pi_test_plugin_badversion` 现在就用该宏定义入口，兼作编译验证 |
+| **F4** | `PI_PLUGIN_ENTRY_DECL` 展开成 `PI_PLUGIN_API`，而 `PI_PLUGIN_API` 在插件侧是 **dllimport** —— 该宏按其字面用途（定义插件入口）**根本无法编译** | 新增 `PI_PLUGIN_ENTRY_EXPORT`（插件侧的 dllexport / visibility default），`PI_PLUGIN_ENTRY_DECL` 改用它；`pi_plugin_test_plugin_badversion` 现在就用该宏定义入口，兼作编译验证 |
 | **F6** | `pi_plugin_module_get_load_error()` 返回**进程级静态缓冲**（发布时归在 4.2，W-01 修好后移入本节） | **已修（W-01）**：错误串改为**线程局部**（Windows `__declspec(thread)` / 其余 `_Thread_local`），每个线程读回自己那次 load 的结果；另加 `pi_plugin_module_get_load_error_r(buf, size)` 走"调用方提供缓冲"（拷贝可留存，不受后续 load 影响）。旧函数签名与语义不变（"下次同线程 load 前有效"）。导出面 **27 → 28**，`tests/unit` 的并发用例是回归（4 线程各加载**自己独有的**不存在路径，断言谁都不会读到别人的串；把实现改回进程级 buffer 时该用例稳定失败） |
 
 导出符号终审结果（`dumpbin /exports bin/Debug/piplugind.dll`，共 **23** 个）：

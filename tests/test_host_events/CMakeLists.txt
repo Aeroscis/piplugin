@@ -6,7 +6,7 @@
 cmake_minimum_required(VERSION 3.23)
 
 # target name
-set(TARGET_NAME pi_test_host_events)
+set(TARGET_NAME pi_plugin_test_host_events)
 pi_tar_msg(STATUS ${TARGET_NAME} "building events test host...")
 
 # source files（纯 C）
@@ -35,7 +35,7 @@ target_sources(${TARGET_NAME}
     )
 
 # 测试共用头：事件 topic / payload key 的唯一来源
-target_include_directories(${TARGET_NAME} PRIVATE ${PI_TESTS_COMMON_DIR})
+target_include_directories(${TARGET_NAME} PRIVATE ${PI_PLUGIN_TESTS_COMMON_DIR})
 
 # first party
 target_link_libraries(${TARGET_NAME} PRIVATE piplugin)
@@ -54,10 +54,10 @@ add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
 # ------- ctest 注册：双向事件闭环（APP-06 的验收） -------------
 # 需要事件插件 + 一个**没有 sink** 的插件（用来断言优雅降级）；两者缺任一就不注册。
 # 宿主内部逐条断言并以退出码收尾，故只用退出码判定（比正则更严格）。
-if(TARGET pi_test_plugin_events AND TARGET pi_test_plugin_imgui)
+if(TARGET pi_plugin_test_plugin_events AND TARGET pi_plugin_test_plugin_imgui)
     add_test(NAME events_two_way_loop
         COMMAND "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}/${TARGET_NAME}.exe"
-                "pi_test_plugin_events.dll" "pi_test_plugin_imgui.dll"
+                "pi_plugin_test_plugin_events.dll" "pi_plugin_test_plugin_imgui.dll"
         WORKING_DIRECTORY "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
         )
     set_tests_properties(events_two_way_loop PROPERTIES TIMEOUT 120)

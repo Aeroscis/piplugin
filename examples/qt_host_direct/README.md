@@ -24,16 +24,16 @@ cmake --build --preset conan-debug --parallel
 cd bin\Debug
 
 # 3) 跑：交互模式（关窗即卸载），或自检模式（退出码判定，适合脚本）
-.\pi_example_qt_direct_host.exe
-.\pi_example_qt_direct_host.exe --self-test
-.\pi_example_qt_direct_host.exe --self-test pi_example_plugin_qt_direct.dll
+.\pi_plugin_example_qt_direct_host.exe
+.\pi_plugin_example_qt_direct_host.exe --self-test
+.\pi_plugin_example_qt_direct_host.exe --self-test pi_plugin_example_plugin_qt_direct.dll
 ```
 
 自检模式期望输出（实测）：
 
 ```
 == piplugin Qt host, direct integration ==
-plugin: pi_example_plugin_qt_direct.dll
+plugin: pi_plugin_example_plugin_qt_direct.dll
 mode:   self-test
   [kit] load[0]: gate passed (category=Example/UI, capabilities=1)
   [kit] load[0]: ready (view:N service:N events:N)
@@ -60,8 +60,8 @@ UI 走的是 app 自定义协议（通道 A），不是套件通道。
 把宿主指向"为套件写的" Qt 插件，加载会**当场失败并指名原因**，而不是静默无界面：
 
 ```
-> .\pi_example_qt_direct_host.exe --self-test pi_example_plugin_qt.dll
-  [kit] load[0]: pi_example_plugin_qt.dll
+> .\pi_plugin_example_qt_direct_host.exe --self-test pi_plugin_example_plugin_qt.dll
+  [kit] load[0]: pi_plugin_example_plugin_qt.dll
   [kit] rollback[0]: unload module
 load failed (hr=-8): plugin does not provide iid data1=0x9C3E71B5 required by this host
 RESULT: FAIL

@@ -1,6 +1,6 @@
 # ./tests/test_plugin/CMakeLists.txt
 #
-# Qt 测试插件的两个变体：A = pi_test_plugin_qt.dll（默认），B = pi_test_plugin_qt2.dll。
+# Qt 测试插件的两个变体：A = pi_plugin_test_plugin_qt.dll（默认），B = pi_plugin_test_plugin_qt2.dll。
 # 同一份源码，只差 class GUID / 显示名 / 心跳消息码（见 pi_qt_test_plugin.cpp）。
 #
 # 为什么要两个：多插件同进程的验收（roadmap APP-08，tests/test_host_multi）需要进程里
@@ -14,7 +14,7 @@ set(CMAKE_AUTOMOC ON)
 find_package(Qt5 COMPONENTS Widgets Core QUIET)
 if(NOT Qt5_FOUND)
     message(WARNING "Qt5 not found -> Qt test plugins DISABLED
-  ${PI_QT_MISSING_HINT}")
+  ${PI_PLUGIN_QT_MISSING_HINT}")
     return()
 endif()
 if(NOT TARGET piplugin_qt)
@@ -30,13 +30,13 @@ endif()
 get_target_property(QT_CORE_DLL Qt5::Core LOCATION)
 get_filename_component(QT_BIN_DIR "${QT_CORE_DLL}" DIRECTORY)
 
-foreach(PI_QT_VARIANT IN ITEMS 1 2)
-    if(PI_QT_VARIANT STREQUAL "1")
-        set(TARGET_NAME pi_test_plugin_qt)
+foreach(PI_PLUGIN_QT_VARIANT IN ITEMS 1 2)
+    if(PI_PLUGIN_QT_VARIANT STREQUAL "1")
+        set(TARGET_NAME pi_plugin_test_plugin_qt)
     else()
-        set(TARGET_NAME pi_test_plugin_qt2)
+        set(TARGET_NAME pi_plugin_test_plugin_qt2)
     endif()
-    pi_tar_msg(STATUS ${TARGET_NAME} "building qt-based test plugin (variant ${PI_QT_VARIANT})...")
+    pi_tar_msg(STATUS ${TARGET_NAME} "building qt-based test plugin (variant ${PI_PLUGIN_QT_VARIANT})...")
 
     # add plugin target
     add_library(${TARGET_NAME} SHARED)
@@ -49,7 +49,7 @@ foreach(PI_QT_VARIANT IN ITEMS 1 2)
 
     # self header + 测试共用头（app 自定义宿主服务：插件侧 QI 它）
     target_include_directories(${TARGET_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-    target_include_directories(${TARGET_NAME} PRIVATE ${PI_TESTS_COMMON_DIR})
+    target_include_directories(${TARGET_NAME} PRIVATE ${PI_PLUGIN_TESTS_COMMON_DIR})
 
     # first party
     target_link_libraries(${TARGET_NAME} PRIVATE piplugin)
@@ -60,9 +60,9 @@ foreach(PI_QT_VARIANT IN ITEMS 1 2)
     # third party
     target_link_libraries(${TARGET_NAME} PRIVATE Qt5::Widgets)
 
-    if(PI_QT_VARIANT STREQUAL "2")
+    if(PI_PLUGIN_QT_VARIANT STREQUAL "2")
         # 变体 B：不同 class GUID / 显示名 / 心跳消息码
-        target_compile_definitions(${TARGET_NAME} PRIVATE PI_TEST_QT_VARIANT_B)
+        target_compile_definitions(${TARGET_NAME} PRIVATE PI_PLUGIN_TEST_QT_VARIANT_B)
     endif()
 
     # 部署 Qt 运行时 DLL（构建树；开发目录由下方的 POST_BUILD 一并部署，与 test hosts 同目录）
@@ -76,7 +76,7 @@ foreach(PI_QT_VARIANT IN ITEMS 1 2)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${QT_BIN_DIR}/../plugins/platforms/qwindows.dll"
             "$<TARGET_FILE_DIR:${TARGET_NAME}>/platforms"
-        COMMENT "Deploying Qt runtime DLLs (variant ${PI_QT_VARIANT})"
+        COMMENT "Deploying Qt runtime DLLs (variant ${PI_PLUGIN_QT_VARIANT})"
     )
 
     # ------- 部署到开发目录 bin/<CONFIG>（POST_BUILD：构建即就绪，不依赖 install 阶段） -------------

@@ -5,7 +5,7 @@
 cmake_minimum_required(VERSION 3.23)
 
 # target name
-set(TARGET_NAME pi_test_plugin_badversion)
+set(TARGET_NAME pi_plugin_test_plugin_badversion)
 pi_tar_msg(STATUS ${TARGET_NAME} "building bad-version test plugin...")
 
 # source files（纯 C，无第三方依赖）

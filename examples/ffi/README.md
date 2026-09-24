@@ -18,9 +18,9 @@ roadmap **ECO-06**。框架的卖点是**纯 C ABI**：`__stdcall` 函数指针�
 
 | 语言 | 目录 | 怎么跑 |
 |---|---|---|
-| Python | [`python/`](python/) | `python examples/ffi/python/pi_ffi_demo.py bin/Debug/pi_test_plugin_imgui.dll` |
-| Rust | [`rust/`](rust/) | `cargo run --manifest-path examples/ffi/rust/Cargo.toml -- bin/Debug/pi_test_plugin_imgui.dll` |
-| C# | [`csharp/`](csharp/) | `dotnet run --project examples/ffi/csharp -- bin/Debug/pi_test_plugin_imgui.dll` |
+| Python | [`python/`](python/) | `python examples/ffi/python/pi_ffi_demo.py bin/Debug/pi_plugin_test_plugin_imgui.dll` |
+| Rust | [`rust/`](rust/) | `cargo run --manifest-path examples/ffi/rust/Cargo.toml -- bin/Debug/pi_plugin_test_plugin_imgui.dll` |
+| C# | [`csharp/`](csharp/) | `dotnet run --project examples/ffi/csharp -- bin/Debug/pi_plugin_test_plugin_imgui.dll` |
 
 统一跑法（按机器上装了哪些工具链自动决定跑几个，缺的语言打印 SKIP 而不是失败）：
 

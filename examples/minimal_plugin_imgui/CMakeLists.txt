@@ -3,7 +3,7 @@
 # 最小 imgui 插件：只写 draw 回调，嵌入/上下文/驱动全在套件里。
 cmake_minimum_required(VERSION 3.23)
 
-set(TARGET_NAME pi_example_plugin_imgui)
+set(TARGET_NAME pi_plugin_example_plugin_imgui)
 pi_tar_msg(STATUS ${TARGET_NAME} "building example: minimal imgui plugin...")
 
 find_package(imgui CONFIG QUIET)

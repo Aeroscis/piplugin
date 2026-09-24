@@ -4,7 +4,7 @@
 # 用来断言 headless 宿主在 create_instance 之前就以"缺少必需能力"为由拒绝它。
 cmake_minimum_required(VERSION 3.23)
 
-set(TARGET_NAME pi_test_plugin_guirequired)
+set(TARGET_NAME pi_plugin_test_plugin_guirequired)
 pi_tar_msg(STATUS ${TARGET_NAME} "building GUI-required test plugin (ECO-08 negative case)...")
 
 set(SRC_FILE_LIST

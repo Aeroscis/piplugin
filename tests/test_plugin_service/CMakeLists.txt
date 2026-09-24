@@ -5,7 +5,7 @@
 cmake_minimum_required(VERSION 3.23)
 
 # target name
-set(TARGET_NAME pi_test_plugin_service)
+set(TARGET_NAME pi_plugin_test_plugin_service)
 pi_tar_msg(STATUS ${TARGET_NAME} "building service (headless) test plugin...")
 
 # source files（纯 C，无第三方依赖；协议常量与宿主共用 tests/common）
@@ -30,7 +30,7 @@ target_sources(${TARGET_NAME}
     )
 
 # 测试共用头：服务插件与宿主约定的消息码 / 选项键
-target_include_directories(${TARGET_NAME} PRIVATE ${PI_TESTS_COMMON_DIR})
+target_include_directories(${TARGET_NAME} PRIVATE ${PI_PLUGIN_TESTS_COMMON_DIR})
 
 # first party
 target_link_libraries(${TARGET_NAME} PRIVATE piplugin)

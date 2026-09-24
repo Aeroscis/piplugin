@@ -21,7 +21,7 @@ conventions. Nothing here is piplugin-specific glue - it is all plain ctypes.
 Run (from the repository root, after a build; the plugin must sit next to
 piplugind.dll, i.e. in bin/<CONFIG>):
 
-    python examples/ffi/python/pi_ffi_demo.py bin/Debug/pi_test_plugin_imgui.dll
+    python examples/ffi/python/pi_ffi_demo.py bin/Debug/pi_plugin_test_plugin_imgui.dll
 
 Exits 0 when every step succeeded.
 """
@@ -205,7 +205,7 @@ def check(condition, what):
 
 def main(argv):
     dll_path = argv[1] if len(argv) > 1 else os.path.join("bin", "Debug",
-                                                           "pi_test_plugin_imgui.dll")
+                                                           "pi_plugin_test_plugin_imgui.dll")
     if not os.path.exists(dll_path):
         print(f"plugin not found: {dll_path}")
         print("build first (cmake --build --preset conan-debug) or pass a path")

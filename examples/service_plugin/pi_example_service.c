@@ -8,7 +8,7 @@
  * Run it with examples/minimal_host (a window is harmless: the service ignores
  * it) or with the official headless test host:
  *
- *     pi_example_minimal_host.exe pi_example_service.dll
+ *     pi_plugin_example_minimal_host.exe pi_plugin_example_service.dll
  *
  * What is worth copying from here:
  *   - the descriptor declares PI_PLUGIN_IID_SERVICE PROVIDES and requires nothing, so

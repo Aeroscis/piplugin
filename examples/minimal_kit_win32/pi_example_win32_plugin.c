@@ -7,9 +7,9 @@
  * nothing else. No toolkit, no window management, no event loop.
  *
  * Run it with examples/minimal_host, or send it through the official conformance
- * harness (scripts/run_selftest.ps1 -Plugin pi_example_plugin_win32.dll):
+ * harness (scripts/run_selftest.ps1 -Plugin pi_plugin_example_plugin_win32.dll):
  *
- *     pi_example_minimal_host.exe pi_example_plugin_win32.dll
+ *     pi_plugin_example_minimal_host.exe pi_plugin_example_plugin_win32.dll
  */
 #include "piplugin/pi_plugin.h"
 #include "pi_win32_view.h"

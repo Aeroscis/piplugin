@@ -11,7 +11,7 @@ if(NOT WIN32)
 endif()
 
 # --- the kit itself (a static library, like the official adapter kits) ---
-set(KIT_TARGET pi_example_kit_win32)
+set(KIT_TARGET pi_plugin_example_kit_win32)
 pi_tar_msg(STATUS ${KIT_TARGET} "building example: minimal Win32 view kit...")
 add_library(${KIT_TARGET} STATIC pi_win32_view.c pi_win32_view.h)
 target_include_directories(${KIT_TARGET} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -19,7 +19,7 @@ target_link_libraries(${KIT_TARGET} PUBLIC piplugin)
 target_link_libraries(${KIT_TARGET} PRIVATE user32 gdi32)
 
 # --- a plugin that uses it (the whole plugin is a paint callback) ---
-set(PLUGIN_TARGET pi_example_plugin_win32)
+set(PLUGIN_TARGET pi_plugin_example_plugin_win32)
 pi_tar_msg(STATUS ${PLUGIN_TARGET} "building example: Win32 plugin (uses the kit)...")
 add_library(${PLUGIN_TARGET} SHARED pi_example_win32_plugin.c)
 target_link_libraries(${PLUGIN_TARGET} PRIVATE piplugin ${KIT_TARGET})

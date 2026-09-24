@@ -9,7 +9,7 @@
 cmake --preset conan-default          # 需要 conan 提供 imgui
 cmake --build --preset conan-debug --parallel
 cd bin\Debug
-.\pi_example_minimal_host.exe pi_example_plugin_imgui.dll
+.\pi_plugin_example_minimal_host.exe pi_plugin_example_plugin_imgui.dll
 ```
 
 窗口里会出现一行文字、一个滑块和一个按钮；按按钮会 `pi_plugin_host_post_message(0x8000)`，

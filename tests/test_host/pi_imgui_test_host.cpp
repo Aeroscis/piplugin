@@ -318,7 +318,7 @@ static bool RenderFrame(bool resizeFrame, bool present, unsigned overrideW, unsi
         ImGui::Separator();
 
         if (ImGui::Button("Load Qt Plugin")) {
-            LoadPlugin(ExeDirPath("pi_test_plugin_qt.dll").c_str());
+            LoadPlugin(ExeDirPath("pi_plugin_test_plugin_qt.dll").c_str());
         }
         ImGui::SameLine();
         if (ImGui::Button("Unload Plugin")) {
@@ -1034,7 +1034,7 @@ static bool CaptureWindowBmp(HWND hwnd, const char* path)
 /* 解析 --plugin 的逗号列表；未给则用默认插件。裁掉空格，忽略空项。 */
 static void SelfTestParsePlugins(const char* list)
 {
-    const char* p = (list && *list) ? list : "pi_test_plugin_qt.dll";
+    const char* p = (list && *list) ? list : "pi_plugin_test_plugin_qt.dll";
 
     g_selfTestPluginCount = 0;
     g_selfTestPluginIndex = 0;
@@ -1059,7 +1059,7 @@ static void SelfTestParsePlugins(const char* list)
 
     if (g_selfTestPluginCount == 0) {
         /* 列表里全是空项：退回默认插件，保证至少有东西可测 */
-        memcpy(g_selfTestPlugins[0], "pi_test_plugin_qt.dll", sizeof("pi_test_plugin_qt.dll"));
+        memcpy(g_selfTestPlugins[0], "pi_plugin_test_plugin_qt.dll", sizeof("pi_plugin_test_plugin_qt.dll"));
         g_selfTestPluginCount = 1;
     }
 }

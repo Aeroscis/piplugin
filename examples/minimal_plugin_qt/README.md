@@ -14,7 +14,7 @@ cmake --build --preset conan-debug --parallel
 cd bin\Debug
 
 # 3) 跑
-.\pi_example_minimal_host.exe pi_example_plugin_qt.dll
+.\pi_plugin_example_minimal_host.exe pi_plugin_example_plugin_qt.dll
 ```
 
 点击按钮会更新标签并发 `pi_plugin_host_post_message(0x8000)`，宿主打印出来。

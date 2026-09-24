@@ -26,7 +26,7 @@
  * Diagnostics
  *
  * PI_PLUGIN_QT_VIEW_TRACE=1 in the environment turns on a line per lifecycle step in
- * <exe dir>/pi_qt_view.log, with the thread id of the thread running it. Every
+ * <exe dir>/pi_plugin_qt_view.log, with the thread id of the thread running it. Every
  * bug this file has ever had was "plugin code ran on the wrong thread", so the
  * trace is the first thing to check.
  * ======================================================================== */
@@ -63,7 +63,7 @@ void pi_plugin_qt_trace_impl(const char* fmt, va_list ap)
         char* slash = strrchr(path, '\\');
         if (!slash) return;
         *(slash + 1) = 0;
-        strncat_s(path, sizeof(path), "pi_qt_view.log", _TRUNCATE);
+        strncat_s(path, sizeof(path), "pi_plugin_qt_view.log", _TRUNCATE);
         if (fopen_s(&f, path, "a") != 0) { f = nullptr; return; }
     }
     char line[256];

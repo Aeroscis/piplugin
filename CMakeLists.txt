@@ -58,33 +58,33 @@ endif()
 # find_package(<name>) 只搜索 <prefix>/lib/cmake/<name>*/，所以放在 cmake/pi/ 下的
 # 配置对 find_package(piplugin) 是不可见的；统一放到 cmake/piplugin/。
 # 旧的 find_package(pi) 入口保留一个转发配置，见 src/CMakeLists.txt。
-set(PI_CMAKE_PACKAGE_SUBDIR "cmake/piplugin" CACHE STRING "CMake package config install subdir")
+set(PI_PLUGIN_CMAKE_PACKAGE_SUBDIR "cmake/piplugin" CACHE STRING "CMake package config install subdir")
 # Qt 本地安装路径（ECO-05：Qt 是本地安装，不是 conan 依赖，但仓库不再把某台机器上的
 # 绝对路径写死 —— 那样别人必须改仓库文件才能构建 Qt 相关目标）。
 #
-# 优先级：PI_QT_PREFIX（本文件的缓存变量）> 标准 CMake 变量 Qt5_DIR /
+# 优先级：PI_PLUGIN_QT_PREFIX（本文件的缓存变量）> 标准 CMake 变量 Qt5_DIR /
 # CMAKE_PREFIX_PATH（含环境变量 CMAKE_PREFIX_PATH）。
 # 只有当用户没给任何线索、而本机常见位置确实存在时，才把它当作**提示**用一下。
-set(PI_QT_PREFIX "" CACHE PATH
+set(PI_PLUGIN_QT_PREFIX "" CACHE PATH
     "Qt5 安装前缀（其下有 lib/cmake/Qt5）；留空则用 Qt5_DIR / CMAKE_PREFIX_PATH")
-if(NOT PI_QT_PREFIX AND NOT Qt5_DIR AND NOT CMAKE_PREFIX_PATH AND
+if(NOT PI_PLUGIN_QT_PREFIX AND NOT Qt5_DIR AND NOT CMAKE_PREFIX_PATH AND
    EXISTS "C:/Qt/5.15.2/msvc2019_64")
-    set(PI_QT_PREFIX "C:/Qt/5.15.2/msvc2019_64" CACHE PATH
+    set(PI_PLUGIN_QT_PREFIX "C:/Qt/5.15.2/msvc2019_64" CACHE PATH
         "Qt5 安装前缀（其下有 lib/cmake/Qt5）；留空则用 Qt5_DIR / CMAKE_PREFIX_PATH" FORCE)
-    message(STATUS "PI_QT_PREFIX 未指定：暂用本机常见的 Qt 位置 ${PI_QT_PREFIX}"
+    message(STATUS "PI_PLUGIN_QT_PREFIX 未指定：暂用本机常见的 Qt 位置 ${PI_PLUGIN_QT_PREFIX}"
                    "（可 -DPI_QT_PREFIX=<path> 覆盖，或改用 -DQt5_DIR=<path>/lib/cmake/Qt5）")
 endif()
-if(PI_QT_PREFIX)
-    if(EXISTS "${PI_QT_PREFIX}")
-        list(APPEND CMAKE_PREFIX_PATH "${PI_QT_PREFIX}")
+if(PI_PLUGIN_QT_PREFIX)
+    if(EXISTS "${PI_PLUGIN_QT_PREFIX}")
+        list(APPEND CMAKE_PREFIX_PATH "${PI_PLUGIN_QT_PREFIX}")
     else()
-        message(WARNING "PI_QT_PREFIX=${PI_QT_PREFIX} 不存在 -> Qt 相关目标会被禁用；"
+        message(WARNING "PI_PLUGIN_QT_PREFIX=${PI_PLUGIN_QT_PREFIX} 不存在 -> Qt 相关目标会被禁用；"
                         "用 -DPI_QT_PREFIX=<真实路径> 或 -DQt5_DIR=<路径>/lib/cmake/Qt5 指定")
     endif()
 endif()
 
 # 各子目录在 find_package(Qt5) 失败时统一用这句话给出可操作的指引（别让人去猜）。
-set(PI_QT_MISSING_HINT
+set(PI_PLUGIN_QT_MISSING_HINT
     "hint: -DPI_QT_PREFIX=<Qt 前缀> 或 -DQt5_DIR=<前缀>/lib/cmake/Qt5，也可设环境变量 CMAKE_PREFIX_PATH")
 
 # src path（框架核心）
@@ -95,20 +95,20 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/adapters)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/host_kits)
 
 # tests 总开关（examples 里也有可注册的 ctest 用例，故 enable_testing 要在两者之前）
-option(PI_BUILD_TESTS "Build test hosts and plugins" ON)
-if((PI_BUILD_TESTS OR PI_BUILD_EXAMPLES) AND DEFINED GLOBAL_PROJECT_TESTS_PATH)
+option(PI_PLUGIN_BUILD_TESTS "Build test hosts and plugins" ON)
+if((PI_PLUGIN_BUILD_TESTS OR PI_PLUGIN_BUILD_EXAMPLES) AND DEFINED GLOBAL_PROJECT_TESTS_PATH)
     # ctest 入口（roadmap BLK-06）：必须在顶级目录调用，且要先于任何 add_test
     enable_testing()
 endif()
 
 # examples path（roadmap ECO-03：可构建可运行的最小示范；只依赖公开 API）
-option(PI_BUILD_EXAMPLES "Build the examples/ directory" ON)
-if(PI_BUILD_EXAMPLES)
+option(PI_PLUGIN_BUILD_EXAMPLES "Build the examples/ directory" ON)
+if(PI_PLUGIN_BUILD_EXAMPLES)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples)
 endif()
 
 # tests path
-if(PI_BUILD_TESTS AND DEFINED GLOBAL_PROJECT_TESTS_PATH)
+if(PI_PLUGIN_BUILD_TESTS AND DEFINED GLOBAL_PROJECT_TESTS_PATH)
     add_subdirectory(${GLOBAL_PROJECT_TESTS_PATH})
 endif()
 
@@ -152,8 +152,8 @@ set(CPACK_PROJECT_CONFIG_FILE "${CMAKE_CURRENT_SOURCE_DIR}/cmake/CPackProjectCon
 set(CPACK_PACKAGE_FILE_NAME "piplugin-${PROJECT_VERSION}-${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}")
 set(CPACK_GENERATOR "ZIP")
 # NSIS 是可选形态（需要本机装 NSIS）：默认关，避免没有 NSIS 的机器上 cpack 直接失败。
-option(PI_CPACK_NSIS "Also generate an NSIS installer (requires NSIS on PATH)" OFF)
-if(PI_CPACK_NSIS)
+option(PI_PLUGIN_CPACK_NSIS "Also generate an NSIS installer (requires NSIS on PATH)" OFF)
+if(PI_PLUGIN_CPACK_NSIS)
     list(APPEND CPACK_GENERATOR "NSIS")
     set(CPACK_NSIS_DISPLAY_NAME "piplugin")
     set(CPACK_NSIS_PACKAGE_NAME "piplugin")

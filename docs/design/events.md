@@ -3,8 +3,8 @@
 > 状态：**已评审通过，并已按 §7 的决定实现（API 0.4）**。
 > 实现记录与草案的差异见 §8；本文保留草案与取舍过程，作为"为什么是现在这个样子"的依据。
 > 相关代码：`include/piplugin/pi_plugin_events.h`（接口）、
-> `host_kits/events/pi_event_router.{h,c}`（可选路由糖）、
-> `host_kits/core/pi_host_session.{h,c}`（sink 记账 + 卸载退订）、
+> `host_kits/events/pi_plugin_event_router.{h,c}`（可选路由糖）、
+> `host_kits/core/pi_plugin_host_session.{h,c}`（sink 记账 + 卸载退订）、
 > `tests/test_plugin_events/` 与 `tests/test_host_events/`（验收）。
 > 相关文档：`docs/design/interfaces.md` §2.7/§2.8、`docs/design/architecture.md`、
 > `docs/tutorial/write-{host,plugin}.md`、`docs/todo/framework.md` #2
@@ -222,7 +222,7 @@ pi_plugin_event_deliver({type=REQUEST,
   （0.3 已被 APP-04 的 descriptor 追加占用）；单测的版本 tripwire 会失败一次（设计如此）；
 - **涉及**（预估）：`include/piplugin/pi_plugin_events.h`（新）、
   `include/piplugin/pi_plugin.h`（加一行 include）、`src/pi_plugin_unknown.c`（两个新 IID）、
-  `pi_event_router`（可选静态库，`src/` 或 `host_kits/`）、测试宿主/插件各一侧、
+  `pi_plugin_event_router`（可选静态库，`src/` 或 `host_kits/`）、测试宿主/插件各一侧、
   `docs/design/interfaces.md`、`CHANGELOG.md`；
 - **不做**：跨进程、RPC、持久化、通配订阅、二进制负载。
 
@@ -235,7 +235,7 @@ pi_plugin_event_deliver({type=REQUEST,
 | D3 | payload | **复用 `PiPluginProperty` 键值**，不加二进制块 | `PiPluginEvent.payload` |
 | D4 | 投递线程 | **宿主 marshal 到自己的主/owner 线程**；`publish()` 任意线程；sink 与订阅回调都在主线程，插件侧无需锁 | `pi_plugin_event_router_pump()` + 契约 3 条 |
 | D5 | `type` 字段 | **保留**：`PI_PLUGIN_EVENT_NOTIFY` / `PI_PLUGIN_EVENT_REQUEST` + `>= 0x80000000` 自定义区 | `PI_EVENT_*` |
-| D6 | 路由实现放哪 | **接口进核心头；路由糖做成可选静态库** `piplugin_events`（`host_kits/events/`）；宿主可不用它 | `pi_event_router.*`；开关 `PI_BUILD_HOST_KIT_EVENTS` |
+| D6 | 路由实现放哪 | **接口进核心头；路由糖做成可选静态库** `piplugin_events`（`host_kits/events/`）；宿主可不用它 | `pi_plugin_event_router.*`；开关 `PI_PLUGIN_BUILD_HOST_KIT_EVENTS` |
 | D7 | 订阅匹配 | **本期只做精确匹配**，且明确"框架不定义任何通配语法" | `pi_plugin_host_events_subscribe` 契约；路由器 `strcmp` |
 | D8 | session 加事件泵 | **加，但只加机制**：按槽位记账 sink + 投递 + 卸载序列里释放；不持队列、不决定泵点与路由策略 | `pi_plugin_host_session_deliver_event()` / `has_event_sink()` / `get_host_events()` |
 | D9 | 订阅的生命周期归属（评审时补入） | **订阅带 owner，卸载自动退订**：`subscribe(topic, owner, cb, user, &handle)` + `drop_owner(owner)`；kit 在每个槽位卸载时调用 | 接口第 4 槽 + `SessionTearDownSlot` 步 2 |

@@ -9,7 +9,7 @@
 cmake --preset conan-default
 cmake --build --preset conan-debug --parallel
 cd bin\Debug
-.\pi_example_minimal_host.exe pi_example_service.dll
+.\pi_plugin_example_minimal_host.exe pi_plugin_example_service.dll
 ```
 
 期望输出：`service: start -> 0`，然后每 poll 一条 `[plugin message] msg=0x8001 wparam=N`，

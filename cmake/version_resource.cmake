@@ -43,27 +43,27 @@ function(piplugin_add_version_resource target file_description)
             "piplugin_add_version_resource: PROJECT_VERSION='${PROJECT_VERSION}' "
             "不是 major.minor.patch 形式，无法生成 FILEVERSION")
     endif()
-    set(PI_VERSION "${PROJECT_VERSION}")
-    set(PI_VERSION_COMMA "${CMAKE_MATCH_1},${CMAKE_MATCH_2},${CMAKE_MATCH_3},0")
+    set(PI_PLUGIN_VERSION "${PROJECT_VERSION}")
+    set(PI_PLUGIN_VERSION_COMMA "${CMAKE_MATCH_1},${CMAKE_MATCH_2},${CMAKE_MATCH_3},0")
 
     # 文件类型按目标类型选（静态库/动态库/可执行各有自己的 VFT_*）
     get_target_property(_target_type ${target} TYPE)
     if(_target_type STREQUAL "STATIC_LIBRARY")
-        set(PI_VERSION_FILE_TYPE "VFT_STATIC_LIB")
+        set(PI_PLUGIN_VERSION_FILE_TYPE "VFT_STATIC_LIB")
     elseif(_target_type STREQUAL "SHARED_LIBRARY" OR _target_type STREQUAL "MODULE_LIBRARY")
-        set(PI_VERSION_FILE_TYPE "VFT_DLL")
+        set(PI_PLUGIN_VERSION_FILE_TYPE "VFT_DLL")
     else()
-        set(PI_VERSION_FILE_TYPE "VFT_APP")
+        set(PI_PLUGIN_VERSION_FILE_TYPE "VFT_APP")
     endif()
 
-    set(PI_VERSION_VENDOR "Aeroscis")
-    set(PI_VERSION_PRODUCT_NAME "${PROJECT_NAME}")
-    set(PI_VERSION_FILE_DESCRIPTION "${file_description}")
-    set(PI_VERSION_COPYRIGHT "Copyright (C) 2026 Aeroscis. MIT licensed.")
+    set(PI_PLUGIN_VERSION_VENDOR "Aeroscis")
+    set(PI_PLUGIN_VERSION_PRODUCT_NAME "${PROJECT_NAME}")
+    set(PI_PLUGIN_VERSION_FILE_DESCRIPTION "${file_description}")
+    set(PI_PLUGIN_VERSION_COPYRIGHT "Copyright (C) 2026 Aeroscis. MIT licensed.")
     # 这两个走生成器表达式：构建产物名带配置后缀（Debug 为 "d"），configure 阶段
     # 无法知道最终配置，交给 file(GENERATE) 在生成时按配置展开。
-    set(PI_VERSION_INTERNAL_NAME "$<TARGET_FILE_BASE_NAME:${target}>")
-    set(PI_VERSION_ORIGINAL_FILENAME "$<TARGET_FILE_NAME:${target}>")
+    set(PI_PLUGIN_VERSION_INTERNAL_NAME "$<TARGET_FILE_BASE_NAME:${target}>")
+    set(PI_PLUGIN_VERSION_ORIGINAL_FILENAME "$<TARGET_FILE_NAME:${target}>")
 
     file(READ "${PIPLUGIN_VERSION_RC_TEMPLATE}" _rc_template)
     string(CONFIGURE "${_rc_template}" _rc_content @ONLY)

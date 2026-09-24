@@ -14,15 +14,15 @@ cmake_minimum_required(VERSION 3.23)
 
 set(CMAKE_AUTOMOC ON)
 
-set(PLUGIN_NAME pi_example_plugin_qt_direct)
-set(HOST_NAME  pi_example_qt_direct_host)
+set(PLUGIN_NAME pi_plugin_example_plugin_qt_direct)
+set(HOST_NAME  pi_plugin_example_qt_direct_host)
 
 pi_tar_msg(STATUS ${HOST_NAME} "building example: Qt host with a Qt plugin (direct)...")
 
 find_package(Qt5 COMPONENTS Widgets Core QUIET)
 if(NOT Qt5_FOUND)
     message(STATUS "Qt5 not found -> ${HOST_NAME} / ${PLUGIN_NAME} skipped
-  ${PI_QT_MISSING_HINT}")
+  ${PI_PLUGIN_QT_MISSING_HINT}")
     return()
 endif()
 if(NOT TARGET piplugin_host)
@@ -56,14 +56,14 @@ target_link_libraries(${HOST_NAME} PRIVATE piplugin piplugin_host Qt5::Widgets)
 
 # 默认插件文件名（不给参数时用）：宿主是控制台程序，方便"三步跑通"看到输出
 if(WIN32)
-    set(PI_QT_DIRECT_DEFAULT_PLUGIN "${PLUGIN_NAME}.dll")
+    set(PI_PLUGIN_QT_DIRECT_DEFAULT_PLUGIN "${PLUGIN_NAME}.dll")
 elseif(APPLE)
-    set(PI_QT_DIRECT_DEFAULT_PLUGIN "lib${PLUGIN_NAME}.dylib")
+    set(PI_PLUGIN_QT_DIRECT_DEFAULT_PLUGIN "lib${PLUGIN_NAME}.dylib")
 else()
-    set(PI_QT_DIRECT_DEFAULT_PLUGIN "lib${PLUGIN_NAME}.so")
+    set(PI_PLUGIN_QT_DIRECT_DEFAULT_PLUGIN "lib${PLUGIN_NAME}.so")
 endif()
 target_compile_definitions(${HOST_NAME} PRIVATE
-    PI_QT_DIRECT_DEFAULT_PLUGIN="${PI_QT_DIRECT_DEFAULT_PLUGIN}")
+    PI_PLUGIN_QT_DIRECT_DEFAULT_PLUGIN="${PI_PLUGIN_QT_DIRECT_DEFAULT_PLUGIN}")
 
 # ---------------- 部署到开发目录 bin/<CONFIG> ----------------
 if(WIN32)

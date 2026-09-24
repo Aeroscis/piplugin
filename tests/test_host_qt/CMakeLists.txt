@@ -2,7 +2,7 @@
 cmake_minimum_required(VERSION 3.23)
 
 # target name
-set(TARGET_NAME pi_test_host_qt)
+set(TARGET_NAME pi_plugin_test_host_qt)
 pi_tar_msg(STATUS ${TARGET_NAME} "building qt-based test host...")
 
 # source files
@@ -19,7 +19,7 @@ set(CMAKE_AUTOMOC ON)
 find_package(Qt5 COMPONENTS Widgets Core QUIET)
 if(NOT Qt5_FOUND)
     message(WARNING "Qt5 not found -> ${TARGET_NAME} DISABLED
-  ${PI_QT_MISSING_HINT}")
+  ${PI_PLUGIN_QT_MISSING_HINT}")
     return()
 endif()
 if(NOT TARGET piplugin_imgui)
@@ -29,12 +29,12 @@ endif()
 # 宿主 kit 缺失则禁用本宿主（L0 会话 + L1 Qt 嵌入区域）
 if(NOT TARGET piplugin_host)
     message(WARNING "host kit L0 (piplugin_host) not built -> ${TARGET_NAME} DISABLED")
-    message(WARNING "  enable -o PI_BUILD_HOST_KITS=True -o PI_BUILD_HOST_KIT_CORE=True")
+    message(WARNING "  enable -o PI_PLUGIN_BUILD_HOST_KITS=True -o PI_PLUGIN_BUILD_HOST_KIT_CORE=True")
     return()
 endif()
 if(NOT TARGET piplugin_host_qt)
     message(WARNING "host kit L1 qt (piplugin_host_qt) not built -> ${TARGET_NAME} DISABLED")
-    message(WARNING "  enable -o PI_BUILD_HOST_KITS=True -o PI_BUILD_HOST_KIT_QT=True")
+    message(WARNING "  enable -o PI_PLUGIN_BUILD_HOST_KITS=True -o PI_PLUGIN_BUILD_HOST_KIT_QT=True")
     return()
 endif()
 

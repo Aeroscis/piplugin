@@ -75,7 +75,7 @@ Qt（或依赖第三方预编译），这条成本会随时间上升。
 | `adapters/qt/CMakeLists.txt:23` | `find_package(Qt5 COMPONENTS Widgets Core QUIET)`，找不到就禁用套件 | 改 `find_package(QT NAMES Qt6 Qt5 ...)` + `Qt${QT_VERSION_MAJOR}::Widgets`（一次性切则直接写 Qt6） |
 | 同上 `:58` | `Qt5::Widgets` | 同上 |
 | `host_kits/qt/`、`tests/test_host_qt`、`tests/test_plugin_qt*`、`examples/minimal_plugin_qt` | 同款 `find_package(Qt5 ...)` | 同款改法（一次性切：全部改 Qt6） |
-| 根 `CMakeLists.txt:46~72` | `PI_QT_PREFIX` / `Qt5_DIR` / `CMAKE_PREFIX_PATH` 优先级链（ECO-05） | 变量名不含版本，逻辑可复用；只需让 `PI_QT_PREFIX` 指向 Qt6 前缀 |
+| 根 `CMakeLists.txt:46~72` | `PI_PLUGIN_QT_PREFIX` / `Qt5_DIR` / `CMAKE_PREFIX_PATH` 优先级链（ECO-05） | 变量名不含版本，逻辑可复用；只需让 `PI_PLUGIN_QT_PREFIX` 指向 Qt6 前缀 |
 | 部署 | 套件 SHARED，`bin/<CONFIG>/` 里同时放 `piplugin_qtd.dll` 与 Qt5 运行时 | Qt6 用 `windeployqt` 取运行时；套件 DLL 名与 Qt 大版本的关系需要定名（见 §4.2） |
 | `conanfile.py:309~332` | Qt 组件 `piplugin_qt` 的 `libs` / `cmake_target_name`；Qt 不进 conan 依赖 | 若双版本则要能表达「按 Qt 大版本选不同库文件」，这是双版本方案最贵的一块 |
 
@@ -182,7 +182,7 @@ Qt 大版本挑一个。
 ```powershell
 # 1) 本仓库对 Qt5 的硬引用面
 Select-String -Path CMakeLists.txt,conanfile.py,adapters/qt/CMakeLists.txt `
-  -Pattern 'Qt5|Qt6|PI_QT_PREFIX'
+  -Pattern 'Qt5|Qt6|PI_PLUGIN_QT_PREFIX'
 
 # 2) Qt5 专属 API 扫描（预期：零命中）
 Select-String -Path adapters/qt/*.cpp,adapters/qt/*.h,host_kits/qt/*.cpp,`

@@ -28,22 +28,22 @@ cmake --build --preset conan-debug --parallel
 
 ```powershell
 cd bin\Debug
-.\pi_example_minimal_host.exe pi_example_plugin_imgui.dll
-.\pi_example_minimal_host.exe pi_example_service.dll
-.\pi_example_minimal_host.exe pi_example_plugin_qt.dll
-.\pi_example_minimal_host.exe pi_example_plugin_win32.dll
-.\pi_example_specialized_app.exe pi_example_specialized_plugin.dll pi_example_service.dll
-.\pi_example_qt_direct_host.exe --self-test        # Qt 宿主 × Qt 插件（直连，退出码判定）
-.\pi_example_plugin_scan.exe                       # 发现：把本目录的插件清单打出来
+.\pi_plugin_example_minimal_host.exe pi_plugin_example_plugin_imgui.dll
+.\pi_plugin_example_minimal_host.exe pi_plugin_example_service.dll
+.\pi_plugin_example_minimal_host.exe pi_plugin_example_plugin_qt.dll
+.\pi_plugin_example_minimal_host.exe pi_plugin_example_plugin_win32.dll
+.\pi_plugin_example_specialized_app.exe pi_plugin_example_specialized_plugin.dll pi_plugin_example_service.dll
+.\pi_plugin_example_qt_direct_host.exe --self-test        # Qt 宿主 × Qt 插件（直连，退出码判定）
+.\pi_plugin_example_plugin_scan.exe                       # 发现：把本目录的插件清单打出来
 ```
 
 `minimal_kit_win32/` 还额外跑官方一致性验收（`scripts/verify.ps1` 会自动带上它）：
 
 ```powershell
-pwsh -NoProfile -File scripts\run_selftest.ps1 -Plugin pi_example_plugin_win32.dll -Cycles 3
+pwsh -NoProfile -File scripts\run_selftest.ps1 -Plugin pi_plugin_example_plugin_win32.dll -Cycles 3
 ```
 
-不需要例子时：`-DPI_BUILD_EXAMPLES=OFF`（或 conan 侧 `-o PI_BUILD_EXAMPLES=False`）。
+不需要例子时：`-DPI_BUILD_EXAMPLES=OFF`（或 conan 侧 `-o PI_PLUGIN_BUILD_EXAMPLES=False`）。
 
 ## 与 tests/ 的分工
 

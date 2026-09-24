@@ -216,7 +216,7 @@ public:
         root->addWidget(g_embedArea, 1);
 
         connect(loadBtn, &QPushButton::clicked, this, [this]() {
-            LoadPlugin(ExeDirPath("pi_test_plugin_imgui.dll").c_str());
+            LoadPlugin(ExeDirPath("pi_plugin_test_plugin_imgui.dll").c_str());
         });
         connect(unloadBtn, &QPushButton::clicked, this, [this]() {
             UnloadPlugin();

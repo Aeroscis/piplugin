@@ -34,7 +34,7 @@
 > （`tests/test_plugin_*`、`examples/*plugin*`），包括纯 C 无 UI 的 service /
 > badversion / guirequired / events 插件。因此 Linux 上目前**一个可加载的插件都没有**，
 > W-10 的 Linux job 只能构建核心与宿主 kit，**无法**跑完整 headless 冒烟
-> （`pi_test_host_headless` 需要一个 `argv[1]` 插件路径）。
+> （`pi_plugin_test_host_headless` 需要一个 `argv[1]` 插件路径）。
 > 另有两处同因阻塞（都不在 W-10 的文件边界内，故只记录不改）：
 > `tests/common/pi_test_thread.h:130`、`tests/test_headless_host/pi_headless_host.c:313`
 > 调用 `nanosleep()` 却没有给 glibc 平台层宏（`-std=c11` 下 gcc ≥ 14 直接以

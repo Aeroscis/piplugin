@@ -7,7 +7,7 @@
 //
 // Run from the repository root (the plugin must sit next to piplugind.dll):
 //
-//     dotnet run --project examples/ffi/csharp -- bin/Debug/pi_test_plugin_imgui.dll
+//     dotnet run --project examples/ffi/csharp -- bin/Debug/pi_plugin_test_plugin_imgui.dll
 //
 // Exit code 0 = every step succeeded.
 
@@ -201,7 +201,7 @@ internal static class PiFfiDemo
     {
         string pluginArg = args.Length > 0
             ? args[0]
-            : Path.Combine("bin", "Debug", "pi_test_plugin_imgui.dll");
+            : Path.Combine("bin", "Debug", "pi_plugin_test_plugin_imgui.dll");
         if (!File.Exists(pluginArg))
         {
             Console.WriteLine($"plugin not found: {pluginArg}");

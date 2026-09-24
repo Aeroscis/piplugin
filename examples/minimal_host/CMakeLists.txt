@@ -4,7 +4,7 @@
 # 依赖：框架核心 + 宿主 kit L0（加载/门禁/实例化/七步卸载序列）。
 cmake_minimum_required(VERSION 3.23)
 
-set(TARGET_NAME pi_example_minimal_host)
+set(TARGET_NAME pi_plugin_example_minimal_host)
 pi_tar_msg(STATUS ${TARGET_NAME} "building example: minimal host...")
 
 if(NOT TARGET piplugin_host)
@@ -30,10 +30,10 @@ add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
 # ------- ctest 注册：例子也是可自动跑的（服务插件，无第三方依赖） -------------
 # 宿主会开一个窗口（Windows 上 ctest 跑在桌面会话里），加载例子服务插件、驱动 1.5s、
 # 干净卸载；退出码 0 = 这一课跑通。GUI 例子（imgui/Qt）留给 README 的人工三步。
-if(TARGET pi_example_service)
+if(TARGET pi_plugin_example_service)
     add_test(NAME example_minimal_host_service
-        COMMAND "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}/pi_example_minimal_host.exe"
-                "pi_example_service.dll"
+        COMMAND "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}/pi_plugin_example_minimal_host.exe"
+                "pi_plugin_example_service.dll"
         WORKING_DIRECTORY "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
         )
     set_tests_properties(example_minimal_host_service PROPERTIES TIMEOUT 120)

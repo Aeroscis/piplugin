@@ -8,7 +8,7 @@
 # 与 tests/ 的分工：tests/ 是回归与验收（断言、退出码、负向用例），
 # examples/ 是"怎么用"的最小示范（尽量少代码、尽量多注释、跑起来能看见输出）。
 #
-# 开关 PI_BUILD_EXAMPLES 由根 CMakeLists.txt 声明（总开关），这里不再重复声明。
+# 开关 PI_PLUGIN_BUILD_EXAMPLES 由根 CMakeLists.txt 声明（总开关），这里不再重复声明。
 pi_tar_msg(STATUS "examples" "building examples...")
 
 # 服务插件先加：minimal_host 注册的 ctest 用例要用它（TARGET 守卫需要它已存在）

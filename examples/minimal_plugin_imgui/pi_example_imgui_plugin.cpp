@@ -9,7 +9,7 @@
  * a headless host loads it fine and simply never gets a view.
  *
  * Run it with examples/minimal_host:
- *     pi_example_minimal_host.exe pi_example_plugin_imgui.dll
+ *     pi_plugin_example_minimal_host.exe pi_plugin_example_plugin_imgui.dll
  */
 #include "piplugin/pi_plugin.h"
 #include "pi_imgui_view.h"

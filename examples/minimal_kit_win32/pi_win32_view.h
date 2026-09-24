@@ -20,7 +20,7 @@
  *   - every callback runs on the host's GUI thread (model A), so the plugin needs
  *     no locking;
  *   - destroy everything synchronously before the module is unloaded;
- *   - trace: PI_PLUGIN_WIN32_VIEW_TRACE=1 writes the lifecycle to <exe dir>\pi_win32_view.log.
+ *   - trace: PI_PLUGIN_WIN32_VIEW_TRACE=1 writes the lifecycle to <exe dir>\pi_plugin_win32_view.log.
  */
 #ifndef PI_PLUGIN_WIN32_VIEW_H
 #define PI_PLUGIN_WIN32_VIEW_H

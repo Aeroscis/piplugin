@@ -3,7 +3,7 @@
 # (docs/todo/tests.md item 7).
 #
 # What it does:
-#   1. kills any running pi_test_host_imgui instance,
+#   1. kills any running pi_plugin_test_host_imgui instance,
 #   2. starts the host with the Qt test plugin auto-loaded,
 #   3. parks the window at a known geometry, measures the static panel width,
 #   4. synthesizes a real border drag (mouse_event) on the RIGHT border,
@@ -34,8 +34,8 @@ $ErrorActionPreference = 'Stop'
 # Defaults are derived from the repository root (this script lives in
 # <root>\scripts\) instead of hardcoding absolute paths.
 $repoRoot = Split-Path -Parent $PSScriptRoot
-if (-not $ExePath)    { $ExePath    = Join-Path $repoRoot "bin\Debug\pi_test_host_imgui.exe" }
-if (-not $PluginPath) { $PluginPath = Join-Path $repoRoot "bin\Debug\pi_test_plugin_qt.dll" }
+if (-not $ExePath)    { $ExePath    = Join-Path $repoRoot "bin\Debug\pi_plugin_test_host_imgui.exe" }
+if (-not $PluginPath) { $PluginPath = Join-Path $repoRoot "bin\Debug\pi_plugin_test_plugin_qt.dll" }
 if (-not $OutDir) { $OutDir = Join-Path $PSScriptRoot "out" }
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 
@@ -44,7 +44,7 @@ trap {
     if ($script:hostProc -and -not $script:hostProc.HasExited) {
         Stop-Process -Id $script:hostProc.Id -Force -ErrorAction SilentlyContinue
     }
-    Get-Process -Name pi_test_host_imgui -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Get-Process -Name pi_plugin_test_host_imgui -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     exit 3
 }
 
@@ -73,7 +73,7 @@ $script:hwnd     = [IntPtr]::Zero
 
 try {
     # ---- 1. clean slate ----------------------------------------------------
-    Get-Process -Name pi_test_host_imgui -ErrorAction SilentlyContinue | Stop-Process -Force
+    Get-Process -Name pi_plugin_test_host_imgui -ErrorAction SilentlyContinue | Stop-Process -Force
     Start-Sleep -Milliseconds 600
 
     # ---- 2. start host with plugin ------------------------------------------
@@ -201,5 +201,5 @@ finally {
     if ($script:hostProc -and -not $script:hostProc.HasExited) {
         Stop-Process -Id $script:hostProc.Id -Force -ErrorAction SilentlyContinue
     }
-    Get-Process -Name pi_test_host_imgui -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Get-Process -Name pi_plugin_test_host_imgui -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 }

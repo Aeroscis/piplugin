@@ -2,7 +2,7 @@
 cmake_minimum_required(VERSION 3.23)
 
 # target name
-set(TARGET_NAME pi_test_host_imgui)
+set(TARGET_NAME pi_plugin_test_host_imgui)
 pi_tar_msg(STATUS ${TARGET_NAME} "building imgui-based test host...")
 
 # source files（imgui 核心来自 Conan imgui::imgui；Win32 + DX11 backend 使用 adapters/imgui/backends 副本）
@@ -20,19 +20,19 @@ set(TARGET_SRC_FILE_LIST
 find_package(imgui CONFIG QUIET)
 if(NOT imgui_FOUND OR NOT EXISTS ${IMGUI_BACKEND_DIR}/imgui_impl_win32.cpp)
     message(WARNING "imgui (Conan) or vendored backends missing -> ${TARGET_NAME} DISABLED")
-    message(WARNING "  run: conan install . -o PI_BUILD_TEST_HOST=True --build=missing")
+    message(WARNING "  run: conan install . -o PI_PLUGIN_BUILD_TEST_HOST=True --build=missing")
     return()
 endif()
 
 # 宿主 kit 缺失则禁用本宿主（L0 会话 + L1 DX11 嵌入胶水）
 if(NOT TARGET piplugin_host)
     message(WARNING "host kit L0 (piplugin_host) not built -> ${TARGET_NAME} DISABLED")
-    message(WARNING "  enable -o PI_BUILD_HOST_KITS=True -o PI_BUILD_HOST_KIT_CORE=True")
+    message(WARNING "  enable -o PI_PLUGIN_BUILD_HOST_KITS=True -o PI_PLUGIN_BUILD_HOST_KIT_CORE=True")
     return()
 endif()
 if(NOT TARGET piplugin_host_dx11)
     message(WARNING "host kit L1 dx11 (piplugin_host_dx11) not built -> ${TARGET_NAME} DISABLED")
-    message(WARNING "  enable -o PI_BUILD_HOST_KITS=True -o PI_BUILD_HOST_KIT_DX11=True")
+    message(WARNING "  enable -o PI_PLUGIN_BUILD_HOST_KITS=True -o PI_PLUGIN_BUILD_HOST_KIT_DX11=True")
     return()
 endif()
 
@@ -48,7 +48,7 @@ target_sources(${TARGET_NAME}
 
 # self include（adapters/imgui/backends 头目录）+ 测试共用头（app 自定义宿主服务）
 target_include_directories(${TARGET_NAME} PRIVATE ${IMGUI_BACKEND_DIR})
-target_include_directories(${TARGET_NAME} PRIVATE ${PI_TESTS_COMMON_DIR})
+target_include_directories(${TARGET_NAME} PRIVATE ${PI_PLUGIN_TESTS_COMMON_DIR})
 
 # first party
 target_link_libraries(${TARGET_NAME} PRIVATE piplugin)

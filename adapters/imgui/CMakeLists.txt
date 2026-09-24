@@ -71,7 +71,7 @@ install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/pi_imgui_view.h
 install(EXPORT pipluginImguiAdapterTargets
     FILE pipluginImguiAdapterTargets.cmake
     NAMESPACE ${NAMESPACE_NAME}:: # 消费方引用 ${NAMESPACE_NAME}::${TARGET_NAME}
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/${PI_CMAKE_PACKAGE_SUBDIR}
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/${PI_PLUGIN_CMAKE_PACKAGE_SUBDIR}
 )
 
 # ------- Windows 版本资源（W-07） -------

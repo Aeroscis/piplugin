@@ -19,15 +19,15 @@ cmake --build --preset conan-debug --parallel
 cd bin\Debug
 
 # 3) 跑：参数是插件 DLL，不给就用 imgui 示例插件
-.\pi_example_minimal_host.exe pi_example_plugin_imgui.dll
-.\pi_example_minimal_host.exe pi_example_service.dll
+.\pi_plugin_example_minimal_host.exe pi_plugin_example_plugin_imgui.dll
+.\pi_plugin_example_minimal_host.exe pi_plugin_example_service.dll
 ```
 
 期望输出（imgui 插件）：
 
 ```
 == piplugin minimal host ==
-plugin: pi_example_plugin_imgui.dll
+plugin: pi_plugin_example_plugin_imgui.dll
   [kit] load[0]: gate passed (category=Example/UI, capabilities=2)
   [kit] load[0]: ready (view:Y service:N events:N)
 loaded: Example ImGui Plugin 1.0.0 (Example/UI)

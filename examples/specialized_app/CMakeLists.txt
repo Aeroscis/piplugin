@@ -10,7 +10,7 @@ if(NOT TARGET piplugin_host)
 endif()
 
 # --- the plugin half (implements the app protocol) ---
-set(PLUGIN_TARGET pi_example_specialized_plugin)
+set(PLUGIN_TARGET pi_plugin_example_specialized_plugin)
 pi_tar_msg(STATUS ${PLUGIN_TARGET} "building example: specialized plugin...")
 add_library(${PLUGIN_TARGET} SHARED)
 target_sources(${PLUGIN_TARGET} PRIVATE pi_specialized_plugin.c)
@@ -25,7 +25,7 @@ add_custom_command(TARGET ${PLUGIN_TARGET} POST_BUILD
 )
 
 # --- the app half (defines the protocol and gates on it) ---
-set(APP_TARGET pi_example_specialized_app)
+set(APP_TARGET pi_plugin_example_specialized_app)
 pi_tar_msg(STATUS ${APP_TARGET} "building example: specialized app...")
 add_executable(${APP_TARGET})
 target_sources(${APP_TARGET} PRIVATE pi_specialized_app.c)
@@ -41,10 +41,10 @@ add_custom_command(TARGET ${APP_TARGET} POST_BUILD
 # ------- ctest 注册：特化 app 示例（无 GUI，纯逻辑，CI 里也跑） -------------
 # app 要求自定义协议 -> 合规插件被接受且协议被调用 -> 不合规插件被门禁挡在实例化之前。
 # 两个插件都来自 examples/，因此这个用例不依赖 tests/ 里的任何东西。
-if(TARGET pi_example_specialized_plugin AND TARGET pi_example_service)
+if(TARGET pi_plugin_example_specialized_plugin AND TARGET pi_plugin_example_service)
     add_test(NAME example_specialized_app
-        COMMAND "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}/pi_example_specialized_app.exe"
-                "pi_example_specialized_plugin.dll" "pi_example_service.dll"
+        COMMAND "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}/pi_plugin_example_specialized_app.exe"
+                "pi_plugin_example_specialized_plugin.dll" "pi_plugin_example_service.dll"
         WORKING_DIRECTORY "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
         )
     set_tests_properties(example_specialized_app PROPERTIES TIMEOUT 120)
