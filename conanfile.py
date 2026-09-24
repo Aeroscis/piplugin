@@ -120,9 +120,19 @@ class PiPluginConan(ConanFile):
     # 构建目录里也必须存在 —— 漏掉时的症状是 package() 阶段直接失败：
     #   CMake Error: file INSTALL cannot find ".../b/LICENSE": File exists.
     # 顺带把 build.md #7 的遗留项（conan 包不随包带 LICENSE）一起解决。
+    exports = "pibase.pin"
     exports_sources = ("CMakeLists.txt", "cmake/*", "include/*", "src/*", "adapters/*",
                        "host_kits/*", "examples/*", "tests/*",
-                       "LICENSE", "README.md", "CHANGELOG.md")
+                       "LICENSE", "README.md", "CHANGELOG.md",
+                       # 家族根层 pin：requirements() 要读它来定 pibase 的版本，
+                       # src/piplugin/CMakeLists.txt 要读它来生成包配置里的版本区间。
+                       # 两处都要，因为它们不在同一时刻可用：
+                       #   exports        —— 缓存里 recipe 目录下的那份，requirements()
+                       #                     求值时就在（此时导出源码还没落地）；
+                       #   exports_sources —— 源码树里的那份，缓存里构建时 CMake 要读。
+                       # 只登记 exports_sources 的话，conan create 会在"Computing
+                       # dependency graph"处直接报 pibase.pin not found（实测）。
+                       "pibase.pin")
     # CMakeToolchain 不在 generators 声明：需要在 generate() 手动实例化以注入自定义 cache 变量。
     # （Conan 禁止同一生成器既声明又手动实例化；CMakeDeps 的依赖查找路径经
     #   conan_cmakedeps_paths.cmake 由工具链在 configure 时包含，与生成顺序无关）
@@ -175,9 +185,46 @@ class PiPluginConan(ConanFile):
                 "; ".join(problems)
                 + ". Enable the required kit switches or disable those test switches.")
 
+    def _pibase_pin(self):
+        """家族根层 pin 的**唯一**来源：pibase.pin。
+
+        这里读它的 version；scripts/fetch_pibase.ps1 读同一个文件的 commit；
+        src/piplugin/CMakeLists.txt 读同一个 version 生成包配置里的可接受区间；
+        CI 读 commit 决定克隆哪个提交。四处各写一份就是四个 pin，必然漂移。
+
+        位置用 `self.recipe_folder`，因为 pibase.pin 登记在 `exports` 里：缓存里
+        requirements() 求值时，recipe 目录下已经有它，而 exports_sources 还没有
+        （那两个是构建期的源码树，见类头的 exports/exports_sources 注释）。
+
+        只支持 `key=value` 与 `#` 注释这一种子集，Python / PowerShell / CMake 三边
+        都能几行读完。缺键时报错而不是取默认值——默认值就是第二个 pin。
+        """
+        path = os.path.join(self.recipe_folder, "pibase.pin")
+        if not os.path.exists(path):
+            raise ConanException(
+                f"pibase.pin not found at '{path}'. It ships with the sources "
+                f"(exports_sources) and is read by this recipe, "
+                f"scripts/fetch_pibase.ps1 and src/piplugin/CMakeLists.txt.")
+        values = {}
+        with open(path, encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                key, sep, value = line.partition("=")
+                if sep:
+                    values[key.strip()] = value.strip()
+        for key in ("commit", "version"):
+            if not values.get(key):
+                raise ConanException(f"pibase.pin has no '{key}=' line: {path}")
+        return values
+
     def requirements(self):
         # 家族根层：无条件依赖（结果码 / GUID / PiNativeWindow / IPiUnknown / ABI 管线宏）。
         # header-only 包，不参与构建类型或架构的 package_id。
+        #
+        # 版本不写死在这里：pibase.pin 是唯一来源（见 _pibase_pin）。写死就意味着
+        # pin 提到新 commit 时，源码路线换了、conan 路线没换，两边验的不是同一层。
         #
         # transitive_headers=True 不是可选的美化：框架的**公开头文件**
         # （include/piplugin/pi_plugin_types.h 等）里写着 #include <pibase/pi_base.h>，
@@ -188,7 +235,7 @@ class PiPluginConan(ConanFile):
         # 也没有任何 target 携带它的 include 目录，消费方在
         # #include <pibase/pi_base.h> 处直接 C1083。声明这个 trait 之后，
         # 头文件需求随 <piplugin> 一起传到消费方，消费方不必自己去 require pibase。
-        self.requires("pibase/0.1.0", transitive_headers=True)
+        self.requires(f"pibase/{self._pibase_pin()['version']}", transitive_headers=True)
 
         # 依赖自动管理：任一需要 imgui 的部件有效开启即自动拉取（Qt5 为本地安装，非 conan 依赖）
         # - imgui adapter kit 链接 imgui::imgui

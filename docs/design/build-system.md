@@ -50,11 +50,18 @@ class PiPluginConan(ConanFile):
 ### 2.1 标准命令序列
 
 ```bash
+# 一次性前置：家族根层 pibase 不在任何远端，必须先建进本地 Conan 缓存（见 §6）
+conan create ../pibase --build=missing -s build_type=Debug
 conan install . --build=missing     # 生成构建文件 + 管理 CMakeUserPresets.json
 cmake --preset conan-default        # configure（VS 2022, x64）
 cmake --build --preset conan-debug  # 构建 Debug
 cmake --build --preset conan-release
 ```
+
+第一条不是可选装饰：`conanfile.py` 无条件 `requires("pibase/<版本>")`，而 pibase 既不在
+任何远端、recipe 里也没有能从网络取源码的 `source()`。缓存里没有它时，`conan install`
+直接报 `Unable to find 'pibase/<版本>' in remotes` 并退出——它**不会**退化成"去拉源码
+一起构建"，那条路属于 CMake 侧的 fetch 分支（见 §6）。
 
 ## 3. CMake 层级结构
 
@@ -309,3 +316,66 @@ cpack --config build/CPackConfig.cmake -C Debug -B out
   约定就是"消费方自行保证 Qt 可达"），所以"宿主直接运行"这条断言覆盖的是不依赖 Qt 的那
   部分链接面；要把 Qt 宿主也做成"解压即跑"，得先把 Qt 运行时纳入分发（涉及 LGPL 再分发
   的决策，见 `docs/todo/build.md` #8）。
+
+## 6. 家族根层 pibase：pin 与三条获取路线
+
+`pi::base` 不来自任何 Conan 远端，也不一定来自源码树——它有三条获取路线，而**路线之间
+不会自动接棒**：选错了就是配置期失败，不会悄悄降级成另一条。
+
+| 场景 | provider | `pi::base` 从哪来 |
+|---|---|---|
+| `cmake --preset conan-default`（推荐） | `auto` → 命中 `package` | 本地 Conan 缓存里的 `pibase/<版本>`；CMakeDeps 在 `build/generators/` 生成 `pibase-config.cmake`，`conan_toolchain.cmake` 把该目录前插进 `CMAKE_PREFIX_PATH` |
+| 纯 CMake + 已安装的 pibase | `package`（或 `auto` 恰好命中） | 前缀里的 pibase，`find_package(pibase)` |
+| 干净检出、无 Conan、未安装 pibase | `auto` → 回退 `fetch` | `external/pibase` 源码，`add_subdirectory` 进本工程；它的头与包配置随本工程一起进安装前缀 |
+
+三条路线的前置责任不同，都不在构建里自动完成：
+
+- **Conan 路线**：pibase 不在任何远端（`conan remote list` 只有 conancenter），recipe 也
+  没有 `source()`（只有 `exports_sources`），所以它**只能**由人在 pibase 仓库里
+  `conan create` 进本地缓存。缓存里没有时 `conan install` 直接报
+  `Unable to find 'pibase/<版本>' in remotes` 并退出——**不会**去拉源码，也走不到 CMake。
+- **package 路线**：把 pibase `cmake --install` 到某个前缀，并让 CMake 找到它（标准
+  CMake 发现机制：`CMAKE_PREFIX_PATH` / `pibase_DIR`）。
+- **fetch 路线**：`scripts/fetch_pibase.ps1` 把源码取到 `external/pibase`（gitignore 的
+  目录，默认位置可用 `-DPI_PLUGIN_PIBASE_SOURCE_DIR` 覆盖）。**configure 不会替你取**：
+  源码不在时直接 `FATAL_ERROR` 并提示先跑脚本——configure 期 clone 会让构建受网络影响、
+  或者悄悄用错 revision。
+
+### 6.1 pin 是唯一的：`pibase.pin`
+
+四个读取方共读仓库根目录的同一个文件——四处各写一份就是四个 pin，必然漂移：
+
+| 读取方 | 读什么 | 用途 |
+|---|---|---|
+| `scripts/fetch_pibase.ps1` | `commit` | 决定 checkout 哪个提交；`-RequirePin` 把不在 pin 上的 checkout 移回来，并交叉校验 checkout 的 `PI_BASE_VERSION_STRING` 与 `version` 一致 |
+| `conanfile.py` | `version` | `self.requires("pibase/<version>")` |
+| `src/piplugin/CMakeLists.txt` | `version` | 生成包配置里的可接受区间（pin 住的版本 → 同 minor 的下一个版本为止） |
+| `.github/workflows/ci.yml` | `commit` + 校验 `version` | `git fetch --depth 1 origin <commit>` 后 `checkout --detach`，再 `conan create` |
+
+`commit` 写**完整 40 位**：短 id 无法被 `git fetch --depth 1 origin <id>` 单独取到（实测
+`couldn't find remote ref 65de807`），而 CI 走的正是这条浅取。
+
+`conanfile.py` 通过 **`exports`**（不是 `exports_sources`）拿到这个文件：缓存里
+`requirements()` 求值时，recipe 目录下只有 `conanfile.py` 和 `exports` 的文件——导出源码
+尚未落地，`self.export_sources_folder` 也是 `None`。只登记 `exports_sources` 会让
+`conan create` 在 "Computing dependency graph" 处直接报 `pibase.pin not found`（实测）。
+源码树里那一份仍需 `exports_sources`，因为缓存里构建时 CMake 读的是它。
+
+### 6.2 版本为什么显式比，而不是 `find_dependency(pibase <版本>)`
+
+pibase 自己的 `pibaseConfigVersion.cmake`（`COMPATIBILITY SameMajorVersion`）与 Conan
+CMakeDeps 生成的那份都是 SameMajorVersion 语义：`find_package(pibase 0.1)` 会把 **0.2.0**
+判成兼容，而 0.2.0 正是"可能改名"的那一档（pibase README 的版本规则：补丁只修，minor
+可变）。所以 `src/piplugin/cmake/pipluginConfig.cmake.in` 在 `find_dependency(pibase)`
+之后显式比较区间；失败按"包没找到"上报（置 `<pkg>_FOUND FALSE` + `NOT_FOUND_MESSAGE`），
+而不是 `FATAL_ERROR`——用 `QUIET` 探测本包的调用方应该能拿到"没找到"，这与 CMake 自身版本
+检查的行为一致。
+
+这段校验必须写在 **include targets 之后**：若在 include 之前就 `return()`，`pi::plugin`
+不会被创建，伞配置随后导入的可选组件 targets 会报 "missing imported targets" 并**覆盖**
+这里的 `NOT_FOUND_MESSAGE`——用户看到的就是那句与版本无关的报错（实测踩过一次）。
+
+**边界（有意不做的）**：CMake 只在**消费端**校验版本；本工程构建时拿到的是哪个 pibase，
+源码路线由 commit pin 保证、Conan 路线由 `requires()` 的版本保证，CMake 侧不重复校验
+（`add_subdirectory` 进来的工程版本变量不会进父作用域，重复校验只能靠解析别人的
+CMakeLists）。

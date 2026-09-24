@@ -60,14 +60,34 @@ jobs:
       - name: Conan profile
         run: conan profile detect --force
 
-      # pibase is a separate package with no server behind it, so it is created
-      # from source here - that is what keeps this pipeline self-sufficient.
-      # The clone follows pibase's default branch because pibase does not tag
-      # releases yet; switch to --branch <tag> once it does, and keep the version
-      # in step with what conanfile.py's requirements() asks for.
+      # pibase is a separate package with no server behind it, so it is created from
+      # source here - that is what keeps this pipeline self-sufficient. The commit
+      # comes from pibase.pin, the file scripts/fetch_pibase.ps1, conanfile.py and
+      # the installed package config all read: a pipeline that follows a branch
+      # verifies a different base layer than every local run does, and then goes red
+      # for reasons that have nothing to do with the change under test.
       - name: Conan create pibase
         run: |
-          git clone --depth 1 https://github.com/Aeroscis/pibase.git ../pibase
+          # This step is pwsh on windows-latest, where the wrapper sets
+          # $ErrorActionPreference = "Stop" - and a native command's stderr line
+          # becomes a terminating error under it. Keep git's chatter non-fatal and
+          # judge by $LASTEXITCODE instead, the same rule the repo's own scripts use.
+          $ErrorActionPreference = "Continue"
+          $pin  = (Select-String -Path pibase.pin -Pattern '^commit=(\S+)'  -ErrorAction Stop).Matches[0].Groups[1].Value
+          $want = (Select-String -Path pibase.pin -Pattern '^version=(\S+)' -ErrorAction Stop).Matches[0].Groups[1].Value
+          git init -q ../pibase
+          git -C ../pibase remote add origin https://github.com/Aeroscis/pibase.git
+          # --depth 1 cannot reach an arbitrary commit by itself; asking for the sha
+          # directly can (GitHub serves it), with a full fetch as the fallback.
+          git -C ../pibase fetch -q --depth 1 origin $pin
+          if ($LASTEXITCODE -ne 0) { git -C ../pibase fetch -q origin }
+          git -C ../pibase checkout -q --detach $pin
+          if ($LASTEXITCODE -ne 0) { throw "cannot check out pibase $pin" }
+          # The pin names a version as well, and this is the cheap place to notice
+          # that the pinned commit declares a different one: scripts/fetch_pibase.ps1
+          # makes the same comparison on a developer machine.
+          $got = (Select-String -Path ../pibase/include/pibase/pi_base.h -Pattern 'PI_BASE_VERSION_STRING\s+"([^"]+)"').Matches[0].Groups[1].Value
+          if ($want -ne $got) { throw "pibase.pin names version $want, but the pinned commit declares '$got'" }
           conan create ../pibase --build=missing -s build_type=Debug
 
       - name: Conan install
@@ -125,14 +145,34 @@ jobs:
       - name: Conan profile
         run: conan profile detect --force
 
-      # pibase is a separate package with no server behind it, so it is created
-      # from source here - that is what keeps this pipeline self-sufficient.
-      # The clone follows pibase's default branch because pibase does not tag
-      # releases yet; switch to --branch <tag> once it does, and keep the version
-      # in step with what conanfile.py's requirements() asks for.
+      # pibase is a separate package with no server behind it, so it is created from
+      # source here - that is what keeps this pipeline self-sufficient. The commit
+      # comes from pibase.pin, the file scripts/fetch_pibase.ps1, conanfile.py and
+      # the installed package config all read: a pipeline that follows a branch
+      # verifies a different base layer than every local run does, and then goes red
+      # for reasons that have nothing to do with the change under test.
       - name: Conan create pibase
         run: |
-          git clone --depth 1 https://github.com/Aeroscis/pibase.git ../pibase
+          # This step is pwsh on windows-latest, where the wrapper sets
+          # $ErrorActionPreference = "Stop" - and a native command's stderr line
+          # becomes a terminating error under it. Keep git's chatter non-fatal and
+          # judge by $LASTEXITCODE instead, the same rule the repo's own scripts use.
+          $ErrorActionPreference = "Continue"
+          $pin  = (Select-String -Path pibase.pin -Pattern '^commit=(\S+)'  -ErrorAction Stop).Matches[0].Groups[1].Value
+          $want = (Select-String -Path pibase.pin -Pattern '^version=(\S+)' -ErrorAction Stop).Matches[0].Groups[1].Value
+          git init -q ../pibase
+          git -C ../pibase remote add origin https://github.com/Aeroscis/pibase.git
+          # --depth 1 cannot reach an arbitrary commit by itself; asking for the sha
+          # directly can (GitHub serves it), with a full fetch as the fallback.
+          git -C ../pibase fetch -q --depth 1 origin $pin
+          if ($LASTEXITCODE -ne 0) { git -C ../pibase fetch -q origin }
+          git -C ../pibase checkout -q --detach $pin
+          if ($LASTEXITCODE -ne 0) { throw "cannot check out pibase $pin" }
+          # The pin names a version as well, and this is the cheap place to notice
+          # that the pinned commit declares a different one: scripts/fetch_pibase.ps1
+          # makes the same comparison on a developer machine.
+          $got = (Select-String -Path ../pibase/include/pibase/pi_base.h -Pattern 'PI_BASE_VERSION_STRING\s+"([^"]+)"').Matches[0].Groups[1].Value
+          if ($want -ne $got) { throw "pibase.pin names version $want, but the pinned commit declares '$got'" }
           conan create ../pibase --build=missing -s build_type=Debug
 
       - name: Conan install

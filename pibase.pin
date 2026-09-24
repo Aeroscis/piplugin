@@ -1,0 +1,26 @@
+# The family root layer (pibase) this checkout is pinned to.
+#
+# One file on purpose. The same decision is needed in four places - the commit the
+# source route fetches (scripts/fetch_pibase.ps1), the version the Conan recipe
+# requires (conanfile.py), the range the installed package config accepts
+# (src/piplugin/cmake/pipluginConfig.cmake.in, filled in by
+# src/piplugin/CMakeLists.txt), and CI, which reads the commit from here - and
+# four copies of a pin are four pins that drift.
+#
+# commit   the full 40-character object id of a commit in
+#          https://gitee.com/Aeroscis/pibase.git (mirrored on GitHub). Full, not
+#          abbreviated: a shortened id cannot be fetched by itself, which is what
+#          CI does (`git fetch --depth 1 origin <commit>`) and what the local
+#          script checks out. pibase has no tags yet, so a commit is the only
+#          stable pin; when it starts tagging, this becomes a tag and nothing
+#          else has to move.
+# version  the version that commit declares - scripts/fetch_pibase.ps1 checks the
+#          two against each other, so this file cannot claim one version while
+#          pinning a commit that declares another.
+#          It also carries the compatibility policy: piplugin accepts the pinned
+#          version and later fixes in the same minor (0.1.0 up to but excluding
+#          0.2.0), because the family's rule is that a patch release only fixes
+#          while a minor release may rename things (pibase README, Versioning).
+
+commit=65de807612debb4616c0e607be6450a6c52de7e5
+version=0.1.0

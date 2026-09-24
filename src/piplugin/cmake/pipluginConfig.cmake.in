@@ -5,10 +5,29 @@ include(CMakeFindDependencyMacro)
 # 家族根层（pibase）：核心目标的链接接口里有 pi::base，所以消费者路径必须把它找出来。
 # 不调用的话，消费者 find_package(piplugin) 后在生成期直接报
 # "target pi::base was not found" —— 框架不是"无第三方依赖"，它依赖家族根层。
-find_dependency(pibase)
+#
+# 请求最低版本不只是"表达需求"：带了版本，CMake 才会去读 pibaseConfigVersion.cmake
+# 并设好 pibase_VERSION，下面那段显式比较才有东西可比。
+find_dependency(pibase @PI_PLUGIN_PIBASE_MIN_VERSION@)
 
 # 包含导出的 targets 文件
 include("${CMAKE_CURRENT_LIST_DIR}/@FULL_NAME@Targets.cmake")
 
 # 设置组件找到标志
 set(@NAMESPACE_NAME@_@COMPONENT_NAME@_FOUND TRUE)
+
+# 版本区间仍要显式比，不能只靠 find_dependency 的版本参数：pibase 自己的 version 文件
+# （COMPATIBILITY SameMajorVersion）与 conan CMakeDeps 生成的那份都是 SameMajorVersion
+# 语义，`find_package(pibase 0.1)` 会把 0.2.0 判成兼容 —— 而 0.2.0 正是"可能改名"的
+# 那一档（pibase README 的版本规则：补丁只修，minor 可变）。区间来自构建时读的
+# pibase.pin（见 src/piplugin/CMakeLists.txt）：pin 住的版本，到同 minor 的下一个版本为止。
+#
+# **位置必须在 include targets 之后**：本文件若在 include 之前就 return()，pi::plugin
+# 不会被创建，伞配置随后导入的可选组件 targets 会报 "missing imported targets" 并**覆盖**
+# 这里的 NOT_FOUND_MESSAGE —— 用户看到的就是那句与版本无关的报错（实测踩过一次）。
+# 失败按"包没找到"上报（置 <pkg>_FOUND FALSE + 消息），而不是 FATAL_ERROR：用 QUIET
+# 探测本包的调用方应该能拿到"没找到"，这与 CMake 自身版本检查的行为一致。
+if(pibase_VERSION VERSION_LESS "@PI_PLUGIN_PIBASE_MIN_VERSION@" OR NOT pibase_VERSION VERSION_LESS "@PI_PLUGIN_PIBASE_MAX_VERSION@")
+    set(${CMAKE_FIND_PACKAGE_NAME}_FOUND FALSE)
+    set(${CMAKE_FIND_PACKAGE_NAME}_NOT_FOUND_MESSAGE "piplugin was built against pibase @PI_PLUGIN_PIBASE_MIN_VERSION@ (accepts >= @PI_PLUGIN_PIBASE_MIN_VERSION@, < @PI_PLUGIN_PIBASE_MAX_VERSION@), but pibase ${pibase_VERSION} was found at ${pibase_DIR}")
+endif()

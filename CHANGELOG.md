@@ -621,6 +621,35 @@ own.
 
 ### Changed
 
+- **The family root layer's pin lived in four places, and none of them was compared with
+  another (ECO-04).** The commit `scripts/fetch_pibase.ps1` checked out, the version
+  `conanfile.py` required, whatever CI cloned, and - on the consumer side - nothing at all.
+  They now read one file, `pibase.pin` at the repository root, which holds the full
+  40-character commit (a shortened id cannot be fetched by itself, and CI fetches exactly
+  that commit) plus the version that commit declares; `fetch_pibase.ps1` compares the
+  checkout's `PI_BASE_VERSION_STRING` against the pin, so the file cannot claim one version
+  while pinning a commit that declares another, and `-RequirePin` still moves a checkout
+  that sits somewhere else back onto the pin. The recipe reads the pin through Conan 2's
+  `exports`, not `exports_sources`: `requirements()` runs while the cache recipe folder
+  holds only the recipe, so an exported *source* is not there yet, and registering it only
+  in `exports_sources` fails the graph step with `pibase.pin not found`. CI stopped
+  following pibase's default branch - it fetches the pinned commit and refuses a commit
+  whose version contradicts the pin - so a green pipeline and a green local run now verify
+  the same base layer.
+
+- **The installed package config accepted any pibase of the same major version.** It
+  stated no range at all, and the range cannot come from `find_package(pibase <version>)`:
+  pibase's own version file (`COMPATIBILITY SameMajorVersion`) and the one Conan's
+  CMakeDeps writes are both SameMajorVersion, so `0.1` accepts `0.2.0` - the release that
+  may rename things. `pipluginConfig.cmake` now carries the range it was built against
+  (from `pibase.pin`, via `src/piplugin/CMakeLists.txt`) and reports a mismatch as "package
+  not found", the way CMake's own version check does. The comparison sits **after** the
+  targets include on purpose: placed before it, its early return leaves `pi::plugin`
+  undefined and the umbrella's optional-component targets overwrite the message with
+  "missing imported targets" - which is what the first attempt did, and how it was found
+  (a prefix whose pibase reports 0.2.0 now stops with "piplugin was built against pibase
+  0.1.0 (accepts >= 0.1.0, < 0.2.0), but pibase 0.2.0 was found").
+
 - **The default install prefix is the build system's job now (W-09).** It used to be
   pinned by a hand-written `conan-default-local` preset living in the committed
   `CMakeUserPresets.json`, which meant only somebody who kept that file got the sane

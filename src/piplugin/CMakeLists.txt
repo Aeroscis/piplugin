@@ -105,6 +105,38 @@ if(_pi_pibase_provider STREQUAL "fetch")
 endif()
 pi_tar_msg(STATUS pibase "obtained via provider='${_pi_pibase_provider}'")
 
+# ------- 家族根层 pin：包配置里要写明的版本区间 -------
+# pibase.pin 是唯一来源（conanfile.py 读它的 version 来写 requires，
+# scripts/fetch_pibase.ps1 读它的 commit 来定 checkout，CI 读同一个 commit）。
+# 这里把它变成写进包配置的可接受区间：pin 住的版本，到同 minor 的下一个版本为止。
+#
+# 为什么不直接 find_package(pibase <版本>)：pibase 自己的 version 文件
+# （pibase/CMakeLists.txt 用 COMPATIBILITY SameMajorVersion）与 conan CMakeDeps
+# 生成的那份都是 SameMajorVersion 语义，`find_package(pibase 0.1)` 会把 0.2.0 判成
+# 兼容 —— 而 0.2.0 正是"可能改名"的那一档（pibase README 的版本规则：补丁只修，
+# minor 可变）。所以消费者侧显式比，见 cmake/pipluginConfig.cmake.in。
+set(_pi_pibase_pin "${CMAKE_CURRENT_SOURCE_DIR}/../../pibase.pin")
+if(NOT EXISTS "${_pi_pibase_pin}")
+    message(FATAL_ERROR
+        "pibase.pin not found at '${_pi_pibase_pin}'.\n"
+        "  It is the single source for the family root layer's commit and version; the\n"
+        "  Conan recipe and the installed package config are both built from it.")
+endif()
+file(STRINGS "${_pi_pibase_pin}" _pi_pin_lines REGEX "^[a-z_]+=")
+foreach(_pi_pin_line IN LISTS _pi_pin_lines)
+    if(_pi_pin_line MATCHES "^([a-z_]+)=(.+)$")
+        set("_pi_pin_${CMAKE_MATCH_1}" "${CMAKE_MATCH_2}")
+    endif()
+endforeach()
+if(NOT _pi_pin_version MATCHES "^([0-9]+)\\.([0-9]+)\\.")
+    message(FATAL_ERROR "pibase.pin: version '${_pi_pin_version}' is not major.minor.patch")
+endif()
+math(EXPR _pi_pibase_next_minor "${CMAKE_MATCH_2} + 1")
+set(PI_PLUGIN_PIBASE_MIN_VERSION "${_pi_pin_version}")
+set(PI_PLUGIN_PIBASE_MAX_VERSION "${CMAKE_MATCH_1}.${_pi_pibase_next_minor}.0")
+pi_tar_msg(STATUS pibase
+    "pinned to ${_pi_pin_commit} (${PI_PLUGIN_PIBASE_MIN_VERSION}; config accepts < ${PI_PLUGIN_PIBASE_MAX_VERSION})")
+
 # add library target
 add_library(${TARGET_NAME} SHARED)                           # 本体
 add_library(pi::${MEMBER_NAME} ALIAS ${TARGET_NAME}) # 家族内别名 pi::plugin

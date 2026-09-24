@@ -61,6 +61,14 @@
 ### 方式一：Conan（推荐，会带上 imgui 依赖）
 
 ```bash
+# 一次性前置：家族根层 pibase 不在任何 Conan 远端，先把它建进本地缓存
+# （已有 pibase 检出的话，把 ../pibase 换成你的路径即可）。少了这步，
+# conan install 会直接报 "Unable to find 'pibase/<版本>' in remotes" —— 它不会
+# 去拉源码，源码那条路属于方式二。版本与提交由仓库根的 pibase.pin 钉住，
+# 三条获取路线与各自的前置责任见 docs/design/build-system.md 第 6 节。
+git clone https://gitee.com/Aeroscis/pibase.git ../pibase
+conan create ../pibase --build=missing -s build_type=Debug
+
 conan install . --build=missing          # 首次会本地编译 imgui，几分钟
 cmake --preset conan-default
 cmake --build --preset conan-debug
