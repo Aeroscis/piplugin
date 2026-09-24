@@ -12,10 +12,20 @@
 #                        Conan requirement, configures with the generated
 #                        toolchain and runs.
 #   C. cpack archive  -- cpack builds the ZIP somebody actually downloads (W-08).
-#                        It is unzipped into a clean directory and has to stand on
-#                        its own: the consumer is configured there WITHOUT the
-#                        Conan toolchain (no build tree, no Qt environment on
-#                        PATH) and the resulting host program must run.
+#                        It is unzipped into a clean directory and the consumer is
+#                        configured there WITHOUT the Conan toolchain (no build tree,
+#                        no Qt environment on PATH), and the resulting host program
+#                        must run.
+#
+#                        "Stands on its own" means something narrower than it used
+#                        to, now that piplugin depends on the family root layer: the
+#                        archive must be built from a tree where pibase came from
+#                        source (PI_PLUGIN_PIBASE_PROVIDER=fetch), so that pibase's
+#                        headers and config install into the same prefix and travel
+#                        inside the ZIP. An archive built against an externally
+#                        installed pibase would look fine here and then fail on the
+#                        downloader's machine, which is the one failure this phase
+#                        exists to catch.
 #
 # Phase B is the slow one (it rebuilds the whole project inside Conan's cache).
 # Use -SkipConan to run A + C only.
@@ -82,7 +92,7 @@ $conanToolchain = Join-Path $BuildDir "generators\conan_toolchain.cmake"
 $installConsumer = Join-Path $work "consumer-install"
 & cmake -S $consumerSrc -B $installConsumer -G "Visual Studio 17 2022" -A x64 `
     "-DCMAKE_TOOLCHAIN_FILE=$conanToolchain" `
-    "-DCMAKE_PREFIX_PATH=$prefix" -DPI_CONSUMER_LINK_IMGUI=ON 2>&1 | ForEach-Object { Write-Host "    $_" }
+    "-DCMAKE_PREFIX_PATH=$prefix" -DPI_PLUGIN_CONSUMER_LINK_IMGUI=ON 2>&1 | ForEach-Object { Write-Host "    $_" }
 if ($LASTEXITCODE -ne 0) {
     $failures += "install-tree configure"
     Write-Host "FAIL - configure against the install tree" -ForegroundColor Red
@@ -177,7 +187,7 @@ CMakeToolchain
             $conanConsumer = Join-Path $work "consumer-conan"
             & cmake -S $consumerSrc -B $conanConsumer -G "Visual Studio 17 2022" -A x64 `
                 "-DCMAKE_TOOLCHAIN_FILE=$conanWork\conan_toolchain.cmake" -DCMAKE_BUILD_TYPE=$Config `
-                -DPI_CONSUMER_LINK_IMGUI=ON 2>&1 |
+                -DPI_PLUGIN_CONSUMER_LINK_IMGUI=ON 2>&1 |
                 ForEach-Object { Write-Host "    $_" }
             if ($LASTEXITCODE -ne 0) {
                 $failures += "conan consumer configure"
