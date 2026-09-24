@@ -27,7 +27,7 @@ if (-not $Dest)   { $Dest   = Join-Path $repoRoot "external\pibase" }
 # reachable from every machine that builds this project (SSH is, HTTPS is not).
 if (-not $Remote) { $Remote = "https://gitee.com/Aeroscis/pibase.git" }
 # Pinned commit: pibase has no tags yet, so a commit is the only stable pin.
-if (-not $Ref)    { $Ref    = "9985d3f" }
+if (-not $Ref)    { $Ref    = "65de807" }
 
 if (Test-Path (Join-Path $Dest ".git")) {
     if (-not $Force) {
