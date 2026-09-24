@@ -96,7 +96,12 @@ if(_pi_pibase_provider STREQUAL "fetch")
     endif()
     # 作为子工程消费时不建它的自测（那是 pibase 自己的 CI 的事）
     set(PI_BASE_BUILD_TESTS OFF CACHE BOOL "pibase self-test (off when consumed as a subproject)" FORCE)
-    add_subdirectory("${PI_PLUGIN_PIBASE_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/pibase" EXCLUDE_FROM_ALL)
+    # 这里**不能**加 EXCLUDE_FROM_ALL：它不只是把 target 从 ALL 里摘掉，还会让子目录的
+    # install 规则不挂进父目录的 cmake_install.cmake —— 结果 pibase 的头与包配置不进
+    # 安装前缀，provider=fetch 打出来的 cpack 归档里没有 pibase，下载者拿到手才失败
+    # （scripts/verify_package.ps1 的 C 段就是用来抓这个的）。
+    # pibase 只有一个 INTERFACE target（没有可编译的东西），自测也已关掉，放进 ALL 没有代价。
+    add_subdirectory("${PI_PLUGIN_PIBASE_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/pibase")
 endif()
 pi_tar_msg(STATUS pibase "obtained via provider='${_pi_pibase_provider}'")
 

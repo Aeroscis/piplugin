@@ -15,7 +15,8 @@
 #                        It is unzipped into a clean directory and the consumer is
 #                        configured there WITHOUT the Conan toolchain (no build tree,
 #                        no Qt environment on PATH), and the resulting host program
-#                        must run.
+#                        must run. The archive is packaged from its own build tree,
+#                        configured with PI_PLUGIN_PIBASE_PROVIDER=fetch (see below).
 #
 #                        "Stands on its own" means something narrower than it used
 #                        to, now that piplugin depends on the family root layer: the
@@ -27,8 +28,9 @@
 #                        downloader's machine, which is the one failure this phase
 #                        exists to catch.
 #
-# Phase B is the slow one (it rebuilds the whole project inside Conan's cache).
-# Use -SkipConan to run A + C only.
+# Phase B is the slow one (it rebuilds the whole project inside Conan's cache),
+# and phase C builds the project a second time in its own tree. Use -SkipConan to
+# run A + C only, -SkipCpack to run A + B only.
 #
 # Requirements for the consumer: imgui (a real Conan dependency) and, for the Qt
 # components, a local Qt5 - the package deliberately does NOT require Qt5 (see
@@ -75,13 +77,31 @@ function Write-Section([string]$text) {
     Write-Host ("== {0} ==" -f $text) -ForegroundColor Cyan
 }
 
+# Runs a native command and echoes its output - stdout AND stderr - as plain text.
+#
+# Why not `2>&1` at the call site: PowerShell turns every stderr line of a native
+# command into an ErrorRecord, and with $ErrorActionPreference "Stop" the first
+# harmless cmake / conan WARNING on stderr becomes a terminating error - the run
+# died there twice, before anybody could read the reason. Lowering the preference
+# for the duration of the call keeps those lines as text; the caller still decides
+# from $LASTEXITCODE (which is global, so it survives the function boundary).
+function Invoke-Native([scriptblock]$command) {
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & $command 2>&1 | ForEach-Object { Write-Host "    $_" }
+    } finally {
+        $ErrorActionPreference = $previous
+    }
+}
+
 # ---------------------------------------------------------------------------
 # A. install tree
 # ---------------------------------------------------------------------------
 Write-Section "A. install tree"
 
 $prefix = Join-Path $work "install"
-& cmake --install $BuildDir --config $Config --prefix $prefix | Out-Null
+Invoke-Native { cmake --install $BuildDir --config $Config --prefix $prefix }
 if ($LASTEXITCODE -ne 0) { Write-Host "FAIL - cmake --install" -ForegroundColor Red; exit 1 }
 Write-Host ("installed into {0}" -f $prefix)
 
@@ -90,14 +110,14 @@ Write-Host ("Qt adapter kit installed: {0} (the consumer does not need it)" -f $
 
 $conanToolchain = Join-Path $BuildDir "generators\conan_toolchain.cmake"
 $installConsumer = Join-Path $work "consumer-install"
-& cmake -S $consumerSrc -B $installConsumer -G "Visual Studio 17 2022" -A x64 `
+Invoke-Native { cmake -S $consumerSrc -B $installConsumer -G "Visual Studio 17 2022" -A x64 `
     "-DCMAKE_TOOLCHAIN_FILE=$conanToolchain" `
-    "-DCMAKE_PREFIX_PATH=$prefix" -DPI_PLUGIN_CONSUMER_LINK_IMGUI=ON 2>&1 | ForEach-Object { Write-Host "    $_" }
+    "-DCMAKE_PREFIX_PATH=$prefix" -DPI_PLUGIN_CONSUMER_LINK_IMGUI=ON }
 if ($LASTEXITCODE -ne 0) {
     $failures += "install-tree configure"
     Write-Host "FAIL - configure against the install tree" -ForegroundColor Red
 } else {
-    & cmake --build $installConsumer --config $Config --parallel 2>&1 | ForEach-Object { Write-Host "    $_" }
+    Invoke-Native { cmake --build $installConsumer --config $Config --parallel }
     if ($LASTEXITCODE -ne 0) {
         $failures += "install-tree build"
         Write-Host "FAIL - build against the install tree" -ForegroundColor Red
@@ -105,7 +125,7 @@ if ($LASTEXITCODE -ne 0) {
         $exe = Join-Path $installConsumer "$Config\pi_plugin_consumer.exe"
         # the core is SHARED: put the installed runtime next to the exe
         Copy-Item (Join-Path $prefix "bin\$Config\*.dll") (Split-Path $exe) -Force
-        & $exe
+        Invoke-Native { & $exe }
         if ($LASTEXITCODE -ne 0) {
             $failures += "install-tree run"
             Write-Host "FAIL - running against the install tree" -ForegroundColor Red
@@ -125,8 +145,10 @@ if ($SkipConan) {
     Write-Section "B. Conan package"
 
     Push-Location $repoRoot
-    & conan create . --build=missing -s build_type=$Config -o PI_PLUGIN_BUILD_TESTS=False 2>&1 |
-        ForEach-Object { Write-Host "    $_" }
+    # Scoped on purpose: an unscoped -o is "ambiguous" to Conan 2 (it cannot tell
+    # which package the option belongs to) and only buys a warning on stderr.
+    Invoke-Native { conan create . --build=missing -s build_type=$Config `
+        -o "piplugin/*:PI_PLUGIN_BUILD_TESTS=False" }
     $createExit = $LASTEXITCODE
     Pop-Location
 
@@ -142,25 +164,20 @@ if ($SkipConan) {
         # A consumer declares the requirement the normal way: a conanfile.txt with
         # [requires]. (Conan 2 rejects --requires together with a path argument.)
         #
-        # imgui is declared HERE, and that is not a workaround for laziness: under
-        # Conan 2.10 + CMakeDeps a component-level EXTERNAL require is only
-        # propagated when the consumer itself also requires that package. Without
-        # it CMakeDeps silently drops it (conan/tools/cmake/cmakedeps/templates/
-        # target_configuration.py::get_deps_targets_names resolves component
-        # requires against the consumer's requirements and just `pass`es on
-        # KeyError): no imgui-config.cmake is generated at all, the component's
-        # DEPENDENCIES list keeps only pi::plugin, and the consumer fails to link
-        # with 29 unresolved imgui symbols. Declaring it makes CMakeDeps emit
-        # "piplugin_FIND_DEPENDENCY_NAMES imgui" and
-        # "piplugin_pi_plugin_imgui_DEPENDENCIES_DEBUG pi::plugin imgui::imgui".
-        # Version is taken from the recipe so the two can never drift.
-        $imguiVersion = (Select-String -Path (Join-Path $repoRoot "conanfile.py") `
-                            -Pattern 'self\.requires\("imgui/([^"]+)"\)' |
-                         Select-Object -First 1).Matches[0].Groups[1].Value
+        # piplugin is the ONLY requirement here, and that is the point: both of its
+        # own dependencies have to travel with it. They do because the recipe says
+        # so - pibase with transitive_headers (its headers are named by our own
+        # public headers) and imgui with transitive_libs (the imgui adapter kit's
+        # component links imgui::imgui). Conan's default propagation drops both
+        # (conan/internal/model/requires.py, Requirement.transform_downstream),
+        # which is how this phase used to fail: pibase-config.cmake never
+        # generated, no target carried pibase's include dir, and the consumer
+        # died on #include <pibase/pi_base.h>. A consumer that has to declare our
+        # dependencies by hand is not a self-contained package, so the probe here
+        # must not do it either.
         Set-Content -Path (Join-Path $conanWork "conanfile.txt") -Encoding Ascii -Value @"
 [requires]
 piplugin/$version
-imgui/$imguiVersion
 
 [generators]
 CMakeDeps
@@ -174,9 +191,8 @@ CMakeToolchain
         if (Test-Path $deployRoot) { Remove-Item $deployRoot -Recurse -Force }
 
         Push-Location $conanWork
-        & conan install . -s build_type=$Config --build=missing `
-            --deployer=full_deploy "--deployer-folder=$deployRoot" 2>&1 |
-            ForEach-Object { Write-Host "    $_" }
+        Invoke-Native { conan install . -s build_type=$Config --build=missing `
+            --deployer=full_deploy "--deployer-folder=$deployRoot" }
         $genExit = $LASTEXITCODE
         Pop-Location
 
@@ -185,16 +201,14 @@ CMakeToolchain
             Write-Host "FAIL - conan install for the consumer" -ForegroundColor Red
         } else {
             $conanConsumer = Join-Path $work "consumer-conan"
-            & cmake -S $consumerSrc -B $conanConsumer -G "Visual Studio 17 2022" -A x64 `
+            Invoke-Native { cmake -S $consumerSrc -B $conanConsumer -G "Visual Studio 17 2022" -A x64 `
                 "-DCMAKE_TOOLCHAIN_FILE=$conanWork\conan_toolchain.cmake" -DCMAKE_BUILD_TYPE=$Config `
-                -DPI_PLUGIN_CONSUMER_LINK_IMGUI=ON 2>&1 |
-                ForEach-Object { Write-Host "    $_" }
+                -DPI_PLUGIN_CONSUMER_LINK_IMGUI=ON }
             if ($LASTEXITCODE -ne 0) {
                 $failures += "conan consumer configure"
                 Write-Host "FAIL - configure against the Conan package" -ForegroundColor Red
             } else {
-                & cmake --build $conanConsumer --config $Config --parallel 2>&1 |
-                    ForEach-Object { Write-Host "    $_" }
+                Invoke-Native { cmake --build $conanConsumer --config $Config --parallel }
                 if ($LASTEXITCODE -ne 0) {
                     $failures += "conan consumer build"
                     Write-Host "FAIL - build against the Conan package" -ForegroundColor Red
@@ -217,7 +231,7 @@ CMakeToolchain
                     $binDirs = Get-ChildItem $deployRoot -Recurse -Directory -Filter "bin" -ErrorAction SilentlyContinue |
                                ForEach-Object { $_.FullName }
                     $env:PATH = (($binDirs + (Split-Path $exe)) -join ";") + ";" + $env:PATH
-                    & $exe
+                    Invoke-Native { & $exe }
                     if ($LASTEXITCODE -ne 0) {
                         $failures += "conan consumer run"
                         Write-Host "FAIL - running against the Conan package" -ForegroundColor Red
@@ -249,12 +263,55 @@ Write-Section "C. cpack archive"
 if ($SkipCpack) {
     Write-Host "SKIP - -SkipCpack was given" -ForegroundColor Yellow
 } else {
+    # -- the tree the archive is packaged from -------------------------------
+    # Not the tree the other phases used: that one takes the family root layer
+    # (pibase) from an installed package, so pibase's headers and CMake config
+    # stay outside the install prefix and never enter the ZIP. Such an archive
+    # looks fine HERE - where pibase happens to be installed - and then fails
+    # on the downloader's machine, which is the one failure this phase exists
+    # to catch. So the archive is built from a tree configured with
+    # PI_PLUGIN_PIBASE_PROVIDER=fetch: pibase comes in with add_subdirectory
+    # and installs into the same prefix, headers and config included.
+    $pibaseSrc = Join-Path $repoRoot "external\pibase"
+    if (-not (Test-Path (Join-Path $pibaseSrc "CMakeLists.txt"))) {
+        Write-Host "    fetching pibase sources (scripts\\fetch_pibase.ps1)"
+        Invoke-Native { powershell -NoProfile -File (Join-Path $repoRoot "scripts\fetch_pibase.ps1") }
+    }
+    if (-not (Test-Path (Join-Path $pibaseSrc "CMakeLists.txt"))) {
+        $failures += "pibase sources"
+        Write-Host "FAIL - external\pibase is missing; scripts\fetch_pibase.ps1 failed" -ForegroundColor Red
+    }
+
+    $cpackTree = Join-Path $work "cpack-tree"
+    # Qt is deliberately off: without a Conan toolchain there is no imgui here
+    # either, so the tree is core + host kits - the same subset the archive
+    # must be able to serve on its own.
+    Invoke-Native { cmake -S $repoRoot -B $cpackTree -G "Visual Studio 17 2022" -A x64 `
+        -DPI_PLUGIN_PIBASE_PROVIDER=fetch "-DPI_PLUGIN_PIBASE_SOURCE_DIR=$pibaseSrc" `
+        -DPI_PLUGIN_BUILD_TESTS=False -DPI_PLUGIN_BUILD_EXAMPLES=False `
+        -DPI_PLUGIN_BUILD_ADAPTER_QT=False }
+    $treeExit = $LASTEXITCODE
+    if ($treeExit -ne 0) {
+        $failures += "archive tree configure"
+        Write-Host "FAIL - configure the fetch-provider tree" -ForegroundColor Red
+    } else {
+        # cpack does not build for a multi-config generator: build first.
+        Invoke-Native { cmake --build $cpackTree --config $Config --parallel }
+        $treeExit = $LASTEXITCODE
+        if ($treeExit -ne 0) {
+            $failures += "archive tree build"
+            Write-Host "FAIL - build the fetch-provider tree" -ForegroundColor Red
+        }
+    }
+
     $cpackOut = Join-Path $work "cpack-out"
     New-Item -ItemType Directory -Force -Path $cpackOut | Out-Null
 
-    & cpack --config (Join-Path $BuildDir "CPackConfig.cmake") -C $Config -B $cpackOut 2>&1 |
-        ForEach-Object { Write-Host "    $_" }
-    $cpackExit = $LASTEXITCODE
+    $cpackExit = 1
+    if ($treeExit -eq 0 -and -not ($failures -contains "pibase sources")) {
+        Invoke-Native { cpack --config (Join-Path $cpackTree "CPackConfig.cmake") -C $Config -B $cpackOut }
+        $cpackExit = $LASTEXITCODE
+    }
 
     $archive = $null
     if ($cpackExit -eq 0) {
@@ -296,15 +353,13 @@ if ($SkipCpack) {
 
         # -- the archive alone must be enough to build and RUN a host ----------
         $zipConsumer = Join-Path $work "consumer-cpack"
-        & cmake -S $consumerSrc -B $zipConsumer -G "Visual Studio 17 2022" -A x64 `
-            "-DCMAKE_PREFIX_PATH=$pkgRoot" "-DCMAKE_BUILD_TYPE=$Config" 2>&1 |
-            ForEach-Object { Write-Host "    $_" }
+        Invoke-Native { cmake -S $consumerSrc -B $zipConsumer -G "Visual Studio 17 2022" -A x64 `
+            "-DCMAKE_PREFIX_PATH=$pkgRoot" "-DCMAKE_BUILD_TYPE=$Config" }
         if ($LASTEXITCODE -ne 0) {
             $failures += "cpack consumer configure"
             Write-Host "FAIL - configure against the unpacked archive" -ForegroundColor Red
         } else {
-            & cmake --build $zipConsumer --config $Config --parallel 2>&1 |
-                ForEach-Object { Write-Host "    $_" }
+            Invoke-Native { cmake --build $zipConsumer --config $Config --parallel }
             if ($LASTEXITCODE -ne 0) {
                 $failures += "cpack consumer build"
                 Write-Host "FAIL - build against the unpacked archive" -ForegroundColor Red
@@ -322,7 +377,7 @@ if ($SkipCpack) {
                 $env:PATH = ((($savedPath -split ';') |
                               Where-Object { $_ -and ($_ -notlike "$repoRoot*") }) -join ';')
                 $env:PATH = "$pkgBin;" + $env:PATH
-                & $exe
+                Invoke-Native { & $exe }
                 $runExit = $LASTEXITCODE
                 $env:PATH = $savedPath
 

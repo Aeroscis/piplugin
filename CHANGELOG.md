@@ -503,6 +503,34 @@ own.
 
 ### Fixed
 
+- **Neither distribution shape carried what it needs to stand on its own (ECO-04).**
+  The Conan package left both of its dependencies behind, and the cpack archive left
+  the base layer behind. `scripts/verify_package.ps1` - the script that asks what an
+  outside consumer receives - failed on the second of its three phases, and its third
+  phase did not exist yet, so both defects were only visible once the phases were made
+  to prove it. *Conan.* A downstream requirement this package does not mark as
+  transitive is dropped on the way to the consumer: the graph still contains the node,
+  but `CMakeDeps` generates no `<pkg>-config.cmake` for it and no target carries its
+  include directory. For `pibase` that meant a consumer requiring only `piplugin`
+  could not compile a single public header (`#include <pibase/pi_base.h>` -> C1083),
+  so the requirement is now declared `transitive_headers=True`; for `imgui` it meant
+  the imgui adapter kit's component lost `imgui::imgui` and the consumer had to
+  declare imgui itself to link at all, so it is now `transitive_libs=True`. With both
+  traits a consumer's `conanfile.txt` needs one line - `piplugin/0.5.0` - which is what
+  the verification script's generated consumer now asserts. The component-level form
+  also had to be `pibase::pibase`: the base layer declares no components, and
+  `pibase::base` fails with "Component not found" while a bare `pibase` is read as an
+  internal component of this package. *cpack.* When the base layer is obtained with
+  `PI_PLUGIN_PIBASE_PROVIDER=fetch` it was added with `EXCLUDE_FROM_ALL`, which keeps
+  a subdirectory's install rules out of the parent's `cmake_install.cmake` as well as
+  out of `ALL` - so its headers and package config never reached the prefix and never
+  entered the ZIP. That archive configures, builds and runs here (where `pibase`
+  happens to be installed) and fails on the machine that downloads it, which is the
+  one failure this check exists to catch, so phase C now packages from a tree
+  configured with `provider=fetch` and unpacks it into a clean directory with no
+  toolchain. `EXCLUDE_FROM_ALL` is gone: the base layer has one `INTERFACE` target and
+  no self-test to build, so keeping it out of `ALL` bought nothing.
+
 - **The core did not actually compile off Windows (W-10).** Three defects were only
   visible once a real Linux build ran, and none of them needed a platform branch that
   was missing - they needed the one that was there to be correct. `pi_module_load`

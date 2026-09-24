@@ -178,14 +178,24 @@ class PiPluginConan(ConanFile):
     def requirements(self):
         # 家族根层：无条件依赖（结果码 / GUID / PiNativeWindow / IPiUnknown / ABI 管线宏）。
         # header-only 包，不参与构建类型或架构的 package_id。
-        self.requires("pibase/0.1.0")
+        #
+        # transitive_headers=True 不是可选的美化：框架的**公开头文件**
+        # （include/piplugin/pi_plugin_types.h 等）里写着 #include <pibase/pi_base.h>，
+        # 消费方编译期必须能找到它；而 Conan 默认的传播规则（internal/model/requires.py
+        # 的 Requirement.transform_downstream：src -> shared/unknown -> header 这条路径）
+        # 会给下游生成 headers=False 的 require —— 于是消费方的依赖图里虽然还有
+        # pibase 这个节点，CMakeDeps 却不为它生成 pibase-config.cmake，
+        # 也没有任何 target 携带它的 include 目录，消费方在
+        # #include <pibase/pi_base.h> 处直接 C1083。声明这个 trait 之后，
+        # 头文件需求随 <piplugin> 一起传到消费方，消费方不必自己去 require pibase。
+        self.requires("pibase/0.1.0", transitive_headers=True)
 
         # 依赖自动管理：任一需要 imgui 的部件有效开启即自动拉取（Qt5 为本地安装，非 conan 依赖）
         # - imgui adapter kit 链接 imgui::imgui
         # - imgui 测试宿主（PI_PLUGIN_BUILD_TEST_HOST）直连 imgui，但不依赖 adapter kit
         need_imgui = self._adapter_enabled("IMGUI") or self._test_enabled("PI_PLUGIN_BUILD_TEST_HOST")
         if need_imgui:
-            self.requires("imgui/1.92.8")
+            self.requires("imgui/1.92.8", transitive_libs=True)
 
     def generate(self):
         toolchain = CMakeToolchain(self)
@@ -271,9 +281,15 @@ class PiPluginConan(ConanFile):
         # 家族根层（pibase）：头文件来自它，核心的链接接口里也有 pi::base。
         # 不声明的话，CMakeDeps 生成的 pi::plugin 既不带 pi::base，也不带它的
         # include 目录，消费者会在 #include <pibase/pi_base.h> 处失败。
-        # 注意必须是 `pkg::pkg` 形式：裸名 "pibase" 会被当成**本包的内部组件**，
-        # conan create 直接报 "Internal components not found"。
-        core.requires = ["pibase::base"]
+        #
+        # 写法必须是 `pibase::pibase`：pibase 包**没有组件**（它只有一个 root
+        # cpp_info），而 pkg::pkg 形式正好指向那个 root cpp_info，其 CMake target 名
+        # 由它自己的 cmake_target_name 属性给出，即 pi::base。另两种写法都不行：
+        #   - 裸名 "pibase" 会被当成**本包的内部组件**，conan create 直接报
+        #     "Internal components not found"；
+        #   - "pibase::base" 指向一个不存在的组件，CMakeDeps 生成 piplugin 数据时抛
+        #     "Component 'pibase::base' not found in 'pibase' package requirement"。
+        core.requires = ["pibase::pibase"]
         core.set_property("cmake_target_name", "pi::plugin")
 
         # 宿主 kit L0（宿主侧机制库；仅依赖核心，无第三方依赖）
