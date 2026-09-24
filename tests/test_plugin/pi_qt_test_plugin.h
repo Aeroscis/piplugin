@@ -13,15 +13,16 @@
 /* C++ RAII 层（可选头，见 docs/design/interfaces.md）：PiPluginPtr / PiPluginUniqueModule /
  * pi_plugin_cpp_destroy。本插件只用到 PiPluginPtr —— 宿主指针与两个可选接口的生命周期
  * 全部交给句柄，构造函数与析构函数里一行 release 都不用写。 */
-#include "piplugin/pi_cpp.h"
-
 #include <atomic>
 #include <thread>
+
+#include "piplugin/pi_cpp.h"
 
 class QWidget;
 class QThread;
 
-class QtPlugin {
+class QtPlugin
+{
 public:
     friend class QtPluginFactory;
 
@@ -31,7 +32,7 @@ public:
     PiResult Initialize(IPiPluginHostServices* host);
     PiResult Terminate();
 
-    static PiResult PI_CALL Qi_PluginBase(void* self_ptr, const PiGuid* iid, void** out);
+    static PiResult PI_CALL Qi_PluginBase(void* self_ptr, PiGuid const* iid, void** out);
     static PiResult PI_CALL Init(void* self_ptr, IPiPluginHostServices* host);
     static PiResult PI_CALL Term(void* self_ptr);
     static PiResult PI_CALL GetView(void* self_ptr, IPiPluginView** out);
@@ -58,45 +59,46 @@ private:
     static void PostProbe(void* user_data);
     static void PostWorkerMain(QtPlugin* me);
 
-    PiRefCountedBase m_base;          /* MUST be first data member */
-    static const IPiPluginBaseVtbl s_base_vtbl;
+    PiRefCountedBase               m_base; /* MUST be first data member */
+    static IPiPluginBaseVtbl const s_base_vtbl;
 
-    PiPluginPtr<IPiPluginHostServices> m_host;    /* 借用入参 -> 自己 add-ref，析构自动 release */
-    PiPluginPtr<IPiPluginHostUI>       m_hostUI;  /* headless 宿主上为空句柄 */
+    PiPluginPtr<IPiPluginHostServices> m_host;   /* 借用入参 -> 自己 add-ref，析构自动 release */
+    PiPluginPtr<IPiPluginHostUI>       m_hostUI; /* headless 宿主上为空句柄 */
     /* weak: owned by the host, see GetView。原子是因为 W-04 的探针线程会读它，
      * 而 GetView / Terminate 在宿主 GUI 线程上写它。 */
-    std::atomic<IPiPluginView*> m_view;
+    std::atomic<IPiPluginView*>        m_view;
 
-    QThread*             m_uiThread;   /* create_widget 时所在的线程（= 宿主 GUI 线程） */
-    std::thread          m_postWorker;
-    std::atomic<bool>    m_postWorkerStop;
-    std::atomic<bool>    m_postProbeDone;
-    std::atomic<int>     m_postProbeRuns;   /* 回调被执行了几次 */
+    QThread*          m_uiThread; /* create_widget 时所在的线程（= 宿主 GUI 线程） */
+    std::thread       m_postWorker;
+    std::atomic<bool> m_postWorkerStop;
+    std::atomic<bool> m_postProbeDone;
+    std::atomic<int>  m_postProbeRuns; /* 回调被执行了几次 */
 };
 
-class QtPluginFactory {
+class QtPluginFactory
+{
 public:
     QtPluginFactory();
 
     static uint32_t PI_CALL AddRef(void* self_ptr);
     static uint32_t PI_CALL Release(void* self_ptr);
-    static PiResult PI_CALL Qi_Factory(void* self_ptr, const PiGuid* iid, void** out);
+    static PiResult PI_CALL Qi_Factory(void* self_ptr, PiGuid const* iid, void** out);
 
-    static const PiPluginDescriptor* PI_CALL GetDescriptor(void* self_ptr);
-    static uint32_t PI_CALL GetClassCount(void* self_ptr);
-    static PiResult PI_CALL GetClassGuid(void* self_ptr, uint32_t index, PiGuid* guid);
-    static PiResult PI_CALL CreateInstance(void* self_ptr,
-                                            const PiGuid* guid,
-                                            IPiPluginHostServices* host,
-                                            IPiPluginBase** out);
+    static PiPluginDescriptor const* PI_CALL GetDescriptor(void* self_ptr);
+    static uint32_t PI_CALL                  GetClassCount(void* self_ptr);
+    static PiResult PI_CALL                  GetClassGuid(void* self_ptr, uint32_t index, PiGuid* guid);
+    static PiResult PI_CALL                  CreateInstance(void*                  self_ptr,
+                                                            PiGuid const*          guid,
+                                                            IPiPluginHostServices* host,
+                                                            IPiPluginBase**        out);
 
-    static const IPiPluginFactoryVtbl s_factory_vtbl;
-    PiRefCountedBase m_base;          /* MUST be first data member */
+    static IPiPluginFactoryVtbl const s_factory_vtbl;
+    PiRefCountedBase                  m_base; /* MUST be first data member */
 
 private:
     PiPluginDescriptor m_descriptor;
     PiPluginCapability m_capabilities[2];
-    PiPluginProperty   m_properties[3];   /* APP-04：自由元数据 */
+    PiPluginProperty   m_properties[3]; /* APP-04：自由元数据 */
 };
 
 #endif /* PI_PLUGIN_QT_TEST_PLUGIN_H */

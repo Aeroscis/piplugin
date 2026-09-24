@@ -10,9 +10,9 @@
 #ifndef PI_PLUGIN_TEST_EVENTS_PROTOCOL_H
 #define PI_PLUGIN_TEST_EVENTS_PROTOCOL_H
 
-#include "piplugin/pi_plugin.h"
-
 #include <string.h>
+
+#include "piplugin/pi_plugin.h"
 
 /* plugin -> host: "I am up and my sink is ready" (published during initialize) */
 #define PI_PLUGIN_TEST_EVENTS_TOPIC_READY         "com.example.plugin.ready"
@@ -28,21 +28,28 @@
 #define PI_PLUGIN_TEST_EVENTS_TOPIC_NOBODY        "com.example.nobody.listens"
 
 /* Payload keys */
-#define PI_PLUGIN_TEST_EVENTS_KEY_PLUGIN   "plugin"    /* ready:   which plugin it is    */
-#define PI_PLUGIN_TEST_EVENTS_KEY_GREETING "greeting"  /* welcome: what the host says    */
-#define PI_PLUGIN_TEST_EVENTS_KEY_ACKED    "acked"     /* ack:     always "1"            */
-#define PI_PLUGIN_TEST_EVENTS_KEY_COUNT    "count"     /* saw_broadcast: how many seen   */
-#define PI_PLUGIN_TEST_EVENTS_KEY_N        "n"         /* broadcast: which broadcast it is */
+#define PI_PLUGIN_TEST_EVENTS_KEY_PLUGIN   "plugin"   /* ready:   which plugin it is    */
+#define PI_PLUGIN_TEST_EVENTS_KEY_GREETING "greeting" /* welcome: what the host says    */
+#define PI_PLUGIN_TEST_EVENTS_KEY_ACKED    "acked"    /* ack:     always "1"            */
+#define PI_PLUGIN_TEST_EVENTS_KEY_COUNT    "count"    /* saw_broadcast: how many seen   */
+#define PI_PLUGIN_TEST_EVENTS_KEY_N        "n"        /* broadcast: which broadcast it is */
 
 /* Read one payload value out of an event (borrowed string, or NULL).
  * Duplicate keys: the first one wins, exactly like descriptor properties. */
-static inline const char* pi_plugin_test_event_payload(const PiPluginEvent* event, const char* key)
+static inline char const* pi_plugin_test_event_payload(PiPluginEvent const* event, char const* key)
 {
     uint32_t i;
-    if (!event || !key || !event->payload) return NULL;
-    for (i = 0; i < event->payload_count; ++i) {
-        const PiPluginProperty* prop = &event->payload[i];
-        if (prop->key && strcmp(prop->key, key) == 0) return prop->value;
+    if (!event || !key || !event->payload)
+    {
+        return NULL;
+    }
+    for (i = 0; i < event->payload_count; ++i)
+    {
+        PiPluginProperty const* prop = &event->payload[i];
+        if (prop->key && strcmp(prop->key, key) == 0)
+        {
+            return prop->value;
+        }
     }
     return NULL;
 }

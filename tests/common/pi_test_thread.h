@@ -15,13 +15,13 @@
 #include <stdlib.h>
 
 #if defined(_WIN32) || defined(_WIN64)
-#  define PI_PLUGIN_TEST_THREADS_WIN32 1
-#  include <windows.h>
+    #define PI_PLUGIN_TEST_THREADS_WIN32 1
+    #include <windows.h>
 #else
-#  define PI_PLUGIN_TEST_THREADS_WIN32 0
-#  include <pthread.h>
-#  include <sched.h>
-#  include <time.h>
+    #define PI_PLUGIN_TEST_THREADS_WIN32 0
+    #include <pthread.h>
+    #include <sched.h>
+    #include <time.h>
 #endif
 
 /* 线程体：void(*)(void*) —— 两个平台的入口签名都由下面的 trampoline 适配 */
@@ -29,7 +29,7 @@ typedef void (*PiPluginTestThreadFn)(void* user_data);
 
 typedef struct PiPluginTestThreadStartData {
     PiPluginTestThreadFn fn;
-    void*          user_data;
+    void*                user_data;
 } PiPluginTestThreadStartData;
 
 typedef struct PiPluginTestThread {
@@ -45,15 +45,15 @@ typedef struct PiPluginTestMutex {
 #if PI_PLUGIN_TEST_THREADS_WIN32
     CRITICAL_SECTION cs;
 #else
-    pthread_mutex_t  m;
+    pthread_mutex_t m;
 #endif
 } PiPluginTestMutex;
 
 static inline void* PiPluginTestThreadTrampoline(void* param)
 {
-    PiPluginTestThreadStartData* start = (PiPluginTestThreadStartData*)param;
-    PiPluginTestThreadFn fn        = start->fn;
-    void*          user_data = start->user_data;
+    PiPluginTestThreadStartData* start     = (PiPluginTestThreadStartData*)param;
+    PiPluginTestThreadFn         fn        = start->fn;
+    void*                        user_data = start->user_data;
     free(start);
     fn(user_data);
     return NULL;
@@ -75,18 +75,29 @@ static inline int PiPluginTestThreadStart(PiPluginTestThread* thread, PiPluginTe
 {
     PiPluginTestThreadStartData* start =
         (PiPluginTestThreadStartData*)malloc(sizeof(PiPluginTestThreadStartData));
-    if (!start) return -1;
+    if (!start)
+    {
+        return -1;
+    }
     start->fn        = fn;
     start->user_data = user_data;
 
 #if PI_PLUGIN_TEST_THREADS_WIN32
     thread->handle = CreateThread(NULL, 0, &PiPluginTestThreadTrampolineWin32, start, 0, NULL);
-    if (!thread->handle) { free(start); return -1; }
+    if (!thread->handle)
+    {
+        free(start);
+        return -1;
+    }
     return 0;
 #else
     thread->started = (pthread_create(&thread->handle, NULL,
                                       &PiPluginTestThreadTrampoline, start) == 0);
-    if (!thread->started) { free(start); return -1; }
+    if (!thread->started)
+    {
+        free(start);
+        return -1;
+    }
     return 0;
 #endif
 }
@@ -94,13 +105,15 @@ static inline int PiPluginTestThreadStart(PiPluginTestThread* thread, PiPluginTe
 static inline void PiPluginTestThreadJoin(PiPluginTestThread* thread)
 {
 #if PI_PLUGIN_TEST_THREADS_WIN32
-    if (thread->handle) {
+    if (thread->handle)
+    {
         WaitForSingleObject(thread->handle, INFINITE);
         CloseHandle(thread->handle);
         thread->handle = NULL;
     }
 #else
-    if (thread->started) {
+    if (thread->started)
+    {
         pthread_join(thread->handle, NULL);
         thread->started = 0;
     }

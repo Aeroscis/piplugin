@@ -20,22 +20,22 @@
  * 这正是 inspect()/instantiate() 分解形式存在的理由：门禁与实例化的**顺序**由
  * kit 保证（实例化前门禁），而"要不要实例化"的决策仍归宿主。
  */
-#include "piplugin/pi_plugin.h"
+#include <stdio.h>
+
 #include "pi_host_session.h"
 #include "pi_test_host_service_impl.h"
 #include "pi_test_service_protocol.h"
-
-#include <stdio.h>
+#include "piplugin/pi_plugin.h"
 
 #ifdef _WIN32
-#  include <windows.h>
+    #include <windows.h>
 #else
-#  include <time.h>   /* nanosleep 用到的 struct timespec */
+    #include <time.h> /* nanosleep 用到的 struct timespec */
 #endif
 
 /* 宿主侧状态：插件消息计数。本函数之外没人知道这个值 —— 插件要读出它，只能
  * 走宿主自定义服务（这正是 ctest 断言"自定义服务真的被调用过"的依据）。 */
-static uint32_t              g_pluginMessages = 0;
+static uint32_t                    g_pluginMessages = 0;
 static PiPluginTestHostServiceImpl g_extraService;
 
 /* APP-07：按消息码分类计数，用来断言服务真的在 poll() 里投递了 tick、
@@ -48,30 +48,43 @@ static int      g_hadService        = 0;
 static void HostMessageProc(void* user_data, uint32_t msg,
                             uintptr_t wparam, intptr_t lparam)
 {
-    (void)user_data; (void)lparam;
+    (void)user_data;
+    (void)lparam;
     ++g_pluginMessages;
-    if (msg == PI_PLUGIN_TEST_MSG_SERVICE_TICK) ++g_tickMessages;
-    else if (msg == PI_PLUGIN_TEST_MSG_SERVICE_STOP) ++g_stopMessages;
+    if (msg == PI_PLUGIN_TEST_MSG_SERVICE_TICK)
+    {
+        ++g_tickMessages;
+    }
+    else if (msg == PI_PLUGIN_TEST_MSG_SERVICE_STOP)
+    {
+        ++g_stopMessages;
+    }
     printf("[plugin message] msg=0x%04X wparam=%llu\n", msg, (unsigned long long)wparam);
 }
 
 /* kit 的步骤日志 -> stdout（去向由宿主决定，故 kit 只提供回调） */
-static void SessionLogProc(void* user_data, const char* message)
+static void SessionLogProc(void* user_data, char const* message)
 {
     (void)user_data;
     printf("[session] %s\n", message);
 }
 
-static const char* CapKind(uint32_t flags)
+static char const* CapKind(uint32_t flags)
 {
-    if (flags & PI_PLUGIN_CAP_PROVIDES) return "provides";
-    if (flags & PI_PLUGIN_CAP_REQUIRED) return "requires";
+    if (flags & PI_PLUGIN_CAP_PROVIDES)
+    {
+        return "provides";
+    }
+    if (flags & PI_PLUGIN_CAP_REQUIRED)
+    {
+        return "requires";
+    }
     return "optional";
 }
 
 int main(int argc, char** argv)
 {
-    const char* dllPath = (argc > 1) ? argv[1] : "pi_plugin_test_plugin_qt.dll";
+    char const* dllPath = (argc > 1) ? argv[1] : "pi_plugin_test_plugin_qt.dll";
     printf("== piplugin headless host ==\n");
     printf("Loading plugin: %s\n\n", dllPath);
 
@@ -83,32 +96,40 @@ int main(int argc, char** argv)
     /* Headless host services: NO window -> IPiPluginHostUI is not exposed. */
     IPiPluginHostServices* host = NULL;
     if (PI_FAILED(pi_plugin_host_services_create_ex(&HostMessageProc, NULL,
-                                             PI_INVALID_WINDOW,
-                                             &PiPluginTestHostServiceImpl_ExtraQi, &g_extraService,
-                                             &host))) {
+                                                    PI_INVALID_WINDOW,
+                                                    &PiPluginTestHostServiceImpl_ExtraQi, &g_extraService,
+                                                    &host)))
+    {
         printf("FATAL: cannot create host services\n");
         return 1;
     }
 
     /* Prove we are headless, and prove the app-defined service is there. */
     {
-        void* probe = NULL;
-        PiResult qhr = pi_iunknown_query_interface((IPiUnknown*)host, &PI_PLUGIN_IID_HOST_UI, &probe);
+        void*    probe = NULL;
+        PiResult qhr   = pi_iunknown_query_interface((IPiUnknown*)host, &PI_PLUGIN_IID_HOST_UI, &probe);
         printf("Host exposes IPiPluginHostUI? %s (hr=%d)\n",
                PI_SUCCEEDED(qhr) ? "yes" : "no", (int)qhr);
-        if (PI_SUCCEEDED(qhr)) pi_iunknown_release((IPiUnknown*)probe);
+        if (PI_SUCCEEDED(qhr))
+        {
+            pi_iunknown_release((IPiUnknown*)probe);
+        }
 
         probe = NULL;
-        qhr = pi_iunknown_query_interface((IPiUnknown*)host,
-                                          &PI_PLUGIN_TEST_IID_HOST_SERVICE, &probe);
+        qhr   = pi_iunknown_query_interface((IPiUnknown*)host,
+                                            &PI_PLUGIN_TEST_IID_HOST_SERVICE, &probe);
         printf("Host exposes its own (app-defined) service? %s (hr=%d)\n\n",
                PI_SUCCEEDED(qhr) ? "yes" : "no", (int)qhr);
-        if (PI_SUCCEEDED(qhr)) pi_iunknown_release((IPiUnknown*)probe);
+        if (PI_SUCCEEDED(qhr))
+        {
+            pi_iunknown_release((IPiUnknown*)probe);
+        }
     }
 
     /* 宿主 kit L0：会话对象负责加载、门禁与卸载序列 */
     PiPluginHostSession* session = NULL;
-    if (PI_FAILED(pi_plugin_host_session_create(host, &session))) {
+    if (PI_FAILED(pi_plugin_host_session_create(host, &session)))
+    {
         printf("FATAL: cannot create host session\n");
         pi_iunknown_release((IPiUnknown*)host);
         return 1;
@@ -118,12 +139,16 @@ int main(int argc, char** argv)
     /* 第一步：只加载模块 + 跑能力门禁，**不**实例化。headless 宿主关心的
      * "这个插件要不要 GUI"必须在付出实例化代价之前就问清楚。 */
     uint32_t slot = PI_PLUGIN_HOST_SESSION_INVALID_SLOT;
-    PiResult hr = pi_plugin_host_session_inspect(session, dllPath, &slot);
-    if (PI_FAILED(hr)) {
+    PiResult hr   = pi_plugin_host_session_inspect(session, dllPath, &slot);
+    if (PI_FAILED(hr))
+    {
         /* 能力门禁与版本门禁都属于"这台宿主按规矩拒绝了它"，不是宿主故障 */
-        if (hr == PI_E_MISSINGCAPABILITY || hr == PI_E_VERSIONMISMATCH) {
+        if (hr == PI_E_MISSINGCAPABILITY || hr == PI_E_VERSIONMISMATCH)
+        {
             printf("REJECTED: %s\n", pi_plugin_host_session_last_error(session));
-        } else {
+        }
+        else
+        {
             printf("FATAL: pi_plugin_host_session_inspect failed (hr=%d): %s\n",
                    (int)hr, pi_plugin_host_session_last_error(session));
         }
@@ -132,19 +157,22 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    const PiPluginDescriptor* desc = pi_plugin_host_session_get_descriptor(session, slot);
+    PiPluginDescriptor const* desc = pi_plugin_host_session_get_descriptor(session, slot);
     printf("Plugin:   %s %s\n", desc ? desc->name : "?", desc ? desc->version : "");
     printf("Category: %s\n\n", desc ? desc->category : "");
 
     /* Capability inspection (what a task server would filter on) */
-    if (desc && desc->capability_count > 0) {
+    if (desc && desc->capability_count > 0)
+    {
         printf("Declared capabilities:\n");
-        for (uint32_t i = 0; i < desc->capability_count; ++i) {
-            const PiPluginCapability* cap = &desc->capabilities[i];
-            const char* what =
+        for (uint32_t i = 0; i < desc->capability_count; ++i)
+        {
+            PiPluginCapability const* cap = &desc->capabilities[i];
+            char const*               what =
                 pi_guid_equal(&cap->iid, &PI_PLUGIN_IID_PLUGIN_VIEW) ? "PLUGIN_VIEW" :
-                pi_guid_equal(&cap->iid, &PI_PLUGIN_IID_HOST_UI)    ? "HOST_UI"    :
-                pi_guid_equal(&cap->iid, &PI_PLUGIN_IID_SERVICE)    ? "SERVICE"    : "custom";
+                              pi_guid_equal(&cap->iid, &PI_PLUGIN_IID_HOST_UI)     ? "HOST_UI" :
+                              pi_guid_equal(&cap->iid, &PI_PLUGIN_IID_SERVICE)     ? "SERVICE" :
+                                                                                     "custom";
             printf("  [%s] %s\n", CapKind(cap->flags), what);
         }
         printf("\n");
@@ -158,12 +186,14 @@ int main(int argc, char** argv)
     /* ---- 自由元数据（roadmap APP-04）------------------------------------
      * 描述性事实（用什么 UI 工具包、支持什么格式……）不适合塞进 capabilities，
      * 现在走 descriptor 的键值对：既可以直接列出来展示，也可以按键取值。 */
-    if (desc && desc->property_count > 0) {
+    if (desc && desc->property_count > 0)
+    {
         printf("Declared properties:\n");
-        for (uint32_t i = 0; i < desc->property_count; ++i) {
-            const PiPluginProperty* prop = &desc->properties[i];
+        for (uint32_t i = 0; i < desc->property_count; ++i)
+        {
+            PiPluginProperty const* prop = &desc->properties[i];
             printf("  %s = %s\n",
-                   prop->key   ? prop->key   : "(null)",
+                   prop->key ? prop->key : "(null)",
                    prop->value ? prop->value : "(null)");
         }
         printf("\n");
@@ -172,13 +202,14 @@ int main(int argc, char** argv)
         /* 按键取值：宿主真正会拿去分支的那类信息。单独打一行，ctest 用例
          * descriptor_properties_* 就断言这一行（值随插件不同而不同）。
          * 取不到不算宿主故障 —— 第三方插件可以没有这条属性，故打印 (absent)。 */
-        const char* kind = pi_plugin_descriptor_find_property(desc, "com.example.kind");
+        char const* kind = pi_plugin_descriptor_find_property(desc, "com.example.kind");
         printf("[host] property com.example.kind = %s\n\n", kind ? kind : "(absent)");
     }
 
     /* 第二步：门禁通过后才实例化 + 初始化 */
     hr = pi_plugin_host_session_instantiate(session, slot);
-    if (PI_FAILED(hr)) {
+    if (PI_FAILED(hr))
+    {
         printf("FATAL: instantiate failed (hr=%d): %s\n",
                (int)hr, pi_plugin_host_session_last_error(session));
         pi_plugin_host_session_destroy(session);
@@ -189,14 +220,14 @@ int main(int argc, char** argv)
 
     /* The headless story in action: no view is available, no UI is created,
      * and the process keeps running without any event loop. */
-    IPiPluginView* view = pi_plugin_host_session_get_view(session, slot);   /* borrowed */
+    IPiPluginView* view = pi_plugin_host_session_get_view(session, slot); /* borrowed */
     printf("pi_plugin_get_view() -> %s (hr=%d)\n",
            view ? "VIEW CREATED" : "no view (headless)",
            view ? (int)PI_OK : (int)PI_E_NOINTERFACE);
 
     /* Service capability discovery: a GUI plugin has none, which is exactly
      * what a task server would check before loading it. */
-    IPiPluginService* service = pi_plugin_host_session_get_service(session, slot);   /* borrowed */
+    IPiPluginService* service = pi_plugin_host_session_get_service(session, slot); /* borrowed */
     printf("QueryInterface(PI_PLUGIN_IID_SERVICE) -> %s (hr=%d)\n",
            service ? "service found" : "no service capability",
            service ? (int)PI_OK : (int)PI_E_NOINTERFACE);
@@ -210,15 +241,16 @@ int main(int argc, char** argv)
      *
      * 不 release 服务指针：它是借用指针，所有权在 session，卸载序列里还会再
      * stop 一次（stop 幂等），正好也被下面的计数覆盖。 */
-    if (service) {
-        static const PiPluginServiceOption opts[2] = {
-            { PI_PLUGIN_TEST_SERVICE_OPTION_SLOT,     "alpha" },
-            { PI_PLUGIN_TEST_SERVICE_OPTION_INTERVAL, "1"     }
+    if (service)
+    {
+        static PiPluginServiceOption const opts[2] = {
+            {PI_PLUGIN_TEST_SERVICE_OPTION_SLOT,     "alpha"},
+            {PI_PLUGIN_TEST_SERVICE_OPTION_INTERVAL, "1"    }
         };
         int32_t  status = -1;
         PiResult shr;
         uint32_t ticks0, stops0;
-        int      ok = 1;
+        int      ok   = 1;
         unsigned step = 0;
 
         g_hadService = 1;
@@ -250,9 +282,13 @@ int main(int argc, char** argv)
         /* 4) poll：服务器主循环驱动它干活。插件每 poll 报一次 tick，
          *    宿主收到的消息数就是"真的在跑"的证据（不是只看返回值）。 */
         ticks0 = g_tickMessages;
-        for (int i = 0; i < 5; ++i) {
+        for (int i = 0; i < 5; ++i)
+        {
             shr = pi_plugin_service_poll(service);
-            if (shr != PI_OK) ok = 0;
+            if (shr != PI_OK)
+            {
+                ok = 0;
+            }
         }
         ++step;
         status = -1;
@@ -263,9 +299,9 @@ int main(int argc, char** argv)
 
         /* 5) stop 幂等：连调两次都要成功，且状态变成 STOPPED */
         stops0 = g_stopMessages;
-        shr = pi_plugin_service_stop(service);
-        ok = ok && (shr == PI_OK);
-        shr = pi_plugin_service_stop(service);
+        shr    = pi_plugin_service_stop(service);
+        ok     = ok && (shr == PI_OK);
+        shr    = pi_plugin_service_stop(service);
         ++step;
         status = -1;
         pi_plugin_service_get_status(service, &status);
@@ -288,7 +324,8 @@ int main(int argc, char** argv)
                step, (int)shr, (int)PI_E_INVALIDARG);
         ok = ok && (shr == PI_E_INVALIDARG);
 
-        if (!ok) {
+        if (!ok)
+        {
             printf("[host] service lifecycle: FAILED\n");
             pi_plugin_host_session_unload(session, slot);
             pi_plugin_host_session_destroy(session);
@@ -309,7 +346,7 @@ int main(int argc, char** argv)
     Sleep(300);
 #else
     {
-        struct timespec ts = { 0, 300 * 1000 * 1000 };
+        struct timespec ts = {0, 300 * 1000 * 1000};
         nanosleep(&ts, NULL);
     }
 #endif
@@ -321,7 +358,8 @@ int main(int argc, char** argv)
 
     /* APP-07 的最后一条断言：卸载序列自己也要 stop 一次服务（插件 stop 幂等，
      * 所以这是一次可观测的额外调用，且模块此刻仍然 mapped）。 */
-    if (g_hadService && g_stopMessages != g_stopsBeforeUnload + 1) {
+    if (g_hadService && g_stopMessages != g_stopsBeforeUnload + 1)
+    {
         printf("[host] FAILED: the unload sequence did not stop the service "
                "(stops before=%u after=%u)\n",
                (unsigned)g_stopsBeforeUnload, (unsigned)g_stopMessages);
@@ -329,12 +367,13 @@ int main(int argc, char** argv)
         pi_iunknown_release((IPiUnknown*)host);
         return 1;
     }
-    if (g_hadService) {
+    if (g_hadService)
+    {
         printf("[host] unload sequence stopped the service (stop #%u)\n",
                (unsigned)g_stopMessages);
     }
 
-    pi_plugin_host_session_destroy(session);        /* 释放 session 持有的宿主服务引用 */
+    pi_plugin_host_session_destroy(session); /* 释放 session 持有的宿主服务引用 */
     pi_iunknown_release((IPiUnknown*)host);  /* 释放宿主自己那一份引用 */
 
     /* APP-01 的证据行：name() 只可能被插件经宿主自定义服务调到 —— 本宿主

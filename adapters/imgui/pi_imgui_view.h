@@ -61,17 +61,17 @@ typedef void (*PiPluginImGuiRetainProc)(void* user_data);
 typedef void (*PiPluginImGuiReleaseProc)(void* user_data);
 
 typedef struct PiPluginImGuiViewDesc {
-    PiPluginImGuiInitProc   init;      /* optional */
-    PiPluginImGuiDrawProc   draw;      /* required */
-    PiPluginImGuiRetainProc retain;    /* optional */
-    PiPluginImGuiReleaseProc release;  /* optional */
-    void*             user_data; /* passed to all callbacks */
+    PiPluginImGuiInitProc    init;      /* optional */
+    PiPluginImGuiDrawProc    draw;      /* required */
+    PiPluginImGuiRetainProc  retain;    /* optional */
+    PiPluginImGuiReleaseProc release;   /* optional */
+    void*                    user_data; /* passed to all callbacks */
 } PiPluginImGuiViewDesc;
 
 /* Create an ImGui-backed IPiPluginView. Nothing is created until the
  * host calls pi_plugin_attach(parent_window); teardown happens on pi_plugin_detach()
  * or when the last reference is released. Refcount starts at 1. */
-PiResult pi_plugin_imgui_view_create(const PiPluginImGuiViewDesc* desc, IPiPluginView** out_view);
+PiResult pi_plugin_imgui_view_create(PiPluginImGuiViewDesc const* desc, IPiPluginView** out_view);
 
 #ifdef __cplusplus
 }

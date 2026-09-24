@@ -6,10 +6,10 @@
 #ifndef PI_PLUGIN_HOST_H
 #define PI_PLUGIN_HOST_H
 
-#include "pi_plugin_types.h"
-#include "pi_plugin_factory.h"
 #include "pi_plugin_base.h"
+#include "pi_plugin_factory.h"
 #include "pi_plugin_host_services.h"
+#include "pi_plugin_types.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -25,7 +25,7 @@ typedef struct PiPluginModule PiPluginModule;
 /* Load a plugin from a shared library at the given path.
  * Returns NULL on failure (see pi_plugin_module_get_load_error). The module must
  * be unloaded with pi_plugin_module_unload(). */
-PI_PLUGIN_API PiPluginModule* pi_plugin_module_load(const char* path);
+PI_PLUGIN_API PiPluginModule* pi_plugin_module_load(char const* path);
 
 /* Unload a plugin module and release all associated resources. Make sure
  * all instances created from the module have been released first. */
@@ -50,8 +50,8 @@ PI_PLUGIN_API PiResult pi_plugin_module_get_load_error_r(char* buf, size_t size)
 
 /* Get the factory from a loaded module. The factory is add-ref'd for the
  * caller; release it with ->pi_release(). */
-PI_PLUGIN_API PiResult pi_plugin_module_get_factory(PiPluginModule* module,
-                                          IPiPluginFactory** out_factory);
+PI_PLUGIN_API PiResult pi_plugin_module_get_factory(PiPluginModule*    module,
+                                                    IPiPluginFactory** out_factory);
 
 /* --------------------------------------------------------------------------
  * Convenience: load, create instance, initialize in one call.
@@ -64,11 +64,11 @@ PI_PLUGIN_API PiResult pi_plugin_module_get_factory(PiPluginModule* module,
  * on any module you loaded yourself; the module returned via out_module
  * (if non-NULL) must be unloaded by the caller after releasing the plugin.
  */
-PI_PLUGIN_API PiResult pi_plugin_host_create_plugin(const char* dll_path,
-                                          const PiGuid* class_guid,
-                                          IPiPluginHostServices* host,
-                                          IPiPluginBase** out_plugin,
-                                          PiPluginModule** out_module);
+PI_PLUGIN_API PiResult pi_plugin_host_create_plugin(char const*            dll_path,
+                                                    PiGuid const*          class_guid,
+                                                    IPiPluginHostServices* host,
+                                                    IPiPluginBase**        out_plugin,
+                                                    PiPluginModule**       out_module);
 
 #ifdef __cplusplus
 }

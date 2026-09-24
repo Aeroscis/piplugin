@@ -10,11 +10,11 @@
  * Conan package - "the package works for someone else" is exactly the claim unit
  * tests cannot make. See CMakeLists.txt for why the imgui kit is optional here.
  */
-#include "piplugin/pi_plugin.h"
-#include "pi_host_session.h"
 #include "pi_event_router.h"
+#include "pi_host_session.h"
+#include "piplugin/pi_plugin.h"
 #ifdef PI_PLUGIN_CONSUMER_WITH_IMGUI
-#include "pi_imgui_view.h"
+    #include "pi_imgui_view.h"
 #endif
 
 #include <stdio.h>
@@ -31,11 +31,13 @@ int main(void)
 
     /* Touch each linked part so the linker cannot drop it: the core rejects a
      * NULL out-parameter, the router can be created/destroyed. */
-    if (pi_plugin_host_services_create_default(NULL, NULL, PI_INVALID_WINDOW, NULL) != PI_E_INVALIDARG) {
+    if (pi_plugin_host_services_create_default(NULL, NULL, PI_INVALID_WINDOW, NULL) != PI_E_INVALIDARG)
+    {
         printf("unexpected: host services accepted a NULL out-parameter\n");
         return 1;
     }
-    if (pi_plugin_event_router_create(&router) != PI_OK || router == NULL) {
+    if (pi_plugin_event_router_create(&router) != PI_OK || router == NULL)
+    {
         printf("event router could not be created\n");
         return 1;
     }

@@ -21,17 +21,18 @@
 #ifndef PI_PLUGIN_HOST_EMBED_AREA_H
 #define PI_PLUGIN_HOST_EMBED_AREA_H
 
-#include "piplugin/pi_plugin.h"
-#include "pi_host_session.h"
-
 #include <QWidget>
+
+#include "pi_host_session.h"
+#include "piplugin/pi_plugin.h"
 
 class QTimer;
 class QResizeEvent;
 
 /* 宿主自己 new 出来、自己摆进布局的嵌入区域（也可以直接当容器用）。
  * 注意：销毁本控件**不等于**卸载插件；请在卸载前调用 detachBinding()。 */
-class PiPluginEmbedArea : public QWidget {
+class PiPluginEmbedArea : public QWidget
+{
 public:
     explicit PiPluginEmbedArea(QWidget* parent = nullptr);
 

@@ -18,8 +18,9 @@
 #ifndef PI_PLUGIN_HOST_SERVICES_H
 #define PI_PLUGIN_HOST_SERVICES_H
 
-#include "pi_plugin_types.h"
 #include <pibase/pi_base.h>
+
+#include "pi_plugin_types.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -32,35 +33,47 @@ typedef struct IPiPluginHostServicesVtbl {
     IPiUnknownVtbl base;
 
     /* Allocate memory through the host. Thread-safe. */
-    void* (PI_CALL *pi_plugin_host_alloc)(void* this_ptr, size_t size);
+    void*(PI_CALL* pi_plugin_host_alloc)(void* this_ptr, size_t size);
 
     /* Free memory obtained from pi_plugin_host_alloc. NULL-safe. */
-    void  (PI_CALL *pi_plugin_host_free)(void* this_ptr, void* ptr);
+    void(PI_CALL* pi_plugin_host_free)(void* this_ptr, void* ptr);
 
     /* Post a message to the host. Safe to call from any plugin thread;
      * the host decides how to marshal it to its own event loop. */
-    void  (PI_CALL *pi_plugin_host_post_message)(void* this_ptr, uint32_t msg,
-                                          uintptr_t wparam, intptr_t lparam);
+    void(PI_CALL* pi_plugin_host_post_message)(void* this_ptr, uint32_t msg,
+                                               uintptr_t wparam, intptr_t lparam);
 } IPiPluginHostServicesVtbl;
 
 typedef struct IPiPluginHostServices {
-    const IPiPluginHostServicesVtbl* lpVtbl;
+    IPiPluginHostServicesVtbl const* lpVtbl;
 } IPiPluginHostServices;
 
 /* Inline helpers */
-static inline void* pi_plugin_host_alloc(IPiPluginHostServices* self, size_t size) {
-    if (!self || !self->lpVtbl || !self->lpVtbl->pi_plugin_host_alloc) return NULL;
+static inline void* pi_plugin_host_alloc(IPiPluginHostServices* self, size_t size)
+{
+    if (!self || !self->lpVtbl || !self->lpVtbl->pi_plugin_host_alloc)
+    {
+        return NULL;
+    }
     return self->lpVtbl->pi_plugin_host_alloc((void*)self, size);
 }
 
-static inline void pi_plugin_host_free(IPiPluginHostServices* self, void* ptr) {
-    if (!self || !self->lpVtbl || !self->lpVtbl->pi_plugin_host_free) return;
+static inline void pi_plugin_host_free(IPiPluginHostServices* self, void* ptr)
+{
+    if (!self || !self->lpVtbl || !self->lpVtbl->pi_plugin_host_free)
+    {
+        return;
+    }
     self->lpVtbl->pi_plugin_host_free((void*)self, ptr);
 }
 
 static inline void pi_plugin_host_post_message(IPiPluginHostServices* self, uint32_t msg,
-                                        uintptr_t wparam, intptr_t lparam) {
-    if (!self || !self->lpVtbl || !self->lpVtbl->pi_plugin_host_post_message) return;
+                                               uintptr_t wparam, intptr_t lparam)
+{
+    if (!self || !self->lpVtbl || !self->lpVtbl->pi_plugin_host_post_message)
+    {
+        return;
+    }
     self->lpVtbl->pi_plugin_host_post_message((void*)self, msg, wparam, lparam);
 }
 
@@ -76,7 +89,7 @@ typedef struct IPiPluginHostUIVtbl {
 
     /* Native window handle the plugin should embed into.
      * Returns PI_INVALID_WINDOW if the host currently has no window. */
-    PiNativeWindow (PI_CALL *pi_plugin_host_get_parent_window)(void* this_ptr);
+    PiNativeWindow(PI_CALL* pi_plugin_host_get_parent_window)(void* this_ptr);
 
     /* The host's UI thread identity, so the plugin knows which thread owns the
      * event loop that drives pi_plugin_on_idle().
@@ -88,21 +101,28 @@ typedef struct IPiPluginHostUIVtbl {
      *   - 平台实现：Windows = GetCurrentThreadId()，Linux = gettid()（内核
      *     线程 id），macOS = pthread_self() 句柄转 64 位。
      *     Linux 上主线程的 tid 与进程 id 相同，这不是 bug。 */
-    uint64_t (PI_CALL *pi_plugin_host_ui_thread_id)(void* this_ptr);
+    uint64_t(PI_CALL* pi_plugin_host_ui_thread_id)(void* this_ptr);
 } IPiPluginHostUIVtbl;
 
 typedef struct IPiPluginHostUI {
-    const IPiPluginHostUIVtbl* lpVtbl;
+    IPiPluginHostUIVtbl const* lpVtbl;
 } IPiPluginHostUI;
 
-static inline PiNativeWindow pi_plugin_host_ui_get_parent_window(IPiPluginHostUI* self) {
+static inline PiNativeWindow pi_plugin_host_ui_get_parent_window(IPiPluginHostUI* self)
+{
     if (!self || !self->lpVtbl || !self->lpVtbl->pi_plugin_host_get_parent_window)
+    {
         return PI_INVALID_WINDOW;
+    }
     return self->lpVtbl->pi_plugin_host_get_parent_window((void*)self);
 }
 
-static inline uint64_t pi_plugin_host_ui_thread_id(IPiPluginHostUI* self) {
-    if (!self || !self->lpVtbl || !self->lpVtbl->pi_plugin_host_ui_thread_id) return 0;
+static inline uint64_t pi_plugin_host_ui_thread_id(IPiPluginHostUI* self)
+{
+    if (!self || !self->lpVtbl || !self->lpVtbl->pi_plugin_host_ui_thread_id)
+    {
+        return 0;
+    }
     return self->lpVtbl->pi_plugin_host_ui_thread_id((void*)self);
 }
 
@@ -123,17 +143,17 @@ static inline uint64_t pi_plugin_host_ui_thread_id(IPiPluginHostUI* self) {
  * pi_plugin_host_default_set_ui_window() whenever the embed container changes.
  * -------------------------------------------------------------------------- */
 typedef void (*PiPluginHostMessageProc)(void* user_data, uint32_t msg,
-                                  uintptr_t wparam, intptr_t lparam);
+                                        uintptr_t wparam, intptr_t lparam);
 
 PI_PLUGIN_API PiResult pi_plugin_host_services_create_default(
     PiPluginHostMessageProc post_message, void* user_data,
-    PiNativeWindow ui_parent_window,
+    PiNativeWindow          ui_parent_window,
     IPiPluginHostServices** out_services);
 
 /* Update / clear the UI parent window of a default host services object
  * created above. Passing PI_INVALID_WINDOW makes the host headless again. */
 PI_PLUGIN_API void pi_plugin_host_default_set_ui_window(IPiPluginHostServices* services,
-                                              PiNativeWindow window);
+                                                        PiNativeWindow         window);
 
 /* --------------------------------------------------------------------------
  * Composable host services (roadmap APP-01)
@@ -167,7 +187,7 @@ PI_PLUGIN_API void pi_plugin_host_default_set_ui_window(IPiPluginHostServices* s
  * service, for instance; the framework would rather let the app decide than
  * hard-code that headless means "no UI service of any kind".
  * -------------------------------------------------------------------------- */
-typedef PiResult (*PiPluginHostExtraQiProc)(void* ctx, const PiGuid* iid, void** out);
+typedef PiResult (*PiPluginHostExtraQiProc)(void* ctx, PiGuid const* iid, void** out);
 
 /* Same as pi_plugin_host_services_create_default(), plus `extra_qi`.
  *
@@ -181,7 +201,7 @@ typedef PiResult (*PiPluginHostExtraQiProc)(void* ctx, const PiGuid* iid, void**
  * hook returns beyond the reference it hands to the plugin. */
 PI_PLUGIN_API PiResult pi_plugin_host_services_create_ex(
     PiPluginHostMessageProc post_message, void* user_data,
-    PiNativeWindow ui_parent_window,
+    PiNativeWindow          ui_parent_window,
     PiPluginHostExtraQiProc extra_qi, void* extra_qi_ctx,
     IPiPluginHostServices** out_services);
 

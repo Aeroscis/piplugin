@@ -32,7 +32,7 @@ extern "C" {
 
 /* 随机 UUID：宿主/插件之间唯一的身份，与框架保留区无关。 */
 #define PI_PLUGIN_TEST_HOST_SERVICE_IID_INIT \
-    PI_GUID(0x3B7E14C9, 0x2A5D, 0x4F31, \
+    PI_GUID(0x3B7E14C9, 0x2A5D, 0x4F31,      \
             0x8E, 0x77, 0x51, 0xC2, 0x9A, 0x0B, 0x6D, 0x44)
 
 static const PiGuid PI_PLUGIN_TEST_IID_HOST_SERVICE = PI_PLUGIN_TEST_HOST_SERVICE_IID_INIT;
@@ -48,25 +48,33 @@ typedef struct IPiPluginTestHostServiceVtbl {
     /* 人类可读的宿主名（借用，生命周期归宿主），例如 "headless-test-host"。
      * 每次调用都会在宿主侧计数：这是 ctest 用来断言"插件真的 QI 到并调用了
      * 宿主自定义服务"的证据。 */
-    const char* (PI_CALL *pi_plugin_test_host_service_name)(void* this_ptr);
+    char const*(PI_CALL* pi_plugin_test_host_service_name)(void* this_ptr);
 
     /* 宿主内部计数器：它一共收到过多少条插件消息。选这个槽位是刻意的 ——
      * 该值只有宿主知道，插件能报出非零值就只能是通过本接口读到的。 */
-    uint32_t (PI_CALL *pi_plugin_test_host_service_messages_seen)(void* this_ptr);
+    uint32_t(PI_CALL* pi_plugin_test_host_service_messages_seen)(void* this_ptr);
 } IPiPluginTestHostServiceVtbl;
 
 typedef struct IPiPluginTestHostService {
-    const IPiPluginTestHostServiceVtbl* lpVtbl;
+    IPiPluginTestHostServiceVtbl const* lpVtbl;
 } IPiPluginTestHostService;
 
 /* Inline helpers（与框架其它接口一致的 NULL 安全写法） */
-static inline const char* pi_plugin_test_host_service_name(IPiPluginTestHostService* self) {
-    if (!self || !self->lpVtbl || !self->lpVtbl->pi_plugin_test_host_service_name) return NULL;
+static inline char const* pi_plugin_test_host_service_name(IPiPluginTestHostService* self)
+{
+    if (!self || !self->lpVtbl || !self->lpVtbl->pi_plugin_test_host_service_name)
+    {
+        return NULL;
+    }
     return self->lpVtbl->pi_plugin_test_host_service_name((void*)self);
 }
 
-static inline uint32_t pi_plugin_test_host_service_messages_seen(IPiPluginTestHostService* self) {
-    if (!self || !self->lpVtbl || !self->lpVtbl->pi_plugin_test_host_service_messages_seen) return 0;
+static inline uint32_t pi_plugin_test_host_service_messages_seen(IPiPluginTestHostService* self)
+{
+    if (!self || !self->lpVtbl || !self->lpVtbl->pi_plugin_test_host_service_messages_seen)
+    {
+        return 0;
+    }
     return self->lpVtbl->pi_plugin_test_host_service_messages_seen((void*)self);
 }
 

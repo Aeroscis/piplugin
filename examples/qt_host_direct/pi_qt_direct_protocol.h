@@ -30,7 +30,7 @@
 #include "piplugin/pi_plugin.h"
 
 #ifndef __cplusplus
-#  error "pi_qt_direct_protocol.h is C++ only: its vtable carries QWidget*."
+    #error "pi_qt_direct_protocol.h is C++ only: its vtable carries QWidget*."
 #endif
 
 class QWidget;
@@ -61,23 +61,29 @@ static const PiGuid PI_PLUGIN_QT_DIRECT_WIDGET_IID = PI_PLUGIN_QT_DIRECT_WIDGET_
 typedef struct IQtDirectWidgetVtbl {
     IPiUnknownVtbl base;
 
-    QWidget* (PI_CALL *create_widget)(void* this_ptr);
-    void     (PI_CALL *destroy_widget)(void* this_ptr, QWidget* widget);
+    QWidget*(PI_CALL* create_widget)(void* this_ptr);
+    void(PI_CALL* destroy_widget)(void* this_ptr, QWidget* widget);
 } IQtDirectWidgetVtbl;
 
 typedef struct IQtDirectWidget {
-    const IQtDirectWidgetVtbl* lpVtbl;
+    IQtDirectWidgetVtbl const* lpVtbl;
 } IQtDirectWidget;
 
 static inline QWidget* pi_plugin_qt_direct_create_widget(IQtDirectWidget* self)
 {
-    if (!self || !self->lpVtbl || !self->lpVtbl->create_widget) return 0;
+    if (!self || !self->lpVtbl || !self->lpVtbl->create_widget)
+    {
+        return 0;
+    }
     return self->lpVtbl->create_widget((void*)self);
 }
 
 static inline void pi_plugin_qt_direct_destroy_widget(IQtDirectWidget* self, QWidget* widget)
 {
-    if (!self || !self->lpVtbl || !self->lpVtbl->destroy_widget) return;
+    if (!self || !self->lpVtbl || !self->lpVtbl->destroy_widget)
+    {
+        return;
+    }
     self->lpVtbl->destroy_widget((void*)self, widget);
 }
 

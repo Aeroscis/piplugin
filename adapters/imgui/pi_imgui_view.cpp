@@ -1,13 +1,13 @@
 #include "pi_imgui_view.h"
 
-#include "imgui.h"
-#include "imgui_impl_win32.h"
-#include "imgui_impl_dx11.h"
-
-#include <windows.h>
 #include <d3d11.h>
 #include <dxgi.h>
 #include <stdio.h>
+#include <windows.h>
+
+#include "imgui.h"
+#include "imgui_impl_dx11.h"
+#include "imgui_impl_win32.h"
 
 /* Forward declaration (deliberately not declared in the backend header
  * to avoid dragging <windows.h> into it). */
@@ -27,29 +27,36 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(
  * ======================================================================== */
 namespace {
 
-class PiPluginImGuiView {
+class PiPluginImGuiView
+{
 public:
-    PiRefCountedBase base;              /* MUST be first data member */
+    PiRefCountedBase base; /* MUST be first data member */
 
-    PiPluginImGuiView(const PiPluginImGuiViewDesc& desc)
-        : m_desc(desc), m_attached(false),
-          m_hwnd(NULL), m_device(NULL), m_context(NULL),
-          m_swapChain(NULL), m_rtv(NULL), m_imguiCtx(NULL) {}
+    PiPluginImGuiView(PiPluginImGuiViewDesc const& desc)
+        : m_desc(desc)
+        , m_attached(false)
+        , m_hwnd(NULL)
+        , m_device(NULL)
+        , m_context(NULL)
+        , m_swapChain(NULL)
+        , m_rtv(NULL)
+        , m_imguiCtx(NULL)
+    {}
 
-    PiPluginImGuiViewDesc m_desc;
-    bool            m_attached;
-    HWND            m_hwnd;
+    PiPluginImGuiViewDesc   m_desc;
+    bool                    m_attached;
+    HWND                    m_hwnd;
     ID3D11Device*           m_device;
     ID3D11DeviceContext*    m_context;
     IDXGISwapChain*         m_swapChain;
     ID3D11RenderTargetView* m_rtv;
-    ImGuiContext*   m_imguiCtx;
+    ImGuiContext*           m_imguiCtx;
     /* Window class name for THIS view. Unique per view on purpose - see
      * create_resources(). */
-    wchar_t         m_className[64];
+    wchar_t                 m_className[64];
 
-    static const IPiPluginViewVtbl s_vtbl;
-    static PiPluginImGuiView* from_iface(void* self_ptr) { return (PiPluginImGuiView*)self_ptr; }
+    static IPiPluginViewVtbl const s_vtbl;
+    static PiPluginImGuiView*      from_iface(void* self_ptr) { return (PiPluginImGuiView*)self_ptr; }
 
     bool create_resources(PiNativeWindow parent);
     void destroy_resources();
@@ -58,11 +65,15 @@ public:
     /* Runs the draw callback with our ImGui context current, restoring
      * whatever context (possibly the host's own) was set before. */
     template <typename F>
-    void with_own_context(F fn) {
+    void with_own_context(F fn)
+    {
         ImGuiContext* previous = ImGui::GetCurrentContext();
-        if (m_imguiCtx) ImGui::SetCurrentContext(m_imguiCtx);
+        if (m_imguiCtx)
+        {
+            ImGui::SetCurrentContext(m_imguiCtx);
+        }
         fn();
-        ImGui::SetCurrentContext(previous);   /* NULL is a valid value */
+        ImGui::SetCurrentContext(previous); /* NULL is a valid value */
     }
 };
 
@@ -86,13 +97,15 @@ public:
  * ------------------------------------------------------------------------ */
 
 static LRESULT WINAPI PiPluginImGuiViewWndProc(HWND hWnd, UINT msg,
-                                         WPARAM wParam, LPARAM lParam)
+                                               WPARAM wParam, LPARAM lParam)
 {
     PiPluginImGuiView* view = (PiPluginImGuiView*)GetWindowLongPtr(hWnd, GWLP_USERDATA);
-    if (view) {
+    if (view)
+    {
         /* Feed input into the plugin's ImGui Win32 backend. */
         ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam);
-        if (msg == WM_SIZE && wParam != SIZE_MINIMIZED) {
+        if (msg == WM_SIZE && wParam != SIZE_MINIMIZED)
+        {
             view->resize_backbuffer();
             return 0;
         }
@@ -104,7 +117,7 @@ static HMODULE pi_plugin_imgui_kit_module(void)
 {
     HMODULE module = NULL;
     GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-                       GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                           GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                        (LPCWSTR)&PiPluginImGuiViewWndProc, &module);
     return module;
 }
@@ -115,9 +128,9 @@ static HMODULE pi_plugin_imgui_kit_module(void)
 
 bool PiPluginImGuiView::create_resources(PiNativeWindow parent)
 {
-    HWND parentHwnd = (HWND)parent;
-    HMODULE module = pi_plugin_imgui_kit_module();
-    WNDCLASSEXW wc = { sizeof(wc) };
+    HWND        parentHwnd = (HWND)parent;
+    HMODULE     module     = pi_plugin_imgui_kit_module();
+    WNDCLASSEXW wc         = {sizeof(wc)};
 
     /* Unique per view: it cannot collide with another plugin's class, and
      * destroy_resources() unregisters it again. */
@@ -127,50 +140,59 @@ bool PiPluginImGuiView::create_resources(PiNativeWindow parent)
     wc.lpfnWndProc   = &PiPluginImGuiViewWndProc;
     wc.hInstance     = module;
     wc.lpszClassName = m_className;
-    if (!RegisterClassExW(&wc)) {
+    if (!RegisterClassExW(&wc))
+    {
         /* A stale class of the same name (this module reloaded at the same
          * address): drop it and try once more - it has no windows left, because
          * a view unregisters its own class in destroy_resources(). */
         UnregisterClassW(m_className, module);
-        if (!RegisterClassExW(&wc)) return false;
+        if (!RegisterClassExW(&wc))
+        {
+            return false;
+        }
     }
 
-    RECT rc; GetClientRect(parentHwnd, &rc);
+    RECT rc;
+    GetClientRect(parentHwnd, &rc);
     m_hwnd = CreateWindowExW(0, m_className, L"",
                              WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN,
                              0, 0, rc.right, rc.bottom,
                              parentHwnd, NULL, module, NULL);
-    if (!m_hwnd) return false;
+    if (!m_hwnd)
+    {
+        return false;
+    }
     SetWindowLongPtr(m_hwnd, GWLP_USERDATA, (LONG_PTR)this);
 
     /* D3D11 device + swapchain bound to the child window. */
-    DXGI_SWAP_CHAIN_DESC sd = {};
-    sd.BufferCount = 2;
-    sd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-    sd.BufferDesc.RefreshRate.Numerator = 60;
+    DXGI_SWAP_CHAIN_DESC sd               = {};
+    sd.BufferCount                        = 2;
+    sd.BufferDesc.Format                  = DXGI_FORMAT_R8G8B8A8_UNORM;
+    sd.BufferDesc.RefreshRate.Numerator   = 60;
     sd.BufferDesc.RefreshRate.Denominator = 1;
-    sd.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
-    sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-    sd.OutputWindow = m_hwnd;
-    sd.SampleDesc.Count = 1;
-    sd.Windowed = TRUE;
-    sd.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+    sd.Flags                              = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
+    sd.BufferUsage                        = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+    sd.OutputWindow                       = m_hwnd;
+    sd.SampleDesc.Count                   = 1;
+    sd.Windowed                           = TRUE;
+    sd.SwapEffect                         = DXGI_SWAP_EFFECT_DISCARD;
 
     const D3D_FEATURE_LEVEL levels[] = {
-        D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_0
-    };
+        D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_0};
     D3D_FEATURE_LEVEL level;
-    HRESULT hr = D3D11CreateDeviceAndSwapChain(
+    HRESULT           hr = D3D11CreateDeviceAndSwapChain(
         NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, 0,
         levels, 2, D3D11_SDK_VERSION,
         &sd, &m_swapChain, &m_device, &level, &m_context);
-    if (FAILED(hr)) {
+    if (FAILED(hr))
+    {
         /* Software fallback for machines without a suitable GPU. */
         hr = D3D11CreateDeviceAndSwapChain(
             NULL, D3D_DRIVER_TYPE_WARP, NULL, 0,
             levels, 2, D3D11_SDK_VERSION,
             &sd, &m_swapChain, &m_device, &level, &m_context);
-        if (FAILED(hr)) {
+        if (FAILED(hr))
+        {
             DestroyWindow(m_hwnd);
             m_hwnd = NULL;
             return false;
@@ -179,7 +201,8 @@ bool PiPluginImGuiView::create_resources(PiNativeWindow parent)
 
     ID3D11Texture2D* backBuffer = NULL;
     m_swapChain->GetBuffer(0, IID_PPV_ARGS(&backBuffer));
-    if (backBuffer) {
+    if (backBuffer)
+    {
         m_device->CreateRenderTargetView(backBuffer, NULL, &m_rtv);
         backBuffer->Release();
     }
@@ -195,27 +218,37 @@ bool PiPluginImGuiView::create_resources(PiNativeWindow parent)
      * is undefined behaviour (found by running examples/minimal_plugin_imgui
      * through the conformance harness: the host crashed on its next frame). */
     ImGuiContext* previous = ImGui::GetCurrentContext();
-    m_imguiCtx = ImGui::CreateContext();
+    m_imguiCtx             = ImGui::CreateContext();
     ImGui::SetCurrentContext(m_imguiCtx);
     ImGui::StyleColorsDark();
     ImGui_ImplWin32_Init(m_hwnd);
     ImGui_ImplDX11_Init(m_device, m_context);
     if (m_desc.init)
+    {
         m_desc.init(m_desc.user_data);
-    ImGui::SetCurrentContext(previous);   /* NULL is a valid value */
+    }
+    ImGui::SetCurrentContext(previous); /* NULL is a valid value */
 
     return true;
 }
 
 void PiPluginImGuiView::resize_backbuffer()
 {
-    if (!m_swapChain) return;
-    if (m_rtv) { m_rtv->Release(); m_rtv = NULL; }
+    if (!m_swapChain)
+    {
+        return;
+    }
+    if (m_rtv)
+    {
+        m_rtv->Release();
+        m_rtv = NULL;
+    }
     m_swapChain->ResizeBuffers(0, 0, 0, DXGI_FORMAT_UNKNOWN, 0);
 
     ID3D11Texture2D* backBuffer = NULL;
     m_swapChain->GetBuffer(0, IID_PPV_ARGS(&backBuffer));
-    if (backBuffer) {
+    if (backBuffer)
+    {
         m_device->CreateRenderTargetView(backBuffer, NULL, &m_rtv);
         backBuffer->Release();
     }
@@ -223,40 +256,65 @@ void PiPluginImGuiView::resize_backbuffer()
 
 void PiPluginImGuiView::destroy_resources()
 {
-    if (!m_hwnd) return;   /* already torn down */
+    if (!m_hwnd)
+    {
+        return; /* already torn down */
+    }
 
     /* Detach the WndProc first: DestroyWindow re-enters it. */
     SetWindowLongPtr(m_hwnd, GWLP_USERDATA, (LONG_PTR)NULL);
 
-    with_own_context([this]() {
+    with_own_context([this]()
+                     {
         ImGui_ImplDX11_Shutdown();
         ImGui_ImplWin32_Shutdown();
         ImGui::DestroyContext(m_imguiCtx);
-        m_imguiCtx = NULL;
-    });
+        m_imguiCtx = NULL; });
 
-    if (m_rtv)       { m_rtv->Release();       m_rtv = NULL; }
-    if (m_swapChain) { m_swapChain->Release(); m_swapChain = NULL; }
-    if (m_context)   { m_context->Release();   m_context = NULL; }
-    if (m_device)    { m_device->Release();    m_device = NULL; }
+    if (m_rtv)
+    {
+        m_rtv->Release();
+        m_rtv = NULL;
+    }
+    if (m_swapChain)
+    {
+        m_swapChain->Release();
+        m_swapChain = NULL;
+    }
+    if (m_context)
+    {
+        m_context->Release();
+        m_context = NULL;
+    }
+    if (m_device)
+    {
+        m_device->Release();
+        m_device = NULL;
+    }
 
     DestroyWindow(m_hwnd);
     m_hwnd = NULL;
 
     /* The class dies with its window: no process-wide name survives this module. */
     if (m_className[0])
+    {
         UnregisterClassW(m_className, pi_plugin_imgui_kit_module());
+    }
 }
 
 /* --------------------------------------------------------------------------
  * vtable slots (host GUI thread)
  * ------------------------------------------------------------------------ */
 
-PiResult PI_CALL pi_plugin_imgui_qi(void* self_ptr, const PiGuid* iid, void** out)
+PiResult PI_CALL pi_plugin_imgui_qi(void* self_ptr, PiGuid const* iid, void** out)
 {
-    if (!out) return PI_E_INVALIDARG;
+    if (!out)
+    {
+        return PI_E_INVALIDARG;
+    }
     PiPluginImGuiView* me = PiPluginImGuiView::from_iface(self_ptr);
-    if (pi_guid_equal(iid, &PI_IID_UNKNOWN) || pi_guid_equal(iid, &PI_PLUGIN_IID_PLUGIN_VIEW)) {
+    if (pi_guid_equal(iid, &PI_IID_UNKNOWN) || pi_guid_equal(iid, &PI_PLUGIN_IID_PLUGIN_VIEW))
+    {
         *out = me;
         me->base.unk.lpVtbl->pi_add_ref(self_ptr);
         return PI_OK;
@@ -267,27 +325,42 @@ PiResult PI_CALL pi_plugin_imgui_qi(void* self_ptr, const PiGuid* iid, void** ou
 
 PiResult PI_CALL pi_plugin_imgui_attach(void* self_ptr, PiNativeWindow parent)
 {
-    if (!PI_IS_VALID_WINDOW(parent)) return PI_E_INVALIDARG;
+    if (!PI_IS_VALID_WINDOW(parent))
+    {
+        return PI_E_INVALIDARG;
+    }
     PiPluginImGuiView* me = PiPluginImGuiView::from_iface(self_ptr);
-    if (me->m_attached) return PI_FAIL;
+    if (me->m_attached)
+    {
+        return PI_FAIL;
+    }
 
     if (!me->create_resources(parent))
+    {
         return PI_FAIL;
+    }
 
     me->m_attached = true;
     if (me->m_desc.retain)
+    {
         me->m_desc.retain(me->m_desc.user_data);
+    }
     return PI_OK;
 }
 
 PiResult PI_CALL pi_plugin_imgui_detach(void* self_ptr)
 {
     PiPluginImGuiView* me = PiPluginImGuiView::from_iface(self_ptr);
-    if (!me->m_attached) return PI_OK;
+    if (!me->m_attached)
+    {
+        return PI_OK;
+    }
 
     me->m_attached = false;
     if (me->m_desc.release)
+    {
         me->m_desc.release(me->m_desc.user_data);
+    }
     me->destroy_resources();
     return PI_OK;
 }
@@ -301,7 +374,10 @@ PiNativeWindow PI_CALL pi_plugin_imgui_get_native_window(void* self_ptr)
 PiResult PI_CALL pi_plugin_imgui_on_resize(void* self_ptr, int32_t w, int32_t h)
 {
     PiPluginImGuiView* me = PiPluginImGuiView::from_iface(self_ptr);
-    if (!me->m_attached || !me->m_hwnd) return PI_OK;
+    if (!me->m_attached || !me->m_hwnd)
+    {
+        return PI_OK;
+    }
     SetWindowPos(me->m_hwnd, NULL, 0, 0, w, h,
                  SWP_NOZORDER | SWP_NOACTIVATE);
     return PI_OK;
@@ -310,9 +386,13 @@ PiResult PI_CALL pi_plugin_imgui_on_resize(void* self_ptr, int32_t w, int32_t h)
 PiResult PI_CALL pi_plugin_imgui_on_idle(void* self_ptr)
 {
     PiPluginImGuiView* me = PiPluginImGuiView::from_iface(self_ptr);
-    if (!me->m_attached || !me->m_imguiCtx) return PI_OK;
+    if (!me->m_attached || !me->m_imguiCtx)
+    {
+        return PI_OK;
+    }
 
-    me->with_own_context([me]() {
+    me->with_own_context([me]()
+                         {
         ImGui_ImplDX11_NewFrame();
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
@@ -320,11 +400,10 @@ PiResult PI_CALL pi_plugin_imgui_on_idle(void* self_ptr)
         me->m_desc.draw(me->m_desc.user_data);
 
         ImGui::Render();
-        const float clear[4] = { 0.16f, 0.16f, 0.18f, 1.0f };
+        float const clear[4] = { 0.16f, 0.16f, 0.18f, 1.0f };
         me->m_context->OMSetRenderTargets(1, &me->m_rtv, NULL);
         me->m_context->ClearRenderTargetView(me->m_rtv, clear);
-        ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
-    });
+        ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData()); });
 
     me->m_swapChain->Present(1, 0);
     return PI_OK;
@@ -333,21 +412,30 @@ PiResult PI_CALL pi_plugin_imgui_on_idle(void* self_ptr)
 PiResult PI_CALL pi_plugin_imgui_get_preferred_size(void* self_ptr, int32_t* w, int32_t* h)
 {
     (void)self_ptr;
-    if (w) *w = 400;
-    if (h) *h = 300;
+    if (w)
+    {
+        *w = 400;
+    }
+    if (h)
+    {
+        *h = 300;
+    }
     return PI_OK;
 }
 
 PiResult PI_CALL pi_plugin_imgui_set_visible(void* self_ptr, int32_t visible)
 {
     PiPluginImGuiView* me = PiPluginImGuiView::from_iface(self_ptr);
-    if (!me->m_hwnd) return PI_OK;
+    if (!me->m_hwnd)
+    {
+        return PI_OK;
+    }
     ShowWindow(me->m_hwnd, visible ? SW_SHOW : SW_HIDE);
     return PI_OK;
 }
 
-const IPiPluginViewVtbl PiPluginImGuiView::s_vtbl = {
-    { &pi_plugin_imgui_qi, &pi_refcounted_add_ref, &pi_refcounted_release },
+IPiPluginViewVtbl const PiPluginImGuiView::s_vtbl = {
+    {&pi_plugin_imgui_qi, &pi_refcounted_add_ref, &pi_refcounted_release},
     &pi_plugin_imgui_attach,
     &pi_plugin_imgui_detach,
     &pi_plugin_imgui_get_native_window,
@@ -362,31 +450,39 @@ static void pi_plugin_imgui_view_destroy(void* self_ptr)
     PiPluginImGuiView* me = PiPluginImGuiView::from_iface(self_ptr);
     /* Synchronous model: same thread, no pending work - just tear down
      * whatever is still alive and free the object. */
-    if (me->m_attached) {
+    if (me->m_attached)
+    {
         me->m_attached = false;
         if (me->m_desc.release)
+        {
             me->m_desc.release(me->m_desc.user_data);
+        }
     }
     me->destroy_resources();
     delete me;
 }
 
-} // namespace
+} //namespace
 
 /* ==========================================================================
  * Public API
  * ======================================================================== */
 
-PiResult pi_plugin_imgui_view_create(const PiPluginImGuiViewDesc* desc, IPiPluginView** out_view)
+PiResult pi_plugin_imgui_view_create(PiPluginImGuiViewDesc const* desc, IPiPluginView** out_view)
 {
     if (!desc || !desc->draw || !out_view)
+    {
         return PI_E_INVALIDARG;
+    }
     *out_view = NULL;
 
     PiPluginImGuiView* view = new PiPluginImGuiView(*desc);
-    if (!view) return PI_E_OUTOFMEMORY;
+    if (!view)
+    {
+        return PI_E_OUTOFMEMORY;
+    }
     pi_refcounted_init_with_destroy(&view->base,
-                                    (const IPiUnknownVtbl*)&PiPluginImGuiView::s_vtbl,
+                                    (IPiUnknownVtbl const*)&PiPluginImGuiView::s_vtbl,
                                     &pi_plugin_imgui_view_destroy);
     *out_view = (IPiPluginView*)&view->base;
     return PI_OK;

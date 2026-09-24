@@ -42,7 +42,7 @@ typedef struct PiPluginHostSession PiPluginHostSession;
 /* 日志回调：本层把自身步骤（加载 / attach / 卸载各步）经此上报，
  * 由宿主决定写文件、写 stdout 还是丢弃 —— 机制留下，去向归宿主。
  * 在调用线程（宿主 GUI 线程）上同步执行。 */
-typedef void (*PiPluginHostSessionLogProc)(void* user_data, const char* message);
+typedef void (*PiPluginHostSessionLogProc)(void* user_data, char const* message);
 
 /* --------------------------------------------------------------------------
  * 生命周期
@@ -51,7 +51,7 @@ typedef void (*PiPluginHostSessionLogProc)(void* user_data, const char* message)
 /* 创建 session。services 会被 add-ref（调用方保留自己的引用，通常由调方
  * 在 session 销毁后释放）。失败返回 PI_E_INVALIDARG / PI_E_OUTOFMEMORY。 */
 PiResult pi_plugin_host_session_create(IPiPluginHostServices* services,
-                                PiPluginHostSession** out_session);
+                                       PiPluginHostSession**  out_session);
 
 /* 销毁 session：先按七步序列卸掉所有仍活着的槽位，再释放宿主服务引用。
  * NULL 安全。 */
@@ -64,7 +64,7 @@ void pi_plugin_host_session_destroy(PiPluginHostSession* session);
 /* 声明"本宿主生态要求插件必须 PROVIDES 的能力"。幂等；可在 load 之前任意次调用。
  * load/inspect 时对插件 descriptor 做门禁，不满足即拒绝（PI_E_MISSINGCAPABILITY）。
  * 这是 app 作者实现"我生态内所有插件必须符合 XXX"而无需 fork 框架的入口。 */
-PiResult pi_plugin_host_session_require(PiPluginHostSession* session, const PiGuid* iid);
+PiResult pi_plugin_host_session_require(PiPluginHostSession* session, PiGuid const* iid);
 
 /* --------------------------------------------------------------------------
  * 加载
@@ -74,16 +74,16 @@ PiResult pi_plugin_host_session_require(PiPluginHostSession* session, const PiGu
  * 成功后 out_slot 收到槽位下标；失败返回错误码，且不留下任何半成品状态
  * （已加载的模块会被就地回卷）。 */
 PiResult pi_plugin_host_session_load(PiPluginHostSession* session,
-                              const char* dll_path,
-                              uint32_t* out_slot);
+                                     char const*          dll_path,
+                                     uint32_t*            out_slot);
 
 /* 分解形式（可选）：只加载模块并跑门禁，不实例化。
  * 供"实例化前按 descriptor 过滤"的宿主使用（LV2 式场景，见 headless 测试宿主）：
  * 过滤掉不合适的插件时无需付出实例化代价。成功后必须对该槽位调用
  * instantiate 或 unload。load() 就是这两个调用合起来的快捷形式。 */
 PiResult pi_plugin_host_session_inspect(PiPluginHostSession* session,
-                                 const char* dll_path,
-                                 uint32_t* out_slot);
+                                        char const*          dll_path,
+                                        uint32_t*            out_slot);
 PiResult pi_plugin_host_session_instantiate(PiPluginHostSession* session, uint32_t slot);
 
 /* --------------------------------------------------------------------------
@@ -92,13 +92,13 @@ PiResult pi_plugin_host_session_instantiate(PiPluginHostSession* session, uint32
  * 返回的接口指针与 descriptor 均为"借用"：所有权在 session 内部，
  * 调用方禁止 release，其生命周期止于该槽位的 unload（descriptor 止于模块卸载）。
  * -------------------------------------------------------------------------- */
-uint32_t pi_plugin_host_session_count(const PiPluginHostSession* session);
-int      pi_plugin_host_session_is_loaded(const PiPluginHostSession* session, uint32_t slot);
+uint32_t pi_plugin_host_session_count(PiPluginHostSession const* session);
+int      pi_plugin_host_session_is_loaded(PiPluginHostSession const* session, uint32_t slot);
 
 IPiPluginBase*            pi_plugin_host_session_get_plugin(PiPluginHostSession* session, uint32_t slot);
 IPiPluginView*            pi_plugin_host_session_get_view(PiPluginHostSession* session, uint32_t slot);
-IPiPluginService*               pi_plugin_host_session_get_service(PiPluginHostSession* session, uint32_t slot);
-const PiPluginDescriptor* pi_plugin_host_session_get_descriptor(const PiPluginHostSession* session, uint32_t slot);
+IPiPluginService*         pi_plugin_host_session_get_service(PiPluginHostSession* session, uint32_t slot);
+PiPluginDescriptor const* pi_plugin_host_session_get_descriptor(PiPluginHostSession const* session, uint32_t slot);
 
 /* --------------------------------------------------------------------------
  * 事件（roadmap APP-06，通道 C）
@@ -118,14 +118,14 @@ const PiPluginDescriptor* pi_plugin_host_session_get_descriptor(const PiPluginHo
  * -------------------------------------------------------------------------- */
 
 /* 该槽位的插件是否实现了 IPiPluginEventSink（1/0）。未实例化或未实现都为 0。 */
-int pi_plugin_host_session_has_event_sink(const PiPluginHostSession* session, uint32_t slot);
+int pi_plugin_host_session_has_event_sink(PiPluginHostSession const* session, uint32_t slot);
 
 /* 把一个事件投给该槽位插件的 sink（宿主主线程）。
  * 返回 sink 自己的返回码；槽位不存在 / 插件没有 sink / 宿主没有事件接口时返回
  * PI_E_NOINTERFACE —— 调用方据此静默跳过（这正是"未实现 sink 的插件优雅降级"）。
  * event 为 NULL 返回 PI_E_INVALIDARG。 */
 PiResult pi_plugin_host_session_deliver_event(PiPluginHostSession* session, uint32_t slot,
-                                       const PiPluginEvent* event);
+                                              PiPluginEvent const* event);
 
 /* 宿主提供的事件接口（借用；所有权在 session，禁止 release）。宿主没有提供时返回
  * NULL。宿主可以用它订阅/发布 —— 或者直接用自己那份路由器指针。 */
@@ -138,7 +138,7 @@ IPiPluginHostEvents* pi_plugin_host_session_get_host_events(PiPluginHostSession*
  * set_visible 非 0 时顺带 pi_plugin_view_set_visible(view, 1)。
  * 槽位没有 view（headless 插件）返回 PI_E_NOINTERFACE。 */
 PiResult pi_plugin_host_session_attach_view(PiPluginHostSession* session, uint32_t slot,
-                                     PiNativeWindow parent_window, int set_visible);
+                                            PiNativeWindow parent_window, int set_visible);
 
 /* 每帧 pump：把 session 里每个活着的 view 过一遍 pi_plugin_on_idle()。
  * 何时调用（每帧 / 定时器）是宿主的决策，本层不持有计时器。 */
@@ -162,15 +162,15 @@ void     pi_plugin_host_session_unload_all(PiPluginHostSession* session);
  * 诊断
  * -------------------------------------------------------------------------- */
 
-void pi_plugin_host_session_set_logger(PiPluginHostSession* session,
-                                PiPluginHostSessionLogProc log, void* user_data);
+void pi_plugin_host_session_set_logger(PiPluginHostSession*       session,
+                                       PiPluginHostSessionLogProc log, void* user_data);
 
 /* 诊断开关：卸载时跳过 pi_plugin_view_detach()，让插件自己的 terminate 收尾 ——
  * 复现"宿主直接丢模块"那条历史崩溃路径用。正常宿主不要打开。 */
 void pi_plugin_host_session_set_skip_detach(PiPluginHostSession* session, int skip);
 
 /* 上一次失败的可读原因（配合 pi_plugin_module_get_load_error 使用）。永不为 NULL。 */
-const char* pi_plugin_host_session_last_error(const PiPluginHostSession* session);
+char const* pi_plugin_host_session_last_error(PiPluginHostSession const* session);
 
 #ifdef __cplusplus
 }

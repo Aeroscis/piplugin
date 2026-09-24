@@ -16,15 +16,15 @@
  * 第三个场景（Qt 套件 pi_plugin_qt_view_post 跨线程）需要真 Qt 插件与宿主，在
  * tests/test_host_multi（ctest `qt_view_post_from_worker_thread`）。
  */
-#include "piplugin/pi_plugin.h"
-#include "pi_test_thread.h"
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "pi_test_thread.h"
+#include "piplugin/pi_plugin.h"
+
 #if defined(_WIN32) || defined(_WIN64)
-#  include <windows.h>   /* GetCurrentThreadId：断言"回调发生在哪条线程"用 */
+    #include <windows.h> /* GetCurrentThreadId：断言"回调发生在哪条线程"用 */
 #endif
 
 /* --------------------------------------------------------------------------
@@ -33,25 +33,29 @@
 static unsigned g_checks   = 0;
 static unsigned g_failures = 0;
 
-#define CHECK(cond)                                                     \
-    do {                                                                \
-        ++g_checks;                                                     \
-        if (!(cond)) {                                                  \
-            ++g_failures;                                               \
-            printf("  FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond);    \
-        }                                                               \
+#define CHECK(cond)                                                  \
+    do                                                               \
+    {                                                                \
+        ++g_checks;                                                  \
+        if (!(cond))                                                 \
+        {                                                            \
+            ++g_failures;                                            \
+            printf("  FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); \
+        }                                                            \
     } while (0)
 
-#define CHECK_EQ_INT(actual, expected)                                  \
-    do {                                                                \
-        long long _a = (long long)(actual);                             \
-        long long _e = (long long)(expected);                           \
-        ++g_checks;                                                     \
-        if (_a != _e) {                                                 \
-            ++g_failures;                                               \
-            printf("  FAIL %s:%d: %s == %lld, expected %lld\n",         \
-                   __FILE__, __LINE__, #actual, _a, _e);                \
-        }                                                               \
+#define CHECK_EQ_INT(actual, expected)                          \
+    do                                                          \
+    {                                                           \
+        long long _a = (long long)(actual);                     \
+        long long _e = (long long)(expected);                   \
+        ++g_checks;                                             \
+        if (_a != _e)                                           \
+        {                                                       \
+            ++g_failures;                                       \
+            printf("  FAIL %s:%d: %s == %lld, expected %lld\n", \
+                   __FILE__, __LINE__, #actual, _a, _e);        \
+        }                                                       \
     } while (0)
 
 static void Section(const char* name)
@@ -93,14 +97,14 @@ typedef struct PostedMessage {
     unsigned long caller_thread;
 } PostedMessage;
 
-static PiPluginTestMutex   g_post_mutex;
-static PostedMessage g_post_queue[POST_QUEUE_MAX];
-static int           g_post_queued    = 0;   /* 宿主回调收到的条数（任意线程） */
-static int           g_post_overflow  = 0;   /* 队列不够用（计数/容量有 bug） */
-static int           g_post_delivered = 0;   /* 主线程真正投递出去的条数 */
-static int           g_post_bad_delivery = 0;/* 主线程投递时发现的不一致 */
-static unsigned long g_post_main_thread = 0;
-static int           g_post_seen[POST_THREADS][POST_PER_THREAD];
+static PiPluginTestMutex g_post_mutex;
+static PostedMessage     g_post_queue[POST_QUEUE_MAX];
+static int               g_post_queued       = 0; /* 宿主回调收到的条数（任意线程） */
+static int               g_post_overflow     = 0; /* 队列不够用（计数/容量有 bug） */
+static int               g_post_delivered    = 0; /* 主线程真正投递出去的条数 */
+static int               g_post_bad_delivery = 0; /* 主线程投递时发现的不一致 */
+static unsigned long     g_post_main_thread  = 0;
+static int               g_post_seen[POST_THREADS][POST_PER_THREAD];
 
 /* 线程体要拿到宿主服务对象：模块级指针，线程启动前写好 */
 static IPiPluginHostServices* g_post_services = NULL;
@@ -110,15 +114,19 @@ static void HostPostProc(void* user_data, uint32_t msg,
                          uintptr_t wparam, intptr_t lparam)
 {
     unsigned long caller = CurrentThreadId();
-    (void)user_data; (void)lparam;
+    (void)user_data;
+    (void)lparam;
 
     PiPluginTestMutexLock(&g_post_mutex);
-    if (g_post_queued < POST_QUEUE_MAX) {
+    if (g_post_queued < POST_QUEUE_MAX)
+    {
         PostedMessage* slot = &g_post_queue[g_post_queued++];
         slot->msg           = msg;
         slot->wparam        = wparam;
         slot->caller_thread = caller;
-    } else {
+    }
+    else
+    {
         ++g_post_overflow;
     }
     PiPluginTestMutexUnlock(&g_post_mutex);
@@ -129,17 +137,28 @@ static void DrainPostedMessagesOnMainThread(void)
 {
     int i;
     PiPluginTestMutexLock(&g_post_mutex);
-    for (i = 0; i < g_post_queued; ++i) {
-        PostedMessage* m = &g_post_queue[i];
-        unsigned thread_index = (unsigned)(m->wparam / POST_PER_THREAD);
-        unsigned seq          = (unsigned)(m->wparam % POST_PER_THREAD);
+    for (i = 0; i < g_post_queued; ++i)
+    {
+        PostedMessage* m            = &g_post_queue[i];
+        unsigned       thread_index = (unsigned)(m->wparam / POST_PER_THREAD);
+        unsigned       seq          = (unsigned)(m->wparam % POST_PER_THREAD);
 
-        if (CurrentThreadId() != g_post_main_thread) ++g_post_bad_delivery;
-        if (m->msg != 0x4000u + thread_index)       ++g_post_bad_delivery;
-        if (thread_index >= POST_THREADS || seq >= POST_PER_THREAD)
+        if (CurrentThreadId() != g_post_main_thread)
+        {
             ++g_post_bad_delivery;
+        }
+        if (m->msg != 0x4000u + thread_index)
+        {
+            ++g_post_bad_delivery;
+        }
+        if (thread_index >= POST_THREADS || seq >= POST_PER_THREAD)
+        {
+            ++g_post_bad_delivery;
+        }
         else
+        {
             g_post_seen[thread_index][seq] += 1;
+        }
         ++g_post_delivered;
     }
     PiPluginTestMutexUnlock(&g_post_mutex);
@@ -153,15 +172,19 @@ typedef struct PostWorker {
 static void PostWorkerThread(void* user_data)
 {
     PostWorker* w = (PostWorker*)user_data;
-    unsigned i;
+    unsigned    i;
     w->thread_id = CurrentThreadId();
-    for (i = 0; i < POST_PER_THREAD; ++i) {
+    for (i = 0; i < POST_PER_THREAD; ++i)
+    {
         /* wparam 同时编码"哪个线程的第几条"，便于断言不丢不重 */
         pi_plugin_host_post_message(g_post_services,
-                             0x4000u + w->index,
-                             (uintptr_t)(w->index * POST_PER_THREAD + i),
-                             0);
-        if ((i % 16) == 0) PiPluginTestThreadYield();   /* 让线程真的交错 */
+                                    0x4000u + w->index,
+                                    (uintptr_t)(w->index * POST_PER_THREAD + i),
+                                    0);
+        if ((i % 16) == 0)
+        {
+            PiPluginTestThreadYield(); /* 让线程真的交错 */
+        }
     }
 }
 
@@ -169,12 +192,12 @@ static void TestCrossThreadPostMessage(void)
 {
     IPiPluginHostServices* services = NULL;
     PiPluginTestThread     threads[POST_THREADS];
-    PostWorker       workers[POST_THREADS];
-    unsigned         i, t;
-    int              distinct_callers = 0;
-    int              worker_calls     = 0;
-    int              duplicates       = 0;
-    int              total_seen       = 0;
+    PostWorker             workers[POST_THREADS];
+    unsigned               i, t;
+    int                    distinct_callers = 0;
+    int                    worker_calls     = 0;
+    int                    duplicates       = 0;
+    int                    total_seen       = 0;
 
     Section("W-04/1 插件子线程 pi_plugin_host_post_message：宿主 marshal 后主线程收到");
 
@@ -183,23 +206,34 @@ static void TestCrossThreadPostMessage(void)
     memset(g_post_seen, 0, sizeof(g_post_seen));
 
     CHECK_EQ_INT(pi_plugin_host_services_create_default(&HostPostProc, NULL,
-                                                 PI_INVALID_WINDOW, &services), PI_OK);
+                                                        PI_INVALID_WINDOW, &services),
+                 PI_OK);
     CHECK(services != NULL);
-    if (!services) return;
+    if (!services)
+    {
+        return;
+    }
 
     g_post_services = services;
 
-    for (i = 0; i < POST_THREADS; ++i) {
+    for (i = 0; i < POST_THREADS; ++i)
+    {
         memset(&workers[i], 0, sizeof(workers[i]));
         workers[i].index = i;
         CHECK_EQ_INT(PiPluginTestThreadStart(&threads[i], &PostWorkerThread, &workers[i]), 0);
     }
-    for (i = 0; i < POST_THREADS; ++i) PiPluginTestThreadJoin(&threads[i]);
+    for (i = 0; i < POST_THREADS; ++i)
+    {
+        PiPluginTestThreadJoin(&threads[i]);
+    }
 
     /* a) 回调必须真的在**子线程**上被调到：否则"跨线程 post"根本没被测到 */
-    for (i = 0; i < POST_THREADS; ++i) {
+    for (i = 0; i < POST_THREADS; ++i)
+    {
         if (workers[i].thread_id != 0 && workers[i].thread_id != g_post_main_thread)
+        {
             ++distinct_callers;
+        }
     }
     CHECK_EQ_INT(distinct_callers, POST_THREADS);
 
@@ -208,8 +242,12 @@ static void TestCrossThreadPostMessage(void)
     CHECK_EQ_INT(g_post_queued, POST_THREADS * POST_PER_THREAD);
 
     PiPluginTestMutexLock(&g_post_mutex);
-    for (i = 0; i < (unsigned)g_post_queued; ++i) {
-        if (g_post_queue[i].caller_thread != g_post_main_thread) ++worker_calls;
+    for (i = 0; i < (unsigned)g_post_queued; ++i)
+    {
+        if (g_post_queue[i].caller_thread != g_post_main_thread)
+        {
+            ++worker_calls;
+        }
     }
     PiPluginTestMutexUnlock(&g_post_mutex);
     CHECK_EQ_INT(worker_calls, POST_THREADS * POST_PER_THREAD);
@@ -218,9 +256,14 @@ static void TestCrossThreadPostMessage(void)
     DrainPostedMessagesOnMainThread();
     CHECK_EQ_INT(g_post_delivered, POST_THREADS * POST_PER_THREAD);
     CHECK_EQ_INT(g_post_bad_delivery, 0);
-    for (t = 0; t < POST_THREADS; ++t) {
-        for (i = 0; i < POST_PER_THREAD; ++i) {
-            if (g_post_seen[t][i] != 1) ++duplicates;
+    for (t = 0; t < POST_THREADS; ++t)
+    {
+        for (i = 0; i < POST_PER_THREAD; ++i)
+        {
+            if (g_post_seen[t][i] != 1)
+            {
+                ++duplicates;
+            }
             total_seen += g_post_seen[t][i];
         }
     }
@@ -258,9 +301,9 @@ static void TestCrossThreadPostMessage(void)
 #define REF_INC_THREADS 4
 #define REF_INC_ROUNDS  2000
 
-static int          g_ref_destroy_calls = 0;
-static PiPluginTestMutex  g_ref_mutex;
-static volatile int g_ref_go = 0;
+static int               g_ref_destroy_calls = 0;
+static PiPluginTestMutex g_ref_mutex;
+static int volatile g_ref_go = 0;
 
 static void RefCountedDestroy(void* self_ptr)
 {
@@ -271,31 +314,40 @@ static void RefCountedDestroy(void* self_ptr)
     free(self_ptr);
 }
 
-static uint32_t PI_CALL RefTestAddRef(void* self_ptr) { return pi_refcounted_add_ref(self_ptr); }
-static uint32_t PI_CALL RefTestRelease(void* self_ptr) { return pi_refcounted_release(self_ptr); }
+static uint32_t PI_CALL RefTestAddRef(void* self_ptr)
+{
+    return pi_refcounted_add_ref(self_ptr);
+}
+static uint32_t PI_CALL RefTestRelease(void* self_ptr)
+{
+    return pi_refcounted_release(self_ptr);
+}
 
-static const IPiUnknownVtbl s_ref_test_vtbl = {
+static IPiUnknownVtbl const s_ref_test_vtbl = {
     NULL,
     &RefTestAddRef,
-    &RefTestRelease
-};
+    &RefTestRelease};
 
 typedef struct RefWorker {
     PiRefCountedBase* obj;
-    int               use_vtbl;   /* 0 = 帮助函数，1 = vtbl 槽位 */
-    int               released;   /* 只释放一次的那一段用来确认线程真的跑了 */
+    int               use_vtbl; /* 0 = 帮助函数，1 = vtbl 槽位 */
+    int               released; /* 只释放一次的那一段用来确认线程真的跑了 */
 } RefWorker;
 
 /* A 段：成对的 add/release，净效果为零 */
 static void RefPairWorkerThread(void* user_data)
 {
     RefWorker* w = (RefWorker*)user_data;
-    int i;
-    for (i = 0; i < REF_ROUNDS; ++i) {
-        if (w->use_vtbl) {
+    int        i;
+    for (i = 0; i < REF_ROUNDS; ++i)
+    {
+        if (w->use_vtbl)
+        {
             w->obj->unk.lpVtbl->pi_add_ref(w->obj);
             w->obj->unk.lpVtbl->pi_release(w->obj);
-        } else {
+        }
+        else
+        {
             pi_refcounted_add_ref(w->obj);
             pi_refcounted_release(w->obj);
         }
@@ -306,9 +358,18 @@ static void RefPairWorkerThread(void* user_data)
 static void RefReleaseWorkerThread(void* user_data)
 {
     RefWorker* w = (RefWorker*)user_data;
-    while (!g_ref_go) PiPluginTestThreadYield();   /* 一起出发，最大化并发归零的窗口 */
-    if (w->use_vtbl) w->obj->unk.lpVtbl->pi_release(w->obj);
-    else             pi_refcounted_release(w->obj);
+    while (!g_ref_go)
+    {
+        PiPluginTestThreadYield(); /* 一起出发，最大化并发归零的窗口 */
+    }
+    if (w->use_vtbl)
+    {
+        w->obj->unk.lpVtbl->pi_release(w->obj);
+    }
+    else
+    {
+        pi_refcounted_release(w->obj);
+    }
     w->released = 1;
 }
 
@@ -316,42 +377,58 @@ static void RefReleaseWorkerThread(void* user_data)
 static void RefIncWorkerThread(void* user_data)
 {
     RefWorker* w = (RefWorker*)user_data;
-    int i;
-    while (!g_ref_go) PiPluginTestThreadYield();
-    for (i = 0; i < REF_INC_ROUNDS; ++i) {
-        if (w->use_vtbl) w->obj->unk.lpVtbl->pi_add_ref(w->obj);
-        else             pi_refcounted_add_ref(w->obj);
+    int        i;
+    while (!g_ref_go)
+    {
+        PiPluginTestThreadYield();
+    }
+    for (i = 0; i < REF_INC_ROUNDS; ++i)
+    {
+        if (w->use_vtbl)
+        {
+            w->obj->unk.lpVtbl->pi_add_ref(w->obj);
+        }
+        else
+        {
+            pi_refcounted_add_ref(w->obj);
+        }
     }
 }
 
 static void TestConcurrentRefCount(int use_vtbl)
 {
     PiPluginTestThread threads[REF_THREADS];
-    RefWorker    workers[REF_THREADS];
-    unsigned     i;
+    RefWorker          workers[REF_THREADS];
+    unsigned           i;
 
-    Section(use_vtbl ? "W-04/2b 并发 AddRef/Release（vtbl 槽位）"
-                     : "W-04/2a 并发 AddRef/Release（帮助函数）");
+    Section(use_vtbl ? "W-04/2b 并发 AddRef/Release（vtbl 槽位）" : "W-04/2a 并发 AddRef/Release（帮助函数）");
 
     /* --- A 段：成对操作，计数必须回到基数、对象必须还活着 --- */
     {
         PiRefCountedBase* obj = (PiRefCountedBase*)calloc(1, sizeof(PiRefCountedBase));
         CHECK(obj != NULL);
-        if (!obj) return;
+        if (!obj)
+        {
+            return;
+        }
 
         g_ref_destroy_calls = 0;
         pi_refcounted_init_with_destroy(obj, &s_ref_test_vtbl, &RefCountedDestroy);
 
-        for (i = 0; i < REF_THREADS; ++i) {
+        for (i = 0; i < REF_THREADS; ++i)
+        {
             workers[i].obj      = obj;
             workers[i].use_vtbl = use_vtbl;
             workers[i].released = 0;
             CHECK_EQ_INT(PiPluginTestThreadStart(&threads[i], &RefPairWorkerThread, &workers[i]), 0);
         }
-        for (i = 0; i < REF_THREADS; ++i) PiPluginTestThreadJoin(&threads[i]);
+        for (i = 0; i < REF_THREADS; ++i)
+        {
+            PiPluginTestThreadJoin(&threads[i]);
+        }
 
-        CHECK_EQ_INT(obj->ref_count, 1);          /* 成对操作后回到基数 */
-        CHECK_EQ_INT(g_ref_destroy_calls, 0);     /* 还没释放，绝不能销毁 */
+        CHECK_EQ_INT(obj->ref_count, 1);      /* 成对操作后回到基数 */
+        CHECK_EQ_INT(g_ref_destroy_calls, 0); /* 还没释放，绝不能销毁 */
 
         /* 主线程收尾：释放基数 -> 恰好销毁一次 */
         CHECK_EQ_INT(pi_refcounted_release(obj), 0);
@@ -362,7 +439,10 @@ static void TestConcurrentRefCount(int use_vtbl)
     {
         PiRefCountedBase* obj = (PiRefCountedBase*)calloc(1, sizeof(PiRefCountedBase));
         CHECK(obj != NULL);
-        if (!obj) return;
+        if (!obj)
+        {
+            return;
+        }
 
         g_ref_destroy_calls = 0;
         g_ref_go            = 0;
@@ -370,10 +450,14 @@ static void TestConcurrentRefCount(int use_vtbl)
 
         /* init 之后是 1 份；再加 REF_THREADS-1 份 -> 恰好 REF_THREADS 份，
          * 这样每条线程各放一份就会在并发里归零（不留"主线程最后放"的余地）。 */
-        for (i = 1; i < REF_THREADS; ++i) pi_refcounted_add_ref(obj);
+        for (i = 1; i < REF_THREADS; ++i)
+        {
+            pi_refcounted_add_ref(obj);
+        }
         CHECK_EQ_INT(obj->ref_count, REF_THREADS);
 
-        for (i = 0; i < REF_THREADS; ++i) {
+        for (i = 0; i < REF_THREADS; ++i)
+        {
             workers[i].obj      = obj;
             workers[i].use_vtbl = use_vtbl;
             workers[i].released = 0;
@@ -381,27 +465,36 @@ static void TestConcurrentRefCount(int use_vtbl)
         }
         PiPluginTestThreadYield();
         g_ref_go = 1;
-        for (i = 0; i < REF_THREADS; ++i) PiPluginTestThreadJoin(&threads[i]);
+        for (i = 0; i < REF_THREADS; ++i)
+        {
+            PiPluginTestThreadJoin(&threads[i]);
+        }
 
         for (i = 0; i < REF_THREADS; ++i)
-            CHECK_EQ_INT(workers[i].released, 1);      /* 四条线程都真的跑了 */
-        CHECK_EQ_INT(g_ref_destroy_calls, 1);          /* 恰好销毁一次 */
+        {
+            CHECK_EQ_INT(workers[i].released, 1); /* 四条线程都真的跑了 */
+        }
+        CHECK_EQ_INT(g_ref_destroy_calls, 1); /* 恰好销毁一次 */
         /* 注意：此时 obj 已被 destroy 释放，后面不许再碰它 */
     }
 
     /* --- C 段：只加不减的丢更新探测（非原子实现必然在这里露馅） --- */
     {
-        PiRefCountedBase* obj = (PiRefCountedBase*)calloc(1, sizeof(PiRefCountedBase));
-        uint32_t expected = 1u + (uint32_t)REF_INC_THREADS * (uint32_t)REF_INC_ROUNDS;
-        uint32_t remaining;
+        PiRefCountedBase* obj      = (PiRefCountedBase*)calloc(1, sizeof(PiRefCountedBase));
+        uint32_t          expected = 1u + (uint32_t)REF_INC_THREADS * (uint32_t)REF_INC_ROUNDS;
+        uint32_t          remaining;
         CHECK(obj != NULL);
-        if (!obj) return;
+        if (!obj)
+        {
+            return;
+        }
 
         g_ref_destroy_calls = 0;
         g_ref_go            = 0;
         pi_refcounted_init_with_destroy(obj, &s_ref_test_vtbl, &RefCountedDestroy);
 
-        for (i = 0; i < REF_INC_THREADS; ++i) {
+        for (i = 0; i < REF_INC_THREADS; ++i)
+        {
             workers[i].obj      = obj;
             workers[i].use_vtbl = use_vtbl;
             workers[i].released = 0;
@@ -409,15 +502,21 @@ static void TestConcurrentRefCount(int use_vtbl)
         }
         PiPluginTestThreadYield();
         g_ref_go = 1;
-        for (i = 0; i < REF_INC_THREADS; ++i) PiPluginTestThreadJoin(&threads[i]);
+        for (i = 0; i < REF_INC_THREADS; ++i)
+        {
+            PiPluginTestThreadJoin(&threads[i]);
+        }
 
-        CHECK_EQ_INT(obj->ref_count, expected);   /* 分毫不差 —— 丢一次就少一份 */
+        CHECK_EQ_INT(obj->ref_count, expected); /* 分毫不差 —— 丢一次就少一份 */
         CHECK_EQ_INT(g_ref_destroy_calls, 0);
 
         /* 按**实际**计数收尾（断言已失败时也不能制造下溢），最后一个必须恰好
          * 触发一次 destroy */
         remaining = obj->ref_count;
-        while (remaining > 0) remaining = pi_refcounted_release(obj);
+        while (remaining > 0)
+        {
+            remaining = pi_refcounted_release(obj);
+        }
         CHECK_EQ_INT(g_ref_destroy_calls, 1);
     }
 }
@@ -435,7 +534,8 @@ int main(void)
     PiPluginTestMutexDestroy(&g_ref_mutex);
 
     printf("== checks=%u failures=%u ==\n", g_checks, g_failures);
-    if (g_failures != 0) {
+    if (g_failures != 0)
+    {
         printf("RESULT: FAIL\n");
         return 1;
     }

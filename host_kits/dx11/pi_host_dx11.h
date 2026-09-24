@@ -30,10 +30,10 @@
 #ifndef PI_PLUGIN_HOST_DX11_H
 #define PI_PLUGIN_HOST_DX11_H
 
-#include "piplugin/pi_plugin.h"
-
 #include <d3d11.h>
 #include <dxgi.h>
+
+#include "piplugin/pi_plugin.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -43,7 +43,7 @@ typedef struct PiPluginHostDx11Device PiPluginHostDx11Device;
 
 /* 日志回调：本层把交换链创建与 resize 的关键事实经此上报，去向由宿主决定
  * （测试宿主写文件，脚本按日志模式断言）。 */
-typedef void (*PiPluginHostDx11LogProc)(void* user_data, const char* message);
+typedef void (*PiPluginHostDx11LogProc)(void* user_data, char const* message);
 
 typedef struct PiPluginHostDx11Desc {
     /* 窗口大于后台缓冲时（只增不减策略下可能有一帧如此）露出的填充色。
@@ -52,7 +52,7 @@ typedef struct PiPluginHostDx11Desc {
 
     /* 可空：创建过程中的日志（含 SCALING_NONE 降级）走这里 */
     PiPluginHostDx11LogProc log;
-    void*             log_user_data;
+    void*                   log_user_data;
 } PiPluginHostDx11Desc;
 
 /* --------------------------------------------------------------------------
@@ -61,8 +61,8 @@ typedef struct PiPluginHostDx11Desc {
 
 /* 为宿主自己的窗口 hwnd 创建"可嵌入子窗口"的 D3D11 设备 + flip-model 交换链。
  * 失败时 *out_device 为 NULL。 */
-PiResult pi_plugin_host_dx11_create(PiNativeWindow hwnd, const PiPluginHostDx11Desc* desc,
-                             PiPluginHostDx11Device** out_device);
+PiResult pi_plugin_host_dx11_create(PiNativeWindow hwnd, PiPluginHostDx11Desc const* desc,
+                                    PiPluginHostDx11Device** out_device);
 
 /* 释放设备 / 交换链 / 渲染目标 / 等待对象。NULL 安全。 */
 void pi_plugin_host_dx11_destroy(PiPluginHostDx11Device* dx);
@@ -77,7 +77,7 @@ ID3D11RenderTargetView* pi_plugin_host_dx11_render_target(PiPluginHostDx11Device
 
 /* 实际拿到的呈现模型（诊断用）。present_model 形如
  * "FLIP_DISCARD+latency+scale:none" / "...scale:stretch" / "DISCARD(bitblt)"。 */
-const char* pi_plugin_host_dx11_present_model(PiPluginHostDx11Device* dx);
+char const* pi_plugin_host_dx11_present_model(PiPluginHostDx11Device* dx);
 int         pi_plugin_host_dx11_is_flip_model(PiPluginHostDx11Device* dx);
 int         pi_plugin_host_dx11_has_scaling_none(PiPluginHostDx11Device* dx);
 
@@ -110,7 +110,7 @@ unsigned long pi_plugin_host_dx11_top_level_style(void);
  * WS_CLIPCHILDREN|WS_CLIPSIBLINGS）。位置与大小完全由宿主给定。
  * 失败返回 PI_INVALID_WINDOW。 */
 PiNativeWindow pi_plugin_host_dx11_create_embed_container(PiNativeWindow parent,
-                                                   int x, int y, int width, int height);
+                                                          int x, int y, int width, int height);
 
 #ifdef __cplusplus
 }

@@ -8,9 +8,15 @@
 
 extern "C" __declspec(dllexport) PiResult pi_plugin_entry(IPiPluginFactory** out_factory)
 {
-    if (!out_factory) return PI_E_INVALIDARG;
+    if (!out_factory)
+    {
+        return PI_E_INVALIDARG;
+    }
     QtPluginFactory* factory = new QtPluginFactory();
-    if (!factory) return PI_E_OUTOFMEMORY;
+    if (!factory)
+    {
+        return PI_E_OUTOFMEMORY;
+    }
     *out_factory = (IPiPluginFactory*)&factory->m_base;
     return PI_OK;
 }

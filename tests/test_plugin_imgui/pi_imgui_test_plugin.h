@@ -15,7 +15,8 @@
  * 现在框架头里有了，就不再各写一份。 */
 #include "piplugin/pi_cpp.h"
 
-class ImGuiPlugin {
+class ImGuiPlugin
+{
 public:
     friend class ImGuiPluginFactory;
 
@@ -25,7 +26,7 @@ public:
     PiResult Initialize(IPiPluginHostServices* host);
     PiResult Terminate();
 
-    static PiResult PI_CALL Qi_PluginBase(void* self_ptr, const PiGuid* iid, void** out);
+    static PiResult PI_CALL Qi_PluginBase(void* self_ptr, PiGuid const* iid, void** out);
     static PiResult PI_CALL Init(void* self_ptr, IPiPluginHostServices* host);
     static PiResult PI_CALL Term(void* self_ptr);
     static PiResult PI_CALL GetView(void* self_ptr, IPiPluginView** out);
@@ -39,36 +40,37 @@ public:
 private:
     static void Destroy(void* self_ptr) { delete static_cast<ImGuiPlugin*>(self_ptr); }
 
-    PiRefCountedBase m_base;          /* MUST be first data member */
-    static const IPiPluginBaseVtbl s_base_vtbl;
+    PiRefCountedBase               m_base; /* MUST be first data member */
+    static IPiPluginBaseVtbl const s_base_vtbl;
 
-    PiPluginPtr<IPiPluginHostServices> m_host;    /* 借用入参 -> 自己 add-ref，析构自动 release */
-    PiPluginPtr<IPiPluginHostUI>       m_hostUI;  /* headless 宿主上为空句柄 */
+    PiPluginPtr<IPiPluginHostServices> m_host;   /* 借用入参 -> 自己 add-ref，析构自动 release */
+    PiPluginPtr<IPiPluginHostUI>       m_hostUI; /* headless 宿主上为空句柄 */
 };
 
-class ImGuiPluginFactory {
+class ImGuiPluginFactory
+{
 public:
     ImGuiPluginFactory();
 
     static uint32_t PI_CALL AddRef(void* self_ptr);
     static uint32_t PI_CALL Release(void* self_ptr);
-    static PiResult PI_CALL Qi_Factory(void* self_ptr, const PiGuid* iid, void** out);
+    static PiResult PI_CALL Qi_Factory(void* self_ptr, PiGuid const* iid, void** out);
 
-    static const PiPluginDescriptor* PI_CALL GetDescriptor(void* self_ptr);
-    static uint32_t PI_CALL GetClassCount(void* self_ptr);
-    static PiResult PI_CALL GetClassGuid(void* self_ptr, uint32_t index, PiGuid* guid);
-    static PiResult PI_CALL CreateInstance(void* self_ptr,
-                                            const PiGuid* guid,
-                                            IPiPluginHostServices* host,
-                                            IPiPluginBase** out);
+    static PiPluginDescriptor const* PI_CALL GetDescriptor(void* self_ptr);
+    static uint32_t PI_CALL                  GetClassCount(void* self_ptr);
+    static PiResult PI_CALL                  GetClassGuid(void* self_ptr, uint32_t index, PiGuid* guid);
+    static PiResult PI_CALL                  CreateInstance(void*                  self_ptr,
+                                                            PiGuid const*          guid,
+                                                            IPiPluginHostServices* host,
+                                                            IPiPluginBase**        out);
 
-    static const IPiPluginFactoryVtbl s_factory_vtbl;
-    PiRefCountedBase m_base;          /* MUST be first data member */
+    static IPiPluginFactoryVtbl const s_factory_vtbl;
+    PiRefCountedBase                  m_base; /* MUST be first data member */
 
 private:
     PiPluginDescriptor m_descriptor;
     PiPluginCapability m_capabilities[2];
-    PiPluginProperty   m_properties[3];   /* APP-04：自由元数据（含变体标记） */
+    PiPluginProperty   m_properties[3]; /* APP-04：自由元数据（含变体标记） */
 };
 
 #endif /* PI_PLUGIN_IMGUI_TEST_PLUGIN_H */

@@ -22,9 +22,8 @@
 #define PI_PLUGIN_TYPES_H
 
 #include <pibase/pi_base.h>
-
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -38,9 +37,9 @@ extern "C" {
  * knows whether it is being built or consumed.
  * -------------------------------------------------------------------------- */
 #ifdef PI_PLUGIN_BUILDING
-#  define PI_PLUGIN_API PI_EXPORT
+    #define PI_PLUGIN_API PI_EXPORT
 #else
-#  define PI_PLUGIN_API PI_IMPORT
+    #define PI_PLUGIN_API PI_IMPORT
 #endif
 
 /* --------------------------------------------------------------------------
@@ -49,12 +48,12 @@ extern "C" {
  * IPiUnknown is deliberately absent: it is family vocabulary and comes from
  * pibase, which also defines PI_IID_UNKNOWN.
  * -------------------------------------------------------------------------- */
-typedef struct IPiPluginHostServices  IPiPluginHostServices;
-typedef struct IPiPluginHostUI        IPiPluginHostUI;
-typedef struct IPiPluginFactory IPiPluginFactory;
-typedef struct IPiPluginBase    IPiPluginBase;
-typedef struct IPiPluginView    IPiPluginView;
-typedef struct IPiPluginService       IPiPluginService;
+typedef struct IPiPluginHostServices IPiPluginHostServices;
+typedef struct IPiPluginHostUI       IPiPluginHostUI;
+typedef struct IPiPluginFactory      IPiPluginFactory;
+typedef struct IPiPluginBase         IPiPluginBase;
+typedef struct IPiPluginView         IPiPluginView;
+typedef struct IPiPluginService      IPiPluginService;
 
 /* --------------------------------------------------------------------------
  * Capability declaration (LV2-style feature negotiation)
@@ -68,13 +67,13 @@ typedef struct IPiPluginService       IPiPluginService;
  * headless task server only instantiates plugins that PROVIDE PI_PLUGIN_IID_SERVICE,
  * and skips (or rejects) plugins that REQUIRE PI_PLUGIN_IID_HOST_UI.
  * -------------------------------------------------------------------------- */
-#define PI_PLUGIN_CAP_REQUIRED  ((uint32_t)1)  /* host must provide, else init fails */
-#define PI_PLUGIN_CAP_OPTIONAL  ((uint32_t)2)  /* plugin uses it if the host has it  */
-#define PI_PLUGIN_CAP_PROVIDES  ((uint32_t)4)  /* plugin implements this interface   */
+#define PI_PLUGIN_CAP_REQUIRED ((uint32_t)1) /* host must provide, else init fails */
+#define PI_PLUGIN_CAP_OPTIONAL ((uint32_t)2) /* plugin uses it if the host has it  */
+#define PI_PLUGIN_CAP_PROVIDES ((uint32_t)4) /* plugin implements this interface   */
 
 typedef struct PiPluginCapability {
-    PiGuid   iid;    /* capability / interface GUID */
-    uint32_t flags;  /* combination of PI_CAP_* */
+    PiGuid   iid;   /* capability / interface GUID */
+    uint32_t flags; /* combination of PI_CAP_* */
 } PiPluginCapability;
 
 /* --------------------------------------------------------------------------
@@ -91,22 +90,22 @@ typedef struct PiPluginCapability {
  * byte-for-byte (case-sensitive).
  * -------------------------------------------------------------------------- */
 typedef struct PiPluginProperty {
-    const char* key;    /* UTF-8, NUL-terminated, non-NULL */
-    const char* value;  /* UTF-8, NUL-terminated, non-NULL */
+    char const* key;   /* UTF-8, NUL-terminated, non-NULL */
+    char const* value; /* UTF-8, NUL-terminated, non-NULL */
 } PiPluginProperty;
 
 /* --------------------------------------------------------------------------
  * Plugin descriptor returned by the shared library entry point
  * -------------------------------------------------------------------------- */
 typedef struct PiPluginDescriptor {
-    const char* name;        /* Human-readable plugin name */
-    const char* vendor;      /* Plugin vendor/author */
-    const char* version;     /* Semantic version string, e.g. "1.0.0" */
-    const char* category;    /* Plugin category */
+    char const* name;        /* Human-readable plugin name */
+    char const* vendor;      /* Plugin vendor/author */
+    char const* version;     /* Semantic version string, e.g. "1.0.0" */
+    char const* category;    /* Plugin category */
     uint32_t    api_version; /* piplugin API version used */
 
     /* Capability declaration list (may be NULL if capability_count == 0) */
-    const PiPluginCapability* capabilities;
+    PiPluginCapability const* capabilities;
     uint32_t                  capability_count;
 
     /* Free-form metadata (may be NULL if property_count == 0).
@@ -116,8 +115,8 @@ typedef struct PiPluginDescriptor {
      * so a module compiled against 0.2 and loaded by a 0.3 host would read
      * garbage here. The api_version gate is what keeps that from happening:
      * plugins and hosts must be rebuilt together across an x release. */
-    const PiPluginProperty*   properties;
-    uint32_t                  property_count;
+    PiPluginProperty const* properties;
+    uint32_t                property_count;
 } PiPluginDescriptor;
 
 /* --------------------------------------------------------------------------
@@ -141,26 +140,29 @@ typedef struct PiPluginDescriptor {
  * -------------------------------------------------------------------------- */
 static inline void pi_plugin_descriptor_init(PiPluginDescriptor* desc)
 {
-    if (!desc) return;
-    desc->name = NULL;
-    desc->vendor = NULL;
-    desc->version = NULL;
-    desc->category = NULL;
-    desc->api_version = 0;
-    desc->capabilities = NULL;
+    if (!desc)
+    {
+        return;
+    }
+    desc->name             = NULL;
+    desc->vendor           = NULL;
+    desc->version          = NULL;
+    desc->category         = NULL;
+    desc->api_version      = 0;
+    desc->capabilities     = NULL;
     desc->capability_count = 0;
-    desc->properties = NULL;
-    desc->property_count = 0;
+    desc->properties       = NULL;
+    desc->property_count   = 0;
 }
 
 /* Check whether the descriptor declares capability `iid` with the wanted
  * flags. Returns the matching entry, or NULL. */
 PI_PLUGIN_API const PiPluginCapability* pi_plugin_descriptor_find_capability(
-    const PiPluginDescriptor* desc, const PiGuid* iid);
+    PiPluginDescriptor const* desc, PiGuid const* iid);
 
 /* Convenience: does the plugin provide / require the given capability? */
-PI_PLUGIN_API int pi_plugin_descriptor_provides(const PiPluginDescriptor* desc, const PiGuid* iid);
-PI_PLUGIN_API int pi_plugin_descriptor_requires(const PiPluginDescriptor* desc, const PiGuid* iid);
+PI_PLUGIN_API int pi_plugin_descriptor_provides(PiPluginDescriptor const* desc, PiGuid const* iid);
+PI_PLUGIN_API int pi_plugin_descriptor_requires(PiPluginDescriptor const* desc, PiGuid const* iid);
 
 /* Value of the descriptor property `key`, or NULL when the plugin declares no
  * such property. NULL-safe for every argument (desc, its properties array, the
@@ -172,8 +174,8 @@ PI_PLUGIN_API int pi_plugin_descriptor_requires(const PiPluginDescriptor* desc, 
  * version gate accepts older plugins (same major), so the layout has to be
  * decided here rather than assumed. A pre-0.3 plugin therefore reports "no
  * properties" - which is the truth - instead of handing out garbage. */
-PI_PLUGIN_API const char* pi_plugin_descriptor_find_property(const PiPluginDescriptor* desc,
-                                                  const char* key);
+PI_PLUGIN_API const char* pi_plugin_descriptor_find_property(PiPluginDescriptor const* desc,
+                                                             char const*               key);
 
 /* --------------------------------------------------------------------------
  * API 版本与协商
@@ -225,9 +227,9 @@ typedef PiResult (*PiPluginEntryProc)(IPiPluginFactory** out_factory);
  * 非 PI_PLUGIN_BUILDING 的翻译单元里展开成 dllimport，直接拿它去**定义**
  * 入口会编译失败（"definition of dllimport function not allowed"）。 */
 #if PI_PLATFORM_WINDOWS
-#  define PI_PLUGIN_ENTRY_EXPORT __declspec(dllexport)
+    #define PI_PLUGIN_ENTRY_EXPORT __declspec(dllexport)
 #else
-#  define PI_PLUGIN_ENTRY_EXPORT __attribute__((visibility("default")))
+    #define PI_PLUGIN_ENTRY_EXPORT __attribute__((visibility("default")))
 #endif
 
 #define PI_PLUGIN_ENTRY_NAME "pi_plugin_entry"
@@ -237,9 +239,9 @@ typedef PiResult (*PiPluginEntryProc)(IPiPluginFactory** out_factory);
  * C 里写 extern "C" 不合法，所以按语言条件展开 —— 也就是说，用这个宏的 C++ 插件
  * 不需要自己再写 extern "C"。 */
 #ifdef __cplusplus
-#  define PI_PLUGIN_ENTRY_LINKAGE extern "C"
+    #define PI_PLUGIN_ENTRY_LINKAGE extern "C"
 #else
-#  define PI_PLUGIN_ENTRY_LINKAGE
+    #define PI_PLUGIN_ENTRY_LINKAGE
 #endif
 
 /* 在插件里定义入口就用这个宏：
@@ -279,15 +281,15 @@ typedef PiResult (*PiPluginEntryProc)(IPiPluginFactory** out_factory);
  * PI_IID_UNKNOWN 不在这里：它标识根接口 IPiUnknown，属家族根词汇，由基础层
  * 与 IPiUnknown 一起提供（见 <pibase/pi_base.h>）。
  * -------------------------------------------------------------------------- */
-extern PI_PLUGIN_API const PiGuid PI_PLUGIN_IID_HOST_SERVICES;   /* IPiPluginHostServices   */
-extern PI_PLUGIN_API const PiGuid PI_PLUGIN_IID_HOST_UI;         /* IPiPluginHostUI         */
-extern PI_PLUGIN_API const PiGuid PI_PLUGIN_IID_PLUGIN_FACTORY;  /* IPiPluginFactory  */
-extern PI_PLUGIN_API const PiGuid PI_PLUGIN_IID_PLUGIN_BASE;     /* IPiPluginBase     */
-extern PI_PLUGIN_API const PiGuid PI_PLUGIN_IID_PLUGIN_VIEW;     /* IPiPluginView     */
-extern PI_PLUGIN_API const PiGuid PI_PLUGIN_IID_SERVICE;         /* IPiPluginService        */
+extern PI_PLUGIN_API const PiGuid PI_PLUGIN_IID_HOST_SERVICES;  /* IPiPluginHostServices   */
+extern PI_PLUGIN_API const PiGuid PI_PLUGIN_IID_HOST_UI;        /* IPiPluginHostUI         */
+extern PI_PLUGIN_API const PiGuid PI_PLUGIN_IID_PLUGIN_FACTORY; /* IPiPluginFactory  */
+extern PI_PLUGIN_API const PiGuid PI_PLUGIN_IID_PLUGIN_BASE;    /* IPiPluginBase     */
+extern PI_PLUGIN_API const PiGuid PI_PLUGIN_IID_PLUGIN_VIEW;    /* IPiPluginView     */
+extern PI_PLUGIN_API const PiGuid PI_PLUGIN_IID_SERVICE;        /* IPiPluginService        */
 /* 0.4 additions (roadmap APP-06, channel C) - interfaces first, nothing changed */
-extern PI_PLUGIN_API const PiGuid PI_PLUGIN_IID_EVENT_SINK;      /* IPiPluginEventSink      */
-extern PI_PLUGIN_API const PiGuid PI_PLUGIN_IID_HOST_EVENTS;     /* IPiPluginHostEvents     */
+extern PI_PLUGIN_API const PiGuid PI_PLUGIN_IID_EVENT_SINK;  /* IPiPluginEventSink      */
+extern PI_PLUGIN_API const PiGuid PI_PLUGIN_IID_HOST_EVENTS; /* IPiPluginHostEvents     */
 
 #ifdef __cplusplus
 }

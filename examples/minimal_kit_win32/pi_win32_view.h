@@ -28,7 +28,7 @@
 #include "piplugin/pi_plugin.h"
 
 #if !defined(_WIN32) && !defined(_WIN64)
-#  error "the Win32 example kit is Windows-only (that is the point: no toolkit)"
+    #error "the Win32 example kit is Windows-only (that is the point: no toolkit)"
 #endif
 
 #ifdef __cplusplus
@@ -44,15 +44,15 @@ typedef void (*PiPluginWin32RetainProc)(void* user_data);
 typedef void (*PiPluginWin32ReleaseProc)(void* user_data);
 
 typedef struct PiPluginWin32ViewDesc {
-    PiPluginWin32PaintProc   paint;      /* required */
-    PiPluginWin32RetainProc  retain;     /* optional */
-    PiPluginWin32ReleaseProc release;    /* optional */
-    void*              user_data;  /* passed to every callback */
+    PiPluginWin32PaintProc   paint;     /* required */
+    PiPluginWin32RetainProc  retain;    /* optional */
+    PiPluginWin32ReleaseProc release;   /* optional */
+    void*                    user_data; /* passed to every callback */
 } PiPluginWin32ViewDesc;
 
 /* Create an IPiPluginView backed by a plain Win32 child window. Refcount 1.
  * Nothing is created until the host calls pi_plugin_attach(parent). */
-PiResult pi_plugin_win32_view_create(const PiPluginWin32ViewDesc* desc, IPiPluginView** out_view);
+PiResult pi_plugin_win32_view_create(PiPluginWin32ViewDesc const* desc, IPiPluginView** out_view);
 
 /* Destroy every live view of this kit AND flush its window class. Idempotent.
  * Call it from the plugin's pi_plugin_terminate(): the window class and the WndProc

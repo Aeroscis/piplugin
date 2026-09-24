@@ -41,26 +41,32 @@ typedef struct IMyAppJobQueueVtbl {
     IPiUnknownVtbl base;
 
     /* Accept a job. Returns PI_OK and *out_job_id >= 0, or a failure code. */
-    PiResult (PI_CALL *submit_job)(void* this_ptr, const char* job_name, int32_t* out_job_id);
+    PiResult(PI_CALL* submit_job)(void* this_ptr, char const* job_name, int32_t* out_job_id);
 
     /* How many jobs have been submitted so far. */
-    PiResult (PI_CALL *job_count)(void* this_ptr, uint32_t* out_count);
+    PiResult(PI_CALL* job_count)(void* this_ptr, uint32_t* out_count);
 } IMyAppJobQueueVtbl;
 
 typedef struct IMyAppJobQueue {
-    const IMyAppJobQueueVtbl* lpVtbl;
+    IMyAppJobQueueVtbl const* lpVtbl;
 } IMyAppJobQueue;
 
-static inline PiResult my_app_submit_job(IMyAppJobQueue* self, const char* job_name,
+static inline PiResult my_app_submit_job(IMyAppJobQueue* self, char const* job_name,
                                          int32_t* out_job_id)
 {
-    if (!self || !self->lpVtbl || !self->lpVtbl->submit_job) return PI_E_NOINTERFACE;
+    if (!self || !self->lpVtbl || !self->lpVtbl->submit_job)
+    {
+        return PI_E_NOINTERFACE;
+    }
     return self->lpVtbl->submit_job((void*)self, job_name, out_job_id);
 }
 
 static inline PiResult my_app_job_count(IMyAppJobQueue* self, uint32_t* out_count)
 {
-    if (!self || !self->lpVtbl || !self->lpVtbl->job_count) return PI_E_NOINTERFACE;
+    if (!self || !self->lpVtbl || !self->lpVtbl->job_count)
+    {
+        return PI_E_NOINTERFACE;
+    }
     return self->lpVtbl->job_count((void*)self, out_count);
 }
 
@@ -79,25 +85,31 @@ typedef struct IMyAppInfoVtbl {
     IPiUnknownVtbl base;
 
     /* The application's name, borrowed (lives as long as the app's object). */
-    const char* (PI_CALL *app_name)(void* this_ptr);
+    char const*(PI_CALL* app_name)(void* this_ptr);
 
     /* How many plugins the app has loaded right now. */
-    uint32_t (PI_CALL *loaded_plugins)(void* this_ptr);
+    uint32_t(PI_CALL* loaded_plugins)(void* this_ptr);
 } IMyAppInfoVtbl;
 
 typedef struct IMyAppInfo {
-    const IMyAppInfoVtbl* lpVtbl;
+    IMyAppInfoVtbl const* lpVtbl;
 } IMyAppInfo;
 
-static inline const char* my_app_name(IMyAppInfo* self)
+static inline char const* my_app_name(IMyAppInfo* self)
 {
-    if (!self || !self->lpVtbl || !self->lpVtbl->app_name) return NULL;
+    if (!self || !self->lpVtbl || !self->lpVtbl->app_name)
+    {
+        return NULL;
+    }
     return self->lpVtbl->app_name((void*)self);
 }
 
 static inline uint32_t my_app_loaded_plugins(IMyAppInfo* self)
 {
-    if (!self || !self->lpVtbl || !self->lpVtbl->loaded_plugins) return 0;
+    if (!self || !self->lpVtbl || !self->lpVtbl->loaded_plugins)
+    {
+        return 0;
+    }
     return self->lpVtbl->loaded_plugins((void*)self);
 }
 

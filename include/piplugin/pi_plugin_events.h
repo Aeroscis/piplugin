@@ -68,8 +68,8 @@
 #ifndef PI_PLUGIN_EVENTS_H
 #define PI_PLUGIN_EVENTS_H
 
-#include "pi_plugin_types.h"
 #include <pibase/pi_base.h>
+
 #include "pi_plugin_types.h"
 
 #ifdef __cplusplus
@@ -84,16 +84,16 @@ extern "C" {
  * and are orthogonal to `topic`, which is the app's vocabulary (open). A host
  * may use them to route without understanding app topics at all - e.g. "REQUESTS
  * go to whoever owns the resource, NOTIFYs are broadcast" - or ignore them. */
-#define PI_PLUGIN_EVENT_NOTIFY          ((uint32_t)0x00000001u)  /* something happened  */
-#define PI_PLUGIN_EVENT_REQUEST         ((uint32_t)0x00000002u)  /* please do something */
+#define PI_PLUGIN_EVENT_NOTIFY  ((uint32_t)0x00000001u) /* something happened  */
+#define PI_PLUGIN_EVENT_REQUEST ((uint32_t)0x00000002u) /* please do something */
 
 /* Kinds at or above this value belong to apps and plugins (same rule as the
  * message codes in pi_plugin_types.h). */
-#define PI_PLUGIN_EVENT_APP_TYPE_MIN    ((uint32_t)0x80000000u)
+#define PI_PLUGIN_EVENT_APP_TYPE_MIN ((uint32_t)0x80000000u)
 
 /* Longest topic the framework will look at, including the terminator. Topics are
  * meant to be short names; a host may reject longer ones. */
-#define PI_PLUGIN_EVENT_TOPIC_MAX       128u
+#define PI_PLUGIN_EVENT_TOPIC_MAX 128u
 
 /* Prefix reserved for framework-defined topics; apps must not publish these. */
 #define PI_PLUGIN_EVENT_TOPIC_RESERVED_PREFIX "pi."
@@ -102,11 +102,11 @@ extern "C" {
 #define PI_PLUGIN_EVENT_INVALID_SUBSCRIPTION ((uint32_t)0u)
 
 typedef struct PiPluginEvent {
-    uint32_t                 type;          /* PI_EVENT_* or >= APP_TYPE_MIN */
-    const char*              topic;         /* UTF-8, non-NULL, non-empty      */
-    const PiPluginProperty*  payload;       /* may be NULL (with count 0)      */
-    uint32_t                 payload_count;
-    const PiGuid*            origin;        /* set by the host; may be NULL    */
+    uint32_t                type;    /* PI_EVENT_* or >= APP_TYPE_MIN */
+    char const*             topic;   /* UTF-8, non-NULL, non-empty      */
+    PiPluginProperty const* payload; /* may be NULL (with count 0)      */
+    uint32_t                payload_count;
+    PiGuid const*           origin; /* set by the host; may be NULL    */
 } PiPluginEvent;
 
 /* --------------------------------------------------------------------------
@@ -129,15 +129,19 @@ typedef struct IPiPluginEventSinkVtbl {
      * `event` is borrowed for the duration of the call. Do not keep it, do not
      * release anything, and do not block for long - this runs on the host's
      * thread. */
-    PiResult (PI_CALL *pi_plugin_event_deliver)(void* this_ptr, const PiPluginEvent* event);
+    PiResult(PI_CALL* pi_plugin_event_deliver)(void* this_ptr, PiPluginEvent const* event);
 } IPiPluginEventSinkVtbl;
 
 typedef struct IPiPluginEventSink {
-    const IPiPluginEventSinkVtbl* lpVtbl;
+    IPiPluginEventSinkVtbl const* lpVtbl;
 } IPiPluginEventSink;
 
-static inline PiResult pi_plugin_event_deliver(IPiPluginEventSink* self, const PiPluginEvent* event) {
-    if (!self || !self->lpVtbl || !self->lpVtbl->pi_plugin_event_deliver) return PI_E_NOINTERFACE;
+static inline PiResult pi_plugin_event_deliver(IPiPluginEventSink* self, PiPluginEvent const* event)
+{
+    if (!self || !self->lpVtbl || !self->lpVtbl->pi_plugin_event_deliver)
+    {
+        return PI_E_NOINTERFACE;
+    }
     return self->lpVtbl->pi_plugin_event_deliver((void*)self, event);
 }
 
@@ -147,7 +151,7 @@ static inline PiResult pi_plugin_event_deliver(IPiPluginEventSink* self, const P
 
 /* Subscription callback. Runs on the host's main thread, with the event borrowed
  * for the duration of the call. `user_data` is what subscribe() was given. */
-typedef void (*PiPluginEventCallback)(void* user_data, const PiPluginEvent* event);
+typedef void (*PiPluginEventCallback)(void* user_data, PiPluginEvent const* event);
 
 typedef struct IPiPluginHostEventsVtbl {
     IPiUnknownVtbl base;
@@ -158,7 +162,7 @@ typedef struct IPiPluginHostEventsVtbl {
      * Returns PI_OK when the event was accepted, PI_E_INVALIDARG when event or
      * topic is NULL/empty, or PI_E_NOTIMPL if this host does not carry events.
      * PI_OK does NOT mean "delivered": a host may drop events it cannot queue. */
-    PiResult (PI_CALL *pi_plugin_host_events_publish)(void* this_ptr, const PiPluginEvent* event);
+    PiResult(PI_CALL* pi_plugin_host_events_publish)(void* this_ptr, PiPluginEvent const* event);
 
     /* Subscribe to one topic (host main thread). `topic` is copied by the host.
      *
@@ -172,50 +176,69 @@ typedef struct IPiPluginHostEventsVtbl {
      * PI_E_INVALIDARG (NULL topic/callback/handle) or PI_E_OUTOFMEMORY. A host
      * that cannot track owners must return PI_E_NOTIMPL rather than accept a
      * subscription it cannot later drop. */
-    PiResult (PI_CALL *pi_plugin_host_events_subscribe)(void* this_ptr, const char* topic,
-                                                 void* owner, PiPluginEventCallback callback,
-                                                 void* user_data,
-                                                 uint32_t* out_subscription);
+    PiResult(PI_CALL* pi_plugin_host_events_subscribe)(void* this_ptr, char const* topic,
+                                                       void* owner, PiPluginEventCallback callback,
+                                                       void*     user_data,
+                                                       uint32_t* out_subscription);
 
     /* Drop one subscription (host main thread). May be called from inside a
      * callback. Returns PI_OK, or PI_E_INVALIDARG for PI_PLUGIN_EVENT_INVALID_SUBSCRIPTION
      * and unknown handles. */
-    PiResult (PI_CALL *pi_plugin_host_events_unsubscribe)(void* this_ptr, uint32_t subscription);
+    PiResult(PI_CALL* pi_plugin_host_events_unsubscribe)(void* this_ptr, uint32_t subscription);
 
     /* "This owner is going away": drop every subscription registered by it
      * (host main thread). The host kit calls this for each slot it unloads, so a
      * plugin that forgets to unsubscribe cannot leave a dangling callback behind.
      * Returns PI_OK, or PI_E_INVALIDARG when owner is NULL. Dropping an owner that
      * has no subscriptions is a no-op success. */
-    PiResult (PI_CALL *pi_plugin_host_events_drop_owner)(void* this_ptr, void* owner);
+    PiResult(PI_CALL* pi_plugin_host_events_drop_owner)(void* this_ptr, void* owner);
 } IPiPluginHostEventsVtbl;
 
 typedef struct IPiPluginHostEvents {
-    const IPiPluginHostEventsVtbl* lpVtbl;
+    IPiPluginHostEventsVtbl const* lpVtbl;
 } IPiPluginHostEvents;
 
 /* Inline helpers - NULL-safe, same shape as every other interface wrapper. */
-static inline PiResult pi_plugin_host_events_publish(IPiPluginHostEvents* self, const PiPluginEvent* event) {
-    if (!self || !self->lpVtbl || !self->lpVtbl->pi_plugin_host_events_publish) return PI_E_NOINTERFACE;
+static inline PiResult pi_plugin_host_events_publish(IPiPluginHostEvents* self, PiPluginEvent const* event)
+{
+    if (!self || !self->lpVtbl || !self->lpVtbl->pi_plugin_host_events_publish)
+    {
+        return PI_E_NOINTERFACE;
+    }
     return self->lpVtbl->pi_plugin_host_events_publish((void*)self, event);
 }
 
-static inline PiResult pi_plugin_host_events_subscribe(IPiPluginHostEvents* self, const char* topic,
-                                                void* owner, PiPluginEventCallback callback,
-                                                void* user_data, uint32_t* out_subscription) {
-    if (out_subscription) *out_subscription = PI_PLUGIN_EVENT_INVALID_SUBSCRIPTION;
-    if (!self || !self->lpVtbl || !self->lpVtbl->pi_plugin_host_events_subscribe) return PI_E_NOINTERFACE;
+static inline PiResult pi_plugin_host_events_subscribe(IPiPluginHostEvents* self, char const* topic,
+                                                       void* owner, PiPluginEventCallback callback,
+                                                       void* user_data, uint32_t* out_subscription)
+{
+    if (out_subscription)
+    {
+        *out_subscription = PI_PLUGIN_EVENT_INVALID_SUBSCRIPTION;
+    }
+    if (!self || !self->lpVtbl || !self->lpVtbl->pi_plugin_host_events_subscribe)
+    {
+        return PI_E_NOINTERFACE;
+    }
     return self->lpVtbl->pi_plugin_host_events_subscribe((void*)self, topic, owner, callback,
-                                                  user_data, out_subscription);
+                                                         user_data, out_subscription);
 }
 
-static inline PiResult pi_plugin_host_events_unsubscribe(IPiPluginHostEvents* self, uint32_t subscription) {
-    if (!self || !self->lpVtbl || !self->lpVtbl->pi_plugin_host_events_unsubscribe) return PI_E_NOINTERFACE;
+static inline PiResult pi_plugin_host_events_unsubscribe(IPiPluginHostEvents* self, uint32_t subscription)
+{
+    if (!self || !self->lpVtbl || !self->lpVtbl->pi_plugin_host_events_unsubscribe)
+    {
+        return PI_E_NOINTERFACE;
+    }
     return self->lpVtbl->pi_plugin_host_events_unsubscribe((void*)self, subscription);
 }
 
-static inline PiResult pi_plugin_host_events_drop_owner(IPiPluginHostEvents* self, void* owner) {
-    if (!self || !self->lpVtbl || !self->lpVtbl->pi_plugin_host_events_drop_owner) return PI_E_NOINTERFACE;
+static inline PiResult pi_plugin_host_events_drop_owner(IPiPluginHostEvents* self, void* owner)
+{
+    if (!self || !self->lpVtbl || !self->lpVtbl->pi_plugin_host_events_drop_owner)
+    {
+        return PI_E_NOINTERFACE;
+    }
     return self->lpVtbl->pi_plugin_host_events_drop_owner((void*)self, owner);
 }
 
@@ -226,10 +249,17 @@ static inline PiResult pi_plugin_host_events_drop_owner(IPiPluginHostEvents* sel
  * Returns PI_OK and an AddRef'd interface (release it), or PI_E_NOINTERFACE with
  * *out_events = NULL - which is the normal case for a host that has no events,
  * not an error. */
-static inline PiResult pi_plugin_host_events_query(IPiPluginHostServices* host, IPiPluginHostEvents** out_events) {
-    if (!out_events) return PI_E_INVALIDARG;
+static inline PiResult pi_plugin_host_events_query(IPiPluginHostServices* host, IPiPluginHostEvents** out_events)
+{
+    if (!out_events)
+    {
+        return PI_E_INVALIDARG;
+    }
     *out_events = NULL;
-    if (!host) return PI_E_INVALIDARG;
+    if (!host)
+    {
+        return PI_E_INVALIDARG;
+    }
     return pi_iunknown_query_interface((IPiUnknown*)host, &PI_PLUGIN_IID_HOST_EVENTS,
                                        (void**)out_events);
 }

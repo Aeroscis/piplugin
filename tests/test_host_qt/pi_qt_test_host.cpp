@@ -20,41 +20,50 @@
  */
 #include "piplugin/pi_plugin.h"
 /* C++ RAII 层（可选头）：宿主服务对象用 PiPluginPtr 持有，退出路径上不用手写 release。 */
-#include "piplugin/pi_cpp.h"
-#include "pi_host_session.h"
-#include "pi_host_embed_area.h"
+#include <windows.h>
 
 #include <QApplication>
+#include <QCloseEvent>
+#include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
-#include <QHBoxLayout>
-#include <QVBoxLayout>
-#include <QTimer>
-#include <QCloseEvent>
 #include <QString>
+#include <QTimer>
+#include <QVBoxLayout>
+#include <cstdarg>
 #include <cstdio>
 #include <string>
-#include <cstdarg>
-#include <windows.h>
+
+#include "pi_host_embed_area.h"
+#include "pi_host_session.h"
+#include "piplugin/pi_cpp.h"
 
 /* --------------------------------------------------------------------------
  * Debug log (mirrors the imgui host) — also used for automated
  * verification without touching the UI.
  * ------------------------------------------------------------------------ */
-static void LogStatus(const char* fmt, ...)
+static void LogStatus(char const* fmt, ...)
 {
     static FILE* f = NULL;
-    if (!f) {
-        char logPath[MAX_PATH];
-        DWORD len = GetModuleFileNameA(NULL, logPath, MAX_PATH);
+    if (!f)
+    {
+        char        logPath[MAX_PATH];
+        DWORD       len = GetModuleFileNameA(NULL, logPath, MAX_PATH);
         std::string s(logPath, len > 0 && len < MAX_PATH ? len : 0);
-        size_t slash = s.find_last_of("\\/");
-        if (slash != std::string::npos) s = s.substr(0, slash + 1);
+        size_t      slash = s.find_last_of("\\/");
+        if (slash != std::string::npos)
+        {
+            s = s.substr(0, slash + 1);
+        }
         s += "pi_plugin_qt_host.log";
         fopen_s(&f, s.c_str(), "a");
-        if (!f) return;
+        if (!f)
+        {
+            return;
+        }
     }
-    va_list ap; va_start(ap, fmt);
+    va_list ap;
+    va_start(ap, fmt);
     vfprintf(f, fmt, ap);
     fputc('\n', f);
     fflush(f);
@@ -64,42 +73,49 @@ static void LogStatus(const char* fmt, ...)
 /* --------------------------------------------------------------------------
  * Host state
  * ------------------------------------------------------------------------ */
-static PiPluginPtr<IPiPluginHostServices> g_hostServices;   /* RAII：析构即 release */
-static PiPluginHostSession*   g_session      = NULL;
-static uint32_t               g_slot         = PI_PLUGIN_HOST_SESSION_INVALID_SLOT;
+static PiPluginPtr<IPiPluginHostServices> g_hostServices; /* RAII：析构即 release */
+static PiPluginHostSession*               g_session = NULL;
+static uint32_t                           g_slot    = PI_PLUGIN_HOST_SESSION_INVALID_SLOT;
 
-static PiPluginEmbedArea* g_embedArea  = NULL;   /* 宿主创建、宿主摆位、宿主美化 */
+static PiPluginEmbedArea* g_embedArea   = NULL; /* 宿主创建、宿主摆位、宿主美化 */
 static QLabel*            g_statusLabel = NULL;
 static QTimer*            g_idleDriver  = NULL;
 
 static void HostMessageProc(void* user_data, uint32_t msg,
                             uintptr_t wparam, intptr_t lparam)
 {
-    (void)user_data; (void)lparam;
+    (void)user_data;
+    (void)lparam;
     LogStatus("[plugin message] msg=0x%04X wparam=%llu",
               msg, (unsigned long long)wparam);
 }
 
 /* kit 的步骤日志 -> 本宿主的日志文件（去向由宿主决定） */
-static void SessionLogProc(void* user_data, const char* message)
+static void SessionLogProc(void* user_data, char const* message)
 {
     (void)user_data;
     LogStatus("%s", message);
 }
 
-static std::string ExeDirPath(const char* dllName)
+static std::string ExeDirPath(char const* dllName)
 {
-    char exePath[MAX_PATH];
-    DWORD len = GetModuleFileNameA(NULL, exePath, MAX_PATH);
+    char        exePath[MAX_PATH];
+    DWORD       len = GetModuleFileNameA(NULL, exePath, MAX_PATH);
     std::string s(exePath, len > 0 && len < MAX_PATH ? len : 0);
-    size_t slash = s.find_last_of("\\/");
-    if (slash != std::string::npos) s.resize(slash + 1);
+    size_t      slash = s.find_last_of("\\/");
+    if (slash != std::string::npos)
+    {
+        s.resize(slash + 1);
+    }
     return s + dllName;
 }
 
-static void SetStatus(const QString& text)
+static void SetStatus(QString const& text)
 {
-    if (g_statusLabel) g_statusLabel->setText(text);
+    if (g_statusLabel)
+    {
+        g_statusLabel->setText(text);
+    }
     LogStatus("%s", text.toUtf8().constData());
 }
 
@@ -109,10 +125,14 @@ static void SetStatus(const QString& text)
 static void UnloadPlugin()
 {
     LogStatus("unload: begin");
-    if (g_session && g_slot != PI_PLUGIN_HOST_SESSION_INVALID_SLOT) {
+    if (g_session && g_slot != PI_PLUGIN_HOST_SESSION_INVALID_SLOT)
+    {
         /* 先解除嵌入区域的绑定，再让 session 走七步卸载序列：
          * 解绑后本控件不再持有任何指向该插件的视图（也就不会在卸载后再转发 resize） */
-        if (g_embedArea) g_embedArea->detachBinding();
+        if (g_embedArea)
+        {
+            g_embedArea->detachBinding();
+        }
         pi_plugin_host_session_unload(g_session, g_slot);
         g_slot = PI_PLUGIN_HOST_SESSION_INVALID_SLOT;
     }
@@ -120,24 +140,28 @@ static void UnloadPlugin()
     LogStatus("unload: done");
 }
 
-static void LoadPlugin(const char* dllPath)
+static void LoadPlugin(char const* dllPath)
 {
     UnloadPlugin();
 
-    if (!g_hostServices) {
+    if (!g_hostServices)
+    {
         /* Create the host services object with the embed container's
          * native window, so IPiPluginHostUI is exposed to plugins.
          * put() 给出参地址：句柄接管 create_default 返回的引用（已 add-ref），
          * 失败时框架会把 *out 置 NULL，句柄保持为空。 */
         if (PI_FAILED(pi_plugin_host_services_create_default(&HostMessageProc, NULL,
-                                                      (PiNativeWindow)g_embedArea->winId(),
-                                                      g_hostServices.put()))) {
+                                                             (PiNativeWindow)g_embedArea->winId(),
+                                                             g_hostServices.put())))
+        {
             SetStatus(QString::fromUtf8("Host services unavailable"));
             return;
         }
     }
-    if (!g_session) {
-        if (PI_FAILED(pi_plugin_host_session_create(g_hostServices.get(), &g_session))) {
+    if (!g_session)
+    {
+        if (PI_FAILED(pi_plugin_host_session_create(g_hostServices.get(), &g_session)))
+        {
             SetStatus(QString::fromUtf8("Host session unavailable"));
             return;
         }
@@ -145,41 +169,50 @@ static void LoadPlugin(const char* dllPath)
     }
 
     uint32_t slot = PI_PLUGIN_HOST_SESSION_INVALID_SLOT;
-    PiResult hr = pi_plugin_host_session_load(g_session, dllPath, &slot);
-    if (PI_FAILED(hr)) {
+    PiResult hr   = pi_plugin_host_session_load(g_session, dllPath, &slot);
+    if (PI_FAILED(hr))
+    {
         /* 失败原因（含 pi_plugin_module_load 的错误描述与双向门禁的拒绝理由）由 kit 给出 */
-        const QString why = QString::fromLocal8Bit(pi_plugin_host_session_last_error(g_session));
+        QString const why = QString::fromLocal8Bit(pi_plugin_host_session_last_error(g_session));
         if (hr == PI_E_MISSINGCAPABILITY)
+        {
             SetStatus(QString::fromUtf8("Rejected: %1").arg(why));
+        }
         else
+        {
             SetStatus(QString::fromUtf8("Load failed: %1").arg(why));
+        }
         return;
     }
     g_slot = slot;
 
-    const PiPluginDescriptor* desc = pi_plugin_host_session_get_descriptor(g_session, slot);
+    PiPluginDescriptor const* desc = pi_plugin_host_session_get_descriptor(g_session, slot);
 
     /* 嵌入：区域是本宿主创建并摆位的，L1 kit 负责让它成为 embed host */
-    const bool view_attached = PI_SUCCEEDED(g_embedArea->attach(g_session, slot, true));
+    bool const view_attached = PI_SUCCEEDED(g_embedArea->attach(g_session, slot, true));
 
-    if (desc) {
+    if (desc)
+    {
         SetStatus(QString::fromUtf8("Loaded: %1 %2 (view:%3)")
-                  .arg(QString::fromUtf8(desc->name))
-                  .arg(QString::fromUtf8(desc->version))
-                  .arg(view_attached ? QString('Y') : QString('N')));
+                      .arg(QString::fromUtf8(desc->name))
+                      .arg(QString::fromUtf8(desc->version))
+                      .arg(view_attached ? QString('Y') : QString('N')));
 
         /* 自由元数据（roadmap APP-04）：按键取值，写进日志便于自动化断言。 */
-        for (uint32_t i = 0; i < desc->property_count; ++i) {
-            const PiPluginProperty* prop = &desc->properties[i];
+        for (uint32_t i = 0; i < desc->property_count; ++i)
+        {
+            PiPluginProperty const* prop = &desc->properties[i];
             LogStatus("property: %s = %s",
                       prop->key ? prop->key : "(null)",
                       prop->value ? prop->value : "(null)");
         }
         {
-            const char* kind = pi_plugin_descriptor_find_property(desc, "com.example.kind");
+            char const* kind = pi_plugin_descriptor_find_property(desc, "com.example.kind");
             LogStatus("property com.example.kind = %s", kind ? kind : "(absent)");
         }
-    } else {
+    }
+    else
+    {
         SetStatus(QString::fromUtf8("Loaded (no descriptor)"));
     }
 }
@@ -188,19 +221,21 @@ static void LoadPlugin(const char* dllPath)
  * Main window — plain QWidget subclass (lambdas instead of slots, so no
  * moc step is needed).
  * ------------------------------------------------------------------------ */
-class PiPluginQtHostWindow : public QWidget {
+class PiPluginQtHostWindow : public QWidget
+{
 public:
-    explicit PiPluginQtHostWindow(QWidget* parent = NULL) : QWidget(parent)
+    explicit PiPluginQtHostWindow(QWidget* parent = NULL)
+        : QWidget(parent)
     {
         setWindowTitle(QString::fromUtf8("piplugin — Test Host (Qt)"));
         resize(1280, 720);
 
         QVBoxLayout* root = new QVBoxLayout(this);
 
-        QHBoxLayout* bar = new QHBoxLayout();
-        QLabel* title = new QLabel(QString::fromUtf8("piplugin Qt host — embedding an ImGui plugin"));
-        g_statusLabel = new QLabel(QString::fromUtf8("No plugin loaded"));
-        QPushButton* loadBtn = new QPushButton(QString::fromUtf8("Load ImGui Plugin"));
+        QHBoxLayout* bar       = new QHBoxLayout();
+        QLabel*      title     = new QLabel(QString::fromUtf8("piplugin Qt host — embedding an ImGui plugin"));
+        g_statusLabel          = new QLabel(QString::fromUtf8("No plugin loaded"));
+        QPushButton* loadBtn   = new QPushButton(QString::fromUtf8("Load ImGui Plugin"));
         QPushButton* unloadBtn = new QPushButton(QString::fromUtf8("Unload"));
 
         bar->addWidget(title, 1);
@@ -215,20 +250,19 @@ public:
         g_embedArea->setStyleSheet("background-color: #26262a;");
         root->addWidget(g_embedArea, 1);
 
-        connect(loadBtn, &QPushButton::clicked, this, [this]() {
-            LoadPlugin(ExeDirPath("pi_plugin_test_plugin_imgui.dll").c_str());
-        });
-        connect(unloadBtn, &QPushButton::clicked, this, [this]() {
-            UnloadPlugin();
-        });
+        connect(loadBtn, &QPushButton::clicked, this, [this]()
+                { LoadPlugin(ExeDirPath("pi_plugin_test_plugin_imgui.dll").c_str()); });
+        connect(unloadBtn, &QPushButton::clicked, this, [this]()
+                { UnloadPlugin(); });
 
         /* THE Qt-side cadence: drive plugin frames from the Qt event loop.
          * A 0-interval timer fires once per loop pass. 何时 pump 归宿主决定
          * （L1 也提供内部定时器，但默认关闭，避免和宿主自己的时钟打架）。 */
         g_idleDriver = new QTimer(this);
-        connect(g_idleDriver, &QTimer::timeout, this, []() {
-            if (g_embedArea) g_embedArea->driveIdle();
-        });
+        connect(g_idleDriver, &QTimer::timeout, this, []()
+                {
+            if (g_embedArea){ g_embedArea->driveIdle();
+} });
         g_idleDriver->start(0);
     }
 
@@ -236,8 +270,12 @@ protected:
     void closeEvent(QCloseEvent* event) override
     {
         UnloadPlugin();
-        if (g_session) { pi_plugin_host_session_destroy(g_session); g_session = NULL; }
-        g_hostServices.reset();   /* 引用归零即销毁，不再手写 release */
+        if (g_session)
+        {
+            pi_plugin_host_session_destroy(g_session);
+            g_session = NULL;
+        }
+        g_hostServices.reset(); /* 引用归零即销毁，不再手写 release */
         QWidget::closeEvent(event);
     }
 };
@@ -253,7 +291,8 @@ int main(int argc, char** argv)
     window.show();
 
     /* Auto-load for automated testing (command line = plugin DLL path). */
-    if (argc > 1 && argv[1]) {
+    if (argc > 1 && argv[1])
+    {
         LogStatus("auto-load: %s", argv[1]);
         LoadPlugin(argv[1]);
     }

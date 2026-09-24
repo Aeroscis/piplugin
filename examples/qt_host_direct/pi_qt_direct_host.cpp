@@ -19,89 +19,115 @@
  *   pi_plugin_example_qt_direct_host.exe [plugin.dll]              interactive
  *   pi_plugin_example_qt_direct_host.exe --self-test [plugin.dll]  scriptable, exit code
  */
-#include "piplugin/pi_plugin.h"
-#include "pi_host_session.h"          /* host kit L0: load / gate / unload order */
-#include "pi_qt_direct_protocol.h"    /* the APP's protocol (channel A)          */
-
+#include <QtCore/QTimer>
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QLabel>
 #include <QtWidgets/QMainWindow>
 #include <QtWidgets/QPushButton>
 #include <QtWidgets/QVBoxLayout>
 #include <QtWidgets/QWidget>
-#include <QtCore/QTimer>
-
 #include <cstdio>
 #include <cstdlib>
 #include <string>
 #include <vector>
 
+#include "pi_host_session.h"       /* host kit L0: load / gate / unload order */
+#include "pi_qt_direct_protocol.h" /* the APP's protocol (channel A)          */
+#include "piplugin/pi_plugin.h"
+
 /* CMake defines this for the platform's plugin file name. */
 #ifndef PI_PLUGIN_QT_DIRECT_DEFAULT_PLUGIN
-#  define PI_PLUGIN_QT_DIRECT_DEFAULT_PLUGIN "pi_plugin_example_plugin_qt_direct.dll"
+    #define PI_PLUGIN_QT_DIRECT_DEFAULT_PLUGIN "pi_plugin_example_plugin_qt_direct.dll"
 #endif
 
 /* --------------------------------------------------------------------------
  * Host state: everything the callbacks and the teardown order need
  * ------------------------------------------------------------------------ */
 struct Host {
-    QMainWindow*         window;
-    QVBoxLayout*         layout;
-    QLabel*              status;
+    QMainWindow* window;
+    QVBoxLayout* layout;
+    QLabel*      status;
 
-    IPiPluginHostServices*     services;      /* owned (refcount 1) */
-    PiPluginHostSession* session;       /* owned by us        */
-    uint32_t             slot;
+    IPiPluginHostServices* services; /* owned (refcount 1) */
+    PiPluginHostSession*   session;  /* owned by us        */
+    uint32_t               slot;
 
-    IQtDirectWidget*     widget_ifc;    /* add-ref'd protocol pointer */
-    QWidget*             plugin_widget; /* the widget the plugin handed over */
-    int                  messages;
-    int                  failures;
-    bool                 torn_down;
+    IQtDirectWidget* widget_ifc;    /* add-ref'd protocol pointer */
+    QWidget*         plugin_widget; /* the widget the plugin handed over */
+    int              messages;
+    int              failures;
+    bool             torn_down;
 
-    Host() : window(nullptr), layout(nullptr), status(nullptr),
-             services(nullptr), session(nullptr),
-             slot(PI_PLUGIN_HOST_SESSION_INVALID_SLOT),
-             widget_ifc(nullptr), plugin_widget(nullptr),
-             messages(0), failures(0), torn_down(false) {}
+    Host()
+        : window(nullptr)
+        , layout(nullptr)
+        , status(nullptr)
+        , services(nullptr)
+        , session(nullptr)
+        , slot(PI_PLUGIN_HOST_SESSION_INVALID_SLOT)
+        , widget_ifc(nullptr)
+        , plugin_widget(nullptr)
+        , messages(0)
+        , failures(0)
+        , torn_down(false)
+    {}
 
-    void Check(bool ok, const char* what)
+    void Check(bool ok, char const* what)
     {
         printf("  %s %s\n", ok ? "PASS" : "FAIL", what);
-        if (!ok) ++failures;
+        if (!ok)
+        {
+            ++failures;
+        }
     }
 
     /* The teardown order this example exists to teach (idempotent):
      *   widget -> protocol pointer -> unload (seven steps) -> session -> services */
     void TearDown()
     {
-        if (torn_down) return;
+        if (torn_down)
+        {
+            return;
+        }
         torn_down = true;
 
         /* (1) the plugin's widget FIRST. Its signal/slot bodies are code in the
          *     plugin's module; step (3) unmaps that module. */
-        if (plugin_widget) {
+        if (plugin_widget)
+        {
             if (widget_ifc)
+            {
                 pi_plugin_qt_direct_destroy_widget(widget_ifc, plugin_widget);
+            }
             plugin_widget = nullptr;
             QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
         }
 
         /* (2) ours to release: we add-ref'd it in QueryInterface */
-        if (widget_ifc) {
+        if (widget_ifc)
+        {
             pi_iunknown_release((IPiUnknown*)widget_ifc);
             widget_ifc = nullptr;
         }
 
         /* (3) the seven-step unload sequence, module unmap included */
-        if (session && slot != PI_PLUGIN_HOST_SESSION_INVALID_SLOT) {
+        if (session && slot != PI_PLUGIN_HOST_SESSION_INVALID_SLOT)
+        {
             pi_plugin_host_session_unload(session, slot);
             Check(pi_plugin_host_session_is_loaded(session, slot) == 0, "slot is empty after unload");
             slot = PI_PLUGIN_HOST_SESSION_INVALID_SLOT;
         }
 
-        if (session) { pi_plugin_host_session_destroy(session); session = nullptr; }
-        if (services) { pi_iunknown_release((IPiUnknown*)services); services = nullptr; }
+        if (session)
+        {
+            pi_plugin_host_session_destroy(session);
+            session = nullptr;
+        }
+        if (services)
+        {
+            pi_iunknown_release((IPiUnknown*)services);
+            services = nullptr;
+        }
     }
 };
 
@@ -112,15 +138,20 @@ static void OnHostMessage(void* user_data, uint32_t msg, uintptr_t wparam, intpt
 {
     Host* host = (Host*)user_data;
     (void)lparam;
-    if (!host) return;
+    if (!host)
+    {
+        return;
+    }
     ++host->messages;
     printf("  [host] message from the plugin: msg=0x%04X wparam=%llu\n",
            msg, (unsigned long long)wparam);
     if (host->status)
+    {
         host->status->setText(QString::fromUtf8("messages from the plugin: %1").arg(host->messages));
+    }
 }
 
-static void OnSessionLog(void* user_data, const char* message)
+static void OnSessionLog(void* user_data, char const* message)
 {
     (void)user_data;
     printf("  [kit] %s\n", message);
@@ -131,17 +162,33 @@ int main(int argc, char** argv)
     /* Copy the arguments BEFORE QApplication runs: Qt consumes its own options
      * and does not promise to leave the rest where we put them. */
     std::vector<std::string> args;
-    for (int i = 0; i < argc; ++i) args.push_back(argv[i] ? argv[i] : "");
+    for (int i = 0; i < argc; ++i)
+    {
+        args.push_back(argv[i] ? argv[i] : "");
+    }
 
     bool        self_test    = false;
     int         self_test_ms = 1200;
     std::string plugin;
-    for (size_t i = 1; i < args.size(); ++i) {
-        if (args[i] == "--self-test")               self_test = true;
-        else if (args[i] == "--ms" && i + 1 < args.size()) self_test_ms = atoi(args[++i].c_str());
-        else if (!args[i].empty() && args[i][0] != '-')    plugin = args[i];
+    for (size_t i = 1; i < args.size(); ++i)
+    {
+        if (args[i] == "--self-test")
+        {
+            self_test = true;
+        }
+        else if (args[i] == "--ms" && i + 1 < args.size())
+        {
+            self_test_ms = atoi(args[++i].c_str());
+        }
+        else if (!args[i].empty() && args[i][0] != '-')
+        {
+            plugin = args[i];
+        }
     }
-    if (plugin.empty()) plugin = PI_PLUGIN_QT_DIRECT_DEFAULT_PLUGIN;
+    if (plugin.empty())
+    {
+        plugin = PI_PLUGIN_QT_DIRECT_DEFAULT_PLUGIN;
+    }
 
     /* THE line that makes this a "Qt host": the host owns the QApplication. */
     QApplication app(argc, argv);
@@ -150,14 +197,14 @@ int main(int argc, char** argv)
     printf("plugin: %s\n", plugin.c_str());
     printf("mode:   %s\n", self_test ? "self-test" : "interactive (close the window to unload)");
 
-    Host host;
+    Host     host;
     PiResult hr;
 
     /* --- 1) the host's own UI: a window and a layout IT owns --------------- */
     host.window = new QMainWindow();
     host.window->setWindowTitle(QString::fromUtf8("piplugin - Qt host + Qt plugin (direct)"));
     QWidget* central = new QWidget(host.window);
-    host.layout = new QVBoxLayout(central);
+    host.layout      = new QVBoxLayout(central);
     host.layout->addWidget(new QLabel(QString::fromUtf8(
         "This window and its layout belong to the HOST.\n"
         "The widget below was created by the PLUGIN and adopted by that layout.")));
@@ -166,11 +213,12 @@ int main(int argc, char** argv)
 
     QPushButton* unload_button = new QPushButton(QString::fromUtf8(
         "Unload the plugin (destroy widget -> unload module)"));
-    QObject::connect(unload_button, &QPushButton::clicked, [&host]() {
+    QObject::connect(unload_button, &QPushButton::clicked, [&host]()
+                     {
         host.TearDown();
-        if (host.status)
+        if (host.status){
             host.status->setText(QString::fromUtf8("plugin unloaded - its widget is gone"));
-    });
+} });
     host.layout->addWidget(unload_button);
 
     host.window->setCentralWidget(central);
@@ -181,11 +229,19 @@ int main(int argc, char** argv)
     /* Headless on purpose: the plugin gets NO native container. Its UI travels
      * as a QWidget over the app protocol, so PI_PLUGIN_IID_HOST_UI is not in play. */
     hr = pi_plugin_host_services_create_default(&OnHostMessage, &host, PI_INVALID_WINDOW,
-                                        &host.services);
-    if (PI_FAILED(hr)) { printf("FATAL: host services (hr=%d)\n", (int)hr); return 1; }
+                                                &host.services);
+    if (PI_FAILED(hr))
+    {
+        printf("FATAL: host services (hr=%d)\n", (int)hr);
+        return 1;
+    }
 
     hr = pi_plugin_host_session_create(host.services, &host.session);
-    if (PI_FAILED(hr)) { printf("FATAL: session (hr=%d)\n", (int)hr); return 1; }
+    if (PI_FAILED(hr))
+    {
+        printf("FATAL: session (hr=%d)\n", (int)hr);
+        return 1;
+    }
     pi_plugin_host_session_set_logger(host.session, &OnSessionLog, nullptr);
 
     /* The app's requirement, declared BEFORE any load: every plugin in this
@@ -197,7 +253,8 @@ int main(int argc, char** argv)
 
     /* --- 3) load: module + version gate + capability gate + instantiate ----- */
     hr = pi_plugin_host_session_load(host.session, plugin.c_str(), &host.slot);
-    if (PI_FAILED(hr)) {
+    if (PI_FAILED(hr))
+    {
         printf("load failed (hr=%d): %s\n", (int)hr, pi_plugin_host_session_last_error(host.session));
         printf("RESULT: FAIL\n");
         host.TearDown();
@@ -207,7 +264,7 @@ int main(int argc, char** argv)
     host.Check(pi_plugin_host_session_is_loaded(host.session, host.slot) != 0, "plugin loaded");
 
     {
-        const PiPluginDescriptor* desc = pi_plugin_host_session_get_descriptor(host.session, host.slot);
+        PiPluginDescriptor const* desc = pi_plugin_host_session_get_descriptor(host.session, host.slot);
         printf("loaded: %s %s (%s)\n",
                (desc && desc->name) ? desc->name : "?",
                (desc && desc->version) ? desc->version : "",
@@ -217,7 +274,8 @@ int main(int argc, char** argv)
     /* --- 4) the integration: ask for a QWidget*, hand it to our layout ------ */
     {
         IPiPluginBase* plugin_base = pi_plugin_host_session_get_plugin(host.session, host.slot); /* borrowed */
-        if (plugin_base) {
+        if (plugin_base)
+        {
             pi_iunknown_query_interface((IPiUnknown*)plugin_base, &PI_PLUGIN_QT_DIRECT_WIDGET_IID,
                                         (void**)&host.widget_ifc);
         }
@@ -225,36 +283,44 @@ int main(int argc, char** argv)
     host.Check(host.widget_ifc != nullptr, "plugin implements the app's widget protocol");
 
     if (host.widget_ifc)
+    {
         host.plugin_widget = pi_plugin_qt_direct_create_widget(host.widget_ifc);
+    }
     host.Check(host.plugin_widget != nullptr, "plugin created a widget for us");
 
-    if (host.plugin_widget) {
-        host.layout->addWidget(host.plugin_widget);   /* <- the whole integration */
+    if (host.plugin_widget)
+    {
+        host.layout->addWidget(host.plugin_widget); /* <- the whole integration */
         QCoreApplication::processEvents();
         host.Check(host.plugin_widget->isVisible(),
                    "the adopted widget is visible inside the host's layout");
     }
 
     /* --- 5) the event loop is the host's own; no pumping API is involved ---- */
-    if (self_test) {
-        QTimer::singleShot(self_test_ms / 3, [&host]() {
+    if (self_test)
+    {
+        QTimer::singleShot(self_test_ms / 3, [&host]()
+                           {
             QPushButton* button = host.plugin_widget
                                 ? host.plugin_widget->findChild<QPushButton*>() : nullptr;
             if (!button) { host.Check(false, "found the plugin's button to click"); return; }
             printf("  [host] clicking the plugin's button...\n");
-            button->click();          /* plugin code -> pi_plugin_host_post_message -> OnHostMessage */
-        });
-        QTimer::singleShot(self_test_ms, [&host]() {
+            button->click();          /* plugin code -> pi_plugin_host_post_message -> OnHostMessage */ });
+        QTimer::singleShot(self_test_ms, [&host]()
+                           {
             host.Check(host.messages == 1, "plugin -> host message arrived end to end");
             host.TearDown();          /* incl. "slot is empty after unload" */
-            QCoreApplication::quit();
-        });
+            QCoreApplication::quit(); });
     }
 
     app.exec();
 
-    host.TearDown();                  /* interactive path lands here; idempotent */
-    if (host.window) { delete host.window; host.window = nullptr; }
+    host.TearDown(); /* interactive path lands here; idempotent */
+    if (host.window)
+    {
+        delete host.window;
+        host.window = nullptr;
+    }
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 
     printf("RESULT: %s\n", host.failures ? "FAIL" : "PASS");

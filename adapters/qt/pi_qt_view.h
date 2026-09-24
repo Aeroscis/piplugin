@@ -51,9 +51,9 @@
 #ifndef PI_PLUGIN_QT_VIEW_H
 #define PI_PLUGIN_QT_VIEW_H
 
-#include "piplugin/pi_plugin.h"
-
 #include <QWidget>
+
+#include "piplugin/pi_plugin.h"
 
 /* --------------------------------------------------------------------------
  * Symbol visibility
@@ -73,13 +73,13 @@
  * so the usual call sites are unaffected.
  * -------------------------------------------------------------------------- */
 #if defined(_WIN32) || defined(_WIN64)
-#  ifdef PI_PLUGIN_QT_BUILDING
-#    define PI_PLUGIN_QT_API __declspec(dllexport)
-#  else
-#    define PI_PLUGIN_QT_API __declspec(dllimport)
-#  endif
+    #ifdef PI_PLUGIN_QT_BUILDING
+        #define PI_PLUGIN_QT_API __declspec(dllexport)
+    #else
+        #define PI_PLUGIN_QT_API __declspec(dllimport)
+    #endif
 #else
-#  define PI_PLUGIN_QT_API __attribute__((visibility("default")))
+    #define PI_PLUGIN_QT_API __attribute__((visibility("default")))
 #endif
 
 #ifdef __cplusplus
@@ -110,17 +110,17 @@ typedef void (*PiPluginQtRetainProc)(void* user_data);
 typedef void (*PiPluginQtReleaseProc)(void* user_data);
 
 typedef struct PiPluginQtViewDesc {
-    PiPluginQtCreateWidgetProc  create_widget;   /* required */
-    PiPluginQtDestroyWidgetProc destroy_widget;  /* optional, NULL = delete */
-    PiPluginQtRetainProc        retain;          /* optional, NULL = nothing */
-    PiPluginQtReleaseProc       release;         /* optional, NULL = nothing */
-    void*                 user_data;       /* passed to all callbacks  */
+    PiPluginQtCreateWidgetProc  create_widget;  /* required */
+    PiPluginQtDestroyWidgetProc destroy_widget; /* optional, NULL = delete */
+    PiPluginQtRetainProc        retain;         /* optional, NULL = nothing */
+    PiPluginQtReleaseProc       release;        /* optional, NULL = nothing */
+    void*                       user_data;      /* passed to all callbacks  */
 } PiPluginQtViewDesc;
 
 /* Create a Qt-backed IPiPluginView. The returned view starts with
  * refcount 1; release it with ->pi_release() (after pi_plugin_detach() or let
  * release handle a still-attached view). */
-PI_PLUGIN_QT_API PiResult pi_plugin_qt_view_create(const PiPluginQtViewDesc* desc, IPiPluginView** out_view);
+PI_PLUGIN_QT_API PiResult pi_plugin_qt_view_create(PiPluginQtViewDesc const* desc, IPiPluginView** out_view);
 
 /* Tear down the live views of THIS PLUGIN, synchronously, on the calling (host
  * GUI) thread; the QApplication is destroyed when the last view in the process

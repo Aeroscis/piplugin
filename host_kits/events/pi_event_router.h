@@ -54,12 +54,12 @@ typedef struct PiPluginEventRouter PiPluginEventRouter;
  * `subscriptions_dropped` are the two numbers the events contract requires a
  * host to be able to show. */
 typedef struct PiPluginEventRouterStats {
-    uint64_t published;              /* publish() calls accepted               */
-    uint64_t delivered;              /* subscription callbacks invoked         */
-    uint64_t dropped_full;           /* dropped because the queue was full     */
-    uint64_t subscriptions_dropped;  /* removed by drop_owner (plugin unload)  */
-    uint32_t queued;                 /* events waiting for a pump              */
-    uint32_t subscriptions;          /* live subscriptions                     */
+    uint64_t published;             /* publish() calls accepted               */
+    uint64_t delivered;             /* subscription callbacks invoked         */
+    uint64_t dropped_full;          /* dropped because the queue was full     */
+    uint64_t subscriptions_dropped; /* removed by drop_owner (plugin unload)  */
+    uint32_t queued;                /* events waiting for a pump              */
+    uint32_t subscriptions;         /* live subscriptions                     */
 } PiPluginEventRouterStats;
 
 /* Create a router. The object implements IPiPluginHostEvents and starts with refcount
@@ -77,7 +77,7 @@ IPiPluginHostEvents* pi_plugin_event_router_host_events(PiPluginEventRouter* rou
 /* extra_qi hook for pi_plugin_host_services_create_ex() (channel B): a plugin that
  * queries PI_PLUGIN_IID_HOST_EVENTS on the host object gets this router. `ctx` is the
  * PiPluginEventRouter*. */
-PiResult pi_plugin_event_router_extra_qi(void* ctx, const PiGuid* iid, void** out);
+PiResult pi_plugin_event_router_extra_qi(void* ctx, PiGuid const* iid, void** out);
 
 /* Hand every queued event to the subscriptions that existed when the pump
  * started, on the calling thread. Returns how many callbacks were invoked.

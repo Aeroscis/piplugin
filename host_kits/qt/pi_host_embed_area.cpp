@@ -31,49 +31,72 @@ PiResult PiPluginEmbedArea::attach(PiPluginHostSession* session, uint32_t slot, 
 {
     detachBinding();
 
-    if (!session) return PI_E_INVALIDARG;
-    if (!pi_plugin_host_session_is_loaded(session, slot)) return PI_E_INVALIDARG;
+    if (!session)
+    {
+        return PI_E_INVALIDARG;
+    }
+    if (!pi_plugin_host_session_is_loaded(session, slot))
+    {
+        return PI_E_INVALIDARG;
+    }
     /* 没有 view 的插件（headless）不是错误，只是没什么可嵌 */
-    if (!pi_plugin_host_session_get_view(session, slot)) return PI_E_NOINTERFACE;
+    if (!pi_plugin_host_session_get_view(session, slot))
+    {
+        return PI_E_NOINTERFACE;
+    }
 
     /* winId() 会先确保本控件拿到原生窗口，再由 session 完成 attach 记账 */
     PiResult hr = pi_plugin_host_session_attach_view(session, slot, NativeOf(this),
-                                              set_visible ? 1 : 0);
-    if (PI_FAILED(hr)) return hr;
+                                                     set_visible ? 1 : 0);
+    if (PI_FAILED(hr))
+    {
+        return hr;
+    }
 
     m_session = session;
-    m_slot = slot;
+    m_slot    = slot;
     return PI_OK;
 }
 
 void PiPluginEmbedArea::detachBinding()
 {
     m_session = nullptr;
-    m_slot = PI_PLUGIN_HOST_SESSION_INVALID_SLOT;
+    m_slot    = PI_PLUGIN_HOST_SESSION_INVALID_SLOT;
 }
 
 IPiPluginView* PiPluginEmbedArea::view() const
 {
-    if (!m_session) return nullptr;
+    if (!m_session)
+    {
+        return nullptr;
+    }
     return pi_plugin_host_session_get_view(m_session, m_slot);
 }
 
 void PiPluginEmbedArea::driveIdle()
 {
     IPiPluginView* v = view();
-    if (v) pi_plugin_view_on_idle(v);
+    if (v)
+    {
+        pi_plugin_view_on_idle(v);
+    }
 }
 
 void PiPluginEmbedArea::setAutoIdleEnabled(bool enabled)
 {
-    if (enabled) {
-        if (!m_idleTimer) {
+    if (enabled)
+    {
+        if (!m_idleTimer)
+        {
             m_idleTimer = new QTimer(this);
-            m_idleTimer->setInterval(0);   /* 每次事件循环迭代一次 */
-            connect(m_idleTimer, &QTimer::timeout, this, [this]() { driveIdle(); });
+            m_idleTimer->setInterval(0); /* 每次事件循环迭代一次 */
+            connect(m_idleTimer, &QTimer::timeout, this, [this]()
+                    { driveIdle(); });
         }
         m_idleTimer->start();
-    } else if (m_idleTimer) {
+    }
+    else if (m_idleTimer)
+    {
         m_idleTimer->stop();
     }
 }
@@ -85,5 +108,7 @@ void PiPluginEmbedArea::resizeEvent(QResizeEvent* event)
     /* 尺寸由宿主的布局决定，本类只负责转发 */
     IPiPluginView* v = view();
     if (v && width() > 0 && height() > 0)
+    {
         pi_plugin_view_on_resize(v, width(), height());
+    }
 }
