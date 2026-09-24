@@ -41,3 +41,6 @@ __pycache__/
 
 # 验证脚本的生成产物（脚本本身在 scripts/ 下，正常入库）
 scripts/out/
+# scripts/fetch_pibase.ps1 checks the family root layer out here; it is a checkout,
+# not source that belongs to this repository
+external/

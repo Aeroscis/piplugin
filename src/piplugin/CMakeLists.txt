@@ -56,7 +56,49 @@ set(TARGET_HEADER_FILE_LIST
 # 家族根层（pibase）：结果码词汇 / PiGuid / PiNativeWindow / IPiUnknown / ABI 与平台管线宏。
 # 它是 header-only 的 INTERFACE target，没有二进制可链接；但它提供的 include 目录必须
 # 经由 PUBLIC 传播，否则消费者拿不到 <pibase/pi_base.h>。
-find_package(pibase REQUIRED)
+#
+# 获取方式三态（形状同 gRPC 的 *_PROVIDER）：
+#   package - 只认 find_package(pibase)（已装好的前缀，或 conan 工具链注入）
+#   fetch   - 只认 PI_PLUGIN_PIBASE_SOURCE_DIR 下的源码，add_subdirectory 进来
+#   auto    - 先安静地 find_package，找不到再退回 fetch（默认）
+#
+# 注意：pibase_FOUND 是 find_package 的**输出**，所以判定必须发生在调用**之后**。
+# 「装没装」探测不出来，能探测的只有「找到了没有」。
+set(PI_PLUGIN_PIBASE_PROVIDER "auto" CACHE STRING "how to obtain pibase: auto | package | fetch")
+
+if(PI_PLUGIN_PIBASE_PROVIDER STREQUAL "auto")
+    find_package(pibase QUIET)
+    if(pibase_FOUND)
+        set(_pi_pibase_provider "package")
+    else()
+        set(_pi_pibase_provider "fetch")
+    endif()
+elseif(PI_PLUGIN_PIBASE_PROVIDER STREQUAL "package")
+    find_package(pibase REQUIRED)
+    set(_pi_pibase_provider "package")
+elseif(PI_PLUGIN_PIBASE_PROVIDER STREQUAL "fetch")
+    set(_pi_pibase_provider "fetch")
+else()
+    message(FATAL_ERROR
+        "PI_PLUGIN_PIBASE_PROVIDER must be auto, package or fetch, got '${PI_PLUGIN_PIBASE_PROVIDER}'")
+endif()
+
+if(_pi_pibase_provider STREQUAL "fetch")
+    if(NOT PI_PLUGIN_PIBASE_SOURCE_DIR)
+        set(PI_PLUGIN_PIBASE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../external/pibase"
+            CACHE PATH "pibase source tree to build when the provider is fetch")
+    endif()
+    if(NOT EXISTS "${PI_PLUGIN_PIBASE_SOURCE_DIR}/CMakeLists.txt")
+        message(FATAL_ERROR
+            "pibase source not found at '${PI_PLUGIN_PIBASE_SOURCE_DIR}'.\n"
+            "  Run scripts/fetch_pibase.ps1 first (or pass -DPI_PLUGIN_PIBASE_SOURCE_DIR=<path>), or install\n"
+            "  pibase into CMAKE_PREFIX_PATH and use -DPI_PLUGIN_PIBASE_PROVIDER=package.")
+    endif()
+    # 作为子工程消费时不建它的自测（那是 pibase 自己的 CI 的事）
+    set(PI_BASE_BUILD_TESTS OFF CACHE BOOL "pibase self-test (off when consumed as a subproject)" FORCE)
+    add_subdirectory("${PI_PLUGIN_PIBASE_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/pibase" EXCLUDE_FROM_ALL)
+endif()
+pi_tar_msg(STATUS pibase "obtained via provider='${_pi_pibase_provider}'")
 
 # add library target
 add_library(${TARGET_NAME} SHARED)                           # 本体
