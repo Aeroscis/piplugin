@@ -50,7 +50,7 @@ using System;
 using System.Runtime.InteropServices;
 using System.Drawing;
 using System.Drawing.Imaging;
-public class PiWin32 {
+public class PiPluginWin32 {
     // NOTE: the second parameter is IntPtr, not string - PowerShell turns
     // $null into an empty string, and FindWindowW("cls", "") only matches a
     // window whose title is empty. IntPtr.Zero means "ignore the title".
@@ -112,17 +112,17 @@ public class PiWin32 {
     }
 }
 
-public class PiShot {
+public class PiPluginShot {
     // Capture the composited window (D3D content included) into a PNG.
     public static int[] Capture(IntPtr hwnd, string path) {
-        PiWin32.RECT wr;
-        PiWin32.GetWindowRect(hwnd, out wr);
+        PiPluginWin32.RECT wr;
+        PiPluginWin32.GetWindowRect(hwnd, out wr);
         int w = wr.right - wr.left, h = wr.bottom - wr.top;
         if (w <= 0 || h <= 0) return null;
         using (Bitmap bmp = new Bitmap(w, h)) {
             using (Graphics g = Graphics.FromImage(bmp)) {
                 IntPtr hdc = g.GetHdc();
-                bool ok = PiWin32.PrintWindow(hwnd, hdc, 2 /*PW_RENDERFULLCONTENT*/);
+                bool ok = PiPluginWin32.PrintWindow(hwnd, hdc, 2 /*PW_RENDERFULLCONTENT*/);
                 g.ReleaseHdc(hdc);
                 if (!ok) return null;
             }
@@ -205,19 +205,19 @@ Write-Host "[1/8] starting host with Qt plugin..."
 $proc = Start-Process -FilePath $exe -ArgumentList "pi_plugin_test_plugin_qt.dll" -WorkingDirectory $BinDir -PassThru
 Start-Sleep -Seconds 3
 
-$hwnd = [PiWin32]::FindHostWindow("PiPluginTestHost", "piplugin")
+$hwnd = [PiPluginWin32]::FindHostWindow("PiPluginTestHost", "piplugin")
 if ($hwnd -eq [IntPtr]::Zero) { throw "host window not found" }
 
-$wr   = [PiWin32]::WindowRect($hwnd)      # left, top, w, h  (logical px)
-$cr   = [PiWin32]::ClientRect($hwnd)      # client w, h      (logical px)
-$coff = [PiWin32]::ClientOffset($hwnd)    # client offset    (logical px)
+$wr   = [PiPluginWin32]::WindowRect($hwnd)      # left, top, w, h  (logical px)
+$cr   = [PiPluginWin32]::ClientRect($hwnd)      # client w, h      (logical px)
+$coff = [PiPluginWin32]::ClientOffset($hwnd)    # client offset    (logical px)
 $frameW = $wr[2] - $cr[0]
 $frameH = $wr[3] - $cr[1]
 $baseW = $cr[0]; $baseH = $cr[1]
 Write-Host ("       client (logical) = {0}x{1}, frame = {2}x{3}" -f $baseW, $baseH, $frameW, $frameH)
 
 function Set-ClientSize([int]$cw, [int]$ch) {
-    [PiWin32]::Resize($hwnd, $wr[0], $wr[1], $cw + $frameW, $ch + $frameH)
+    [PiPluginWin32]::Resize($hwnd, $wr[0], $wr[1], $cw + $frameW, $ch + $frameH)
 }
 function Resize-InSteps([int]$fromW, [int]$fromH, [int]$toW, [int]$toH, [int]$steps, [int]$msPause) {
     for ($i = 1; $i -le $steps; $i++) {
@@ -229,12 +229,12 @@ function Resize-InSteps([int]$fromW, [int]$fromH, [int]$toW, [int]$toH, [int]$st
 }
 function Shot([string]$file) {
     $p = Join-Path $ShotDir $file
-    $size = [PiShot]::Capture($hwnd, $p)
+    $size = [PiPluginShot]::Capture($hwnd, $p)
     if ($null -eq $size) { throw "capture $file failed" }
     # logical window size -> physical bitmap size ratio (DPI)
-    $wrNow = [PiWin32]::WindowRect($hwnd)
+    $wrNow = [PiPluginWin32]::WindowRect($hwnd)
     $scale = [double]$size[0] / [double]$wrNow[2]
-    $crNow = [PiWin32]::ClientRect($hwnd)
+    $crNow = [PiPluginWin32]::ClientRect($hwnd)
     [PSCustomObject]@{
         Path   = $p
         Scale  = $scale
@@ -266,14 +266,14 @@ Write-Host "[6/8] screenshot C: steady state, shrunk (buffer larger than window)
 $C = Shot "C_shrunk.png"
 
 Write-Host "[7/8] smoke: WM_NCLBUTTONDOWN(HTBOTTOMRIGHT) with no button held (must exit at once)"
-$wrNow = [PiWin32]::WindowRect($hwnd)
+$wrNow = [PiPluginWin32]::WindowRect($hwnd)
 $lx = $wrNow[0] + 20; $ly = $wrNow[1] + 20
 $lparam = [IntPtr]((($ly -shl 16) -bor ($lx -band 0xFFFF)))
-[void][PiWin32]::PostMessageW($hwnd, 0x00A1, [IntPtr]17, $lparam)   # WM_NCLBUTTONDOWN, HTBOTTOMRIGHT
+[void][PiPluginWin32]::PostMessageW($hwnd, 0x00A1, [IntPtr]17, $lparam)   # WM_NCLBUTTONDOWN, HTBOTTOMRIGHT
 Start-Sleep -Milliseconds 700
 
 Write-Host "[8/8] closing host and analysing..."
-[void][PiWin32]::PostMessageW($hwnd, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)   # WM_CLOSE
+[void][PiPluginWin32]::PostMessageW($hwnd, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)   # WM_CLOSE
 try { Wait-Process -Id $proc.Id -Timeout 20 -ErrorAction SilentlyContinue } catch { }
 if (-not $proc.HasExited) { try { Stop-Process -Id $proc.Id -Force } catch { } }
 
@@ -284,7 +284,7 @@ foreach ($s in @(
     @{ Name = "B_grown";   Data = $B },
     @{ Name = "C_shrunk";  Data = $C })) {
     $d = $s.Data
-    $m = [PiShot]::Measure($d.Path, $d.Cx, $d.Cy, $d.Cw, $d.Ch)
+    $m = [PiPluginShot]::Measure($d.Path, $d.Cx, $d.Cy, $d.Cw, $d.Ch)
     if ($null -eq $m) {
         Write-Host ("  {0}: MEASURE FAILED (no clean panel->gap->plugin row)" -f $s.Name)
         $fail = $true

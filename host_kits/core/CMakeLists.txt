@@ -9,6 +9,7 @@ include(GNUInstallDirs)
 
 # target name
 set(TARGET_NAME piplugin_host)
+set(MEMBER_NAME plugin_host)   # 家族内成员名，决定导出为 pi::plugin_host
 pi_tar_msg(STATUS ${TARGET_NAME} "building host kit L0 (plugin session)...")
 
 # source files
@@ -49,6 +50,9 @@ install(TARGETS ${TARGET_NAME}
 install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/pi_host_session.h
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/piplugin/host_kits/core
 )
+
+add_library(pi::${MEMBER_NAME} ALIAS ${TARGET_NAME})
+set_target_properties(${TARGET_NAME} PROPERTIES EXPORT_NAME ${MEMBER_NAME})
 
 install(EXPORT pipluginHostCoreTargets
     FILE pipluginHostCoreTargets.cmake

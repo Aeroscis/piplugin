@@ -4,7 +4,7 @@ from conan import ConanFile
 from conan.errors import ConanException
 from conan.tools.cmake import CMake, CMakeToolchain, cmake_layout
 
-# Conan 选项与 CMake 缓存选项同名（PI_BUILD_*），generate() 中按下述排除集整批转发给 CMake。
+# Conan 选项与 CMake 缓存选项同名（PI_PLUGIN_BUILD_*），generate() 中按下述排除集整批转发给 CMake。
 # shared/fPIC 是 Conan 打包语义选项：当前 CMake 硬编码核心为 SHARED、adapter kit 为 STATIC，
 # 故不映射（转发了也不生效，徒增无谓缓存变量）；将来接入 BUILD_SHARED_LIBS 后移出排除集即可。
 _CMAKE_EXCLUDED_OPTIONS = ("shared", "fPIC")
@@ -28,7 +28,7 @@ _TEST_ADAPTER_NEEDS = {
 
 # 各测试宿主对宿主 kit 的需求（三个测试宿主都已改用宿主 kit；
 # 关闭对应 kit 时 CMake 侧会禁用该宿主，这里显式报错而不是静默降级）
-#   值 = 需要的宿主 kit 分开关名，对应 PI_BUILD_HOST_KIT_<名>
+#   值 = 需要的宿主 kit 分开关名，对应 PI_PLUGIN_BUILD_HOST_KIT_<名>
 _TEST_HOST_KIT_NEEDS = {
     "PI_PLUGIN_BUILD_TEST_HOST": ("CORE", "DX11"),     # imgui 宿主：L0 会话 + L1 dx11 交换链
     "PI_PLUGIN_BUILD_TEST_HOST_QT": ("CORE", "QT"),    # qt 宿主：L0 会话 + L1 qt 嵌入区域
@@ -50,10 +50,10 @@ class PiPluginConan(ConanFile):
 
     # ------------------------- 开关树（与 CMake 选项同名，一一对应）-------------------------
     # 结构：核心（必编，无开关）
-    #      + adapter kits   ：总开关 PI_PLUGIN_BUILD_ADAPTERS          + 每框架分开关 PI_BUILD_ADAPTER_*
-    #      + host kits      ：总开关 PI_PLUGIN_BUILD_HOST_KITS         + 每层分开关 PI_BUILD_HOST_KIT_*
+    #      + adapter kits   ：总开关 PI_PLUGIN_BUILD_ADAPTERS          + 每框架分开关 PI_PLUGIN_BUILD_ADAPTER_*
+    #      + host kits      ：总开关 PI_PLUGIN_BUILD_HOST_KITS         + 每层分开关 PI_PLUGIN_BUILD_HOST_KIT_*
     #        （宿主侧机制库；L0 core 已抽出，三个测试宿主都已改用它）
-    #      + tests          ：总开关 PI_PLUGIN_BUILD_TESTS             + 每测试件分开关 PI_BUILD_TEST_*
+    #      + tests          ：总开关 PI_PLUGIN_BUILD_TESTS             + 每测试件分开关 PI_PLUGIN_BUILD_TEST_*
     # 依赖：开任一需要 imgui 的开关 -> requirements() 自动拉取；总开关关死 -> 下层分开关有效关闭
     #      （有效状态计算见 _adapter_enabled/_host_kit_enabled/_test_enabled，与 CMake 侧守卫语义一致）。
     options = {
@@ -142,14 +142,14 @@ class PiPluginConan(ConanFile):
     #（adapters/CMakeLists.txt 的 if(NOT PI_PLUGIN_BUILD_ADAPTERS) return() 等）。
 
     def _adapter_enabled(self, kit):
-        """adapter kit 有效状态：总开关 PI_PLUGIN_BUILD_ADAPTERS AND 分开关 PI_BUILD_ADAPTER_<kit>"""
+        """adapter kit 有效状态：总开关 PI_PLUGIN_BUILD_ADAPTERS AND 分开关 PI_PLUGIN_BUILD_ADAPTER_<kit>"""
         return bool(self.options.PI_PLUGIN_BUILD_ADAPTERS) and bool(getattr(self.options,
-                                                                    f"PI_BUILD_ADAPTER_{kit}"))
+                                                                    f"PI_PLUGIN_BUILD_ADAPTER_{kit}"))
 
     def _host_kit_enabled(self, kit):
-        """宿主 kit 有效状态：总开关 PI_PLUGIN_BUILD_HOST_KITS AND 分开关 PI_BUILD_HOST_KIT_<kit>"""
+        """宿主 kit 有效状态：总开关 PI_PLUGIN_BUILD_HOST_KITS AND 分开关 PI_PLUGIN_BUILD_HOST_KIT_<kit>"""
         return bool(self.options.PI_PLUGIN_BUILD_HOST_KITS) and bool(getattr(self.options,
-                                                                     f"PI_BUILD_HOST_KIT_{kit}"))
+                                                                     f"PI_PLUGIN_BUILD_HOST_KIT_{kit}"))
 
     def _test_enabled(self, test_switch):
         """测试件有效状态：总开关 PI_PLUGIN_BUILD_TESTS AND 分开关；无需 adapter 的测试件不在表内"""
@@ -162,13 +162,13 @@ class PiPluginConan(ConanFile):
         for test_switch, adapter in _TEST_ADAPTER_NEEDS.items():
             if adapter and self._test_enabled(test_switch) and not self._adapter_enabled(adapter):
                 problems.append(f"{test_switch} requires PI_PLUGIN_BUILD_ADAPTERS=True "
-                                f"and PI_BUILD_ADAPTER_{adapter}=True")
+                                f"and PI_PLUGIN_BUILD_ADAPTER_{adapter}=True")
         # 同理：测试宿主需要宿主 kit（各自需要哪几个见 _TEST_HOST_KIT_NEEDS）
         for test_switch, kits in _TEST_HOST_KIT_NEEDS.items():
             if not self._test_enabled(test_switch):
                 continue
             if not all(self._host_kit_enabled(kit) for kit in kits):
-                need = ", ".join(f"PI_BUILD_HOST_KIT_{kit}=True" for kit in kits)
+                need = ", ".join(f"PI_PLUGIN_BUILD_HOST_KIT_{kit}=True" for kit in kits)
                 problems.append(f"{test_switch} requires PI_PLUGIN_BUILD_HOST_KITS=True and {need}")
         if problems:
             raise ConanException(
@@ -268,35 +268,35 @@ class PiPluginConan(ConanFile):
         # 与安装树导出的目标名对齐（NAMESPACE pi::），Conan 消费方与裸 CMake 消费方目标名一致
         core = self.cpp_info.components["piplugin"]
         core.libs = [f"piplugin{suffix}"]
-        core.set_property("cmake_target_name", "pi::piplugin")
+        core.set_property("cmake_target_name", "pi::plugin")
 
         # 宿主 kit L0（宿主侧机制库；仅依赖核心，无第三方依赖）
         if self._host_kit_enabled("CORE") and self._packaged("piplugin_host"):
             comp = self.cpp_info.components["piplugin_host"]
             comp.libs = [f"piplugin_host{suffix}"]
             comp.requires = ["piplugin"]
-            comp.set_property("cmake_target_name", "pi::piplugin_host")
+            comp.set_property("cmake_target_name", "pi::plugin_host")
 
         # 宿主 kit L1 Qt 嵌入区域（依赖 L0 + 本地安装的 Qt5，非 conan 依赖）
         if self._host_kit_enabled("QT") and self._packaged("piplugin_host_qt"):
             comp = self.cpp_info.components["piplugin_host_qt"]
             comp.libs = [f"piplugin_host_qt{suffix}"]
             comp.requires = ["piplugin", "piplugin_host"]
-            comp.set_property("cmake_target_name", "pi::piplugin_host_qt")
+            comp.set_property("cmake_target_name", "pi::plugin_host_qt")
 
         # 宿主侧事件路由（APP-06；可选糖，仅依赖核心）
         if self._host_kit_enabled("EVENTS") and self._packaged("piplugin_events"):
             comp = self.cpp_info.components["piplugin_events"]
             comp.libs = [f"piplugin_events{suffix}"]
             comp.requires = ["piplugin"]
-            comp.set_property("cmake_target_name", "pi::piplugin_events")
+            comp.set_property("cmake_target_name", "pi::plugin_events")
 
         # 宿主 kit L1 DX11 嵌入胶水（仅 Windows；只依赖核心）
         if self._host_kit_enabled("DX11") and self._packaged("piplugin_host_dx11"):
             comp = self.cpp_info.components["piplugin_host_dx11"]
             comp.libs = [f"piplugin_host_dx11{suffix}"]
             comp.requires = ["piplugin"]
-            comp.set_property("cmake_target_name", "pi::piplugin_host_dx11")
+            comp.set_property("cmake_target_name", "pi::plugin_host_dx11")
             # 同 imgui 套件：静态库 PUBLIC 链接的平台库，CMakeDeps 需要显式 system_libs
             if self.settings.get_safe("os") == "Windows":
                 comp.system_libs = ["d3d11", "dxgi"]
@@ -306,7 +306,7 @@ class PiPluginConan(ConanFile):
             comp.libs = [f"piplugin_imgui{suffix}"]
             # 外部包引用必须写 包名::组件名；无组件的包用 包名::包名 兜底到根 cpp_info
             comp.requires = ["piplugin", "imgui::imgui"]
-            comp.set_property("cmake_target_name", "pi::piplugin_imgui")
+            comp.set_property("cmake_target_name", "pi::plugin_imgui")
             # 静态套件把平台库以 PRIVATE 链接（user32/d3d11/dxgi/d3dcompiler），但**静态库的
             # 消费方在链接期仍然需要它们**：CMake 的导出 target 会自动带上，CMakeDeps 只能靠
             # cpp_info.system_libs —— 漏了就在消费方报
@@ -322,7 +322,7 @@ class PiPluginConan(ConanFile):
             comp = self.cpp_info.components["piplugin_qt"]
             comp.libs = [f"piplugin_qt{suffix}"]
             comp.requires = ["piplugin"]
-            comp.set_property("cmake_target_name", "pi::piplugin_qt")
+            comp.set_property("cmake_target_name", "pi::plugin_qt")
 
         # 组件**不继承**包级 libdirs/bindirs：必须逐个设置。否则 CMakeDeps 生成的是
         # <pkg>/lib（默认值），而库里实际在 <pkg>/lib/Debug，消费方 find_package 时

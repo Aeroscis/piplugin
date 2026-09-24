@@ -14,6 +14,7 @@ set(COMPONENT_NAME piplugin)
 
 # target name & full name
 set(TARGET_NAME ${COMPONENT_NAME})
+set(MEMBER_NAME plugin)   # 家族内成员名，决定导出为 pi::plugin
 set(FULL_NAME ${COMPONENT_NAME})
 pi_tar_msg(STATUS ${FULL_NAME} "library configuring...")
 
@@ -59,7 +60,8 @@ find_package(pibase REQUIRED)
 
 # add library target
 add_library(${TARGET_NAME} SHARED)                           # 本体
-add_library(${NAMESPACE_NAME}::${TARGET_NAME} ALIAS ${TARGET_NAME}) # 别名
+add_library(pi::${MEMBER_NAME} ALIAS ${TARGET_NAME}) # 家族内别名 pi::plugin
+set_target_properties(${TARGET_NAME} PROPERTIES EXPORT_NAME ${MEMBER_NAME}) # 导出名 pi::plugin
 set_target_properties(${TARGET_NAME} PROPERTIES              # 属性
     OUTPUT_NAME ${FULL_NAME}${GLOBAL_PROJECT_BUILD_TYPE_SUFFIX}
     )
@@ -103,7 +105,7 @@ target_include_directories(${TARGET_NAME} PUBLIC
 )
 
 # 家族根层依赖（PUBLIC：随导出 target 一起传播给消费者）
-target_link_libraries(${TARGET_NAME} PUBLIC pibase::pibase)
+target_link_libraries(${TARGET_NAME} PUBLIC pi::base)
 
 # third party（框架本体无第三方依赖；windows 平台系统库）
 if(WIN32)

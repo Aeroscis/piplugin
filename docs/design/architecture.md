@@ -230,7 +230,7 @@ typedef struct PiRefCountedBase {
 
 - `cmake_layout(self)`：conan 自动管理生成器输出与 `CMakeUserPresets.json`。
 - 依赖：`imgui/1.92.8`（imgui adapter 或 imgui 测试宿主任一有效开启时自动拉取）。
-- 选项：`shared` / `fPIC` + `PI_BUILD_*` 开关树（adapter kits 与 tests 各有
+- 选项：`shared` / `fPIC` + `PI_PLUGIN_BUILD_*` 开关树（adapter kits 与 tests 各有
   总开关 + 分开关，与 CMake 缓存选项同名，整批转发）。
 - Qt 为**本地安装**，非 conan 依赖；仓库里**不写死任何路径**，查找顺序
   `PI_PLUGIN_QT_PREFIX` → `Qt5_DIR` / `CMAKE_PREFIX_PATH`（ECO-05，见 `docs/todo/build.md` #4）。

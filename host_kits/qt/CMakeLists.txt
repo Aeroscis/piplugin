@@ -10,6 +10,7 @@ include(GNUInstallDirs)
 
 # target name
 set(TARGET_NAME piplugin_host_qt)
+set(MEMBER_NAME plugin_host_qt)   # 家族内成员名，决定导出为 pi::plugin_host_qt
 pi_tar_msg(STATUS ${TARGET_NAME} "building host kit L1 (qt embed area)...")
 
 # source files
@@ -67,6 +68,9 @@ install(TARGETS ${TARGET_NAME}
 install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/pi_host_embed_area.h
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/piplugin/host_kits/qt
 )
+
+add_library(pi::${MEMBER_NAME} ALIAS ${TARGET_NAME})
+set_target_properties(${TARGET_NAME} PROPERTIES EXPORT_NAME ${MEMBER_NAME})
 
 install(EXPORT pipluginHostQtTargets
     FILE pipluginHostQtTargets.cmake

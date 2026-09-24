@@ -6,6 +6,7 @@ include(GNUInstallDirs)
 
 # target name
 set(TARGET_NAME piplugin_qt)
+set(MEMBER_NAME plugin_qt)   # 家族内成员名，决定导出为 pi::plugin_qt
 pi_tar_msg(STATUS ${TARGET_NAME} "building qt adapter kit...")
 
 # source files
@@ -69,6 +70,9 @@ install(TARGETS ${TARGET_NAME}
 install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/pi_qt_view.h
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/piplugin/adapters/qt
 )
+
+add_library(pi::${MEMBER_NAME} ALIAS ${TARGET_NAME})
+set_target_properties(${TARGET_NAME} PROPERTIES EXPORT_NAME ${MEMBER_NAME})
 
 install(EXPORT pipluginQtAdapterTargets
     FILE pipluginQtAdapterTargets.cmake

@@ -16,7 +16,7 @@ class PiPluginConan(ConanFile):
     name = "piplugin"
     version = "0.4.0"
     settings = "os", "compiler", "build_type", "arch"
-    # 开关树：选项与 CMake 缓存选项同名（PI_BUILD_*），generate() 整批转发给 CMake
+    # 开关树：选项与 CMake 缓存选项同名（PI_PLUGIN_BUILD_*），generate() 整批转发给 CMake
     options = {
         "shared": [True, False], "fPIC": [True, False],
         "PI_PLUGIN_BUILD_ADAPTERS": [True, False],        # adapter kits 总开关
@@ -112,7 +112,7 @@ Windows 全局：`WIN32_LEAN_AND_MEAN`。
 
 ### 3.3 核心库（src/piplugin/CMakeLists.txt）
 
-- `add_library(piplugin SHARED)` + 别名 `pi::piplugin`
+- `add_library(piplugin SHARED)` + 别名 `pi::plugin`
 - 源文件：`src/pi_plugin_host.c`、`src/pi_plugin_unknown.c`（C11）
 - PUBLIC include：`<root>/include`（build 接口 `FILE_SET HEADERS`）
 - Debug 输出名带 `d` 后缀（`GLOBAL_PROJECT_BUILD_TYPE_SUFFIX`）
@@ -175,8 +175,8 @@ roadmap ECO-03：每个例子一个目录、一个 `CMakeLists.txt`、一份 REA
 
 ### 3.6 打包与安装（roadmap ECO-04）
 
-两种分发形态，同一套目标名（`pi::piplugin` / `pi::piplugin_host` / `pi::piplugin_events` /
-`pi::piplugin_imgui` / `pi::piplugin_qt` / `pi::piplugin_host_qt` / `pi::piplugin_host_dx11`）：
+两种分发形态，同一套目标名（`pi::plugin` / `pi::plugin_host` / `pi::plugin_events` /
+`pi::plugin_imgui` / `pi::plugin_qt` / `pi::plugin_host_qt` / `pi::plugin_host_dx11`）：
 
 | 形态 | 产生方式 | 消费方入口 |
 |---|---|---|
@@ -203,7 +203,7 @@ roadmap ECO-03：每个例子一个目录、一个 `CMakeLists.txt`、一份 REA
    自带，CMakeDeps 只能靠包信息（漏了报 `unresolved external D3D11CreateDeviceAndSwapChain`）；
 7. **组件级"外部 require"在 Conan 2.10 + CMakeDeps 下需要消费方也声明该依赖**才会被传播，
    否则被静默丢弃（Conan 侧 `get_deps_targets_names()` 取不到就 `except KeyError: pass`）：
-   消费方 conanfile 里要有 `imgui/<版本>`，`pi::piplugin_imgui` 才会带上 `imgui::imgui`。
+   消费方 conanfile 里要有 `imgui/<版本>`，`pi::plugin_imgui` 才会带上 `imgui::imgui`。
    裸 CMake 安装树没有这个限制。
 
 验收脚本：`scripts/verify_package.ps1`（A 安装树 + B conan 包，各自 `find_package` → 构建 →
@@ -270,9 +270,9 @@ cmake --install build --config Debug --prefix <prefix>
 
 ```cmake
 find_package(pi CONFIG REQUIRED)
-target_link_libraries(app PRIVATE pi::piplugin)
+target_link_libraries(app PRIVATE pi::plugin)
 # 套件目标随安装树自动可用（该套件开关开启时才安装/导出）：
-target_link_libraries(app PRIVATE pi::piplugin_imgui)
+target_link_libraries(app PRIVATE pi::plugin_imgui)
 ```
 
 Conan 打包（adapters 已随核心一并打包，测试件不进包）：
@@ -285,7 +285,7 @@ conan create . -pr MSVC2022-amd64-Cpp17-Debug -o PI_PLUGIN_BUILD_TESTS=False
 adapter 静态库与公共头（`include/piplugin/adapters/<kit>/`）、
 cmake 配置（伞配置 `piConfig.cmake` 按存在性挂接各 `*AdapterTargets.cmake`，
 安装了哪个套件就自动暴露哪个目标）、以及根文档（`LICENSE` / `README.md` / `CHANGELOG.md`）。
-消费方经 CMakeDeps 使用 `pi::piplugin` / `pi::piplugin_imgui` 等目标。
+消费方经 CMakeDeps 使用 `pi::plugin` / `pi::plugin_imgui` 等目标。
 
 归档打包（cpack，roadmap W-08）：
 

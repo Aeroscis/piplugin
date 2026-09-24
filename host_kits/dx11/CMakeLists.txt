@@ -9,6 +9,7 @@ include(GNUInstallDirs)
 
 # target name
 set(TARGET_NAME piplugin_host_dx11)
+set(MEMBER_NAME plugin_host_dx11)   # 家族内成员名，决定导出为 pi::plugin_host_dx11
 pi_tar_msg(STATUS ${TARGET_NAME} "building host kit L1 (dx11 embed glue)...")
 
 # 仅 Windows：D3D11/DXGI 是平台 API（Linux/macOS 的等价物属 FUT-01/FUT-02）
@@ -57,6 +58,9 @@ install(TARGETS ${TARGET_NAME}
 install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/pi_host_dx11.h
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/piplugin/host_kits/dx11
 )
+
+add_library(pi::${MEMBER_NAME} ALIAS ${TARGET_NAME})
+set_target_properties(${TARGET_NAME} PROPERTIES EXPORT_NAME ${MEMBER_NAME})
 
 install(EXPORT pipluginHostDx11Targets
     FILE pipluginHostDx11Targets.cmake

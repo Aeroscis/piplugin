@@ -6,6 +6,7 @@ include(GNUInstallDirs)
 
 # target name
 set(TARGET_NAME piplugin_imgui)
+set(MEMBER_NAME plugin_imgui)   # 家族内成员名，决定导出为 pi::plugin_imgui
 pi_tar_msg(STATUS ${TARGET_NAME} "building imgui adapter kit...")
 
 # source files（imgui 核心来自 Conan imgui::imgui；Win32 + DX11 backend 为本地 vendored 副本）
@@ -67,6 +68,9 @@ install(TARGETS ${TARGET_NAME}
 install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/pi_imgui_view.h
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/piplugin/adapters/imgui
 )
+
+add_library(pi::${MEMBER_NAME} ALIAS ${TARGET_NAME})
+set_target_properties(${TARGET_NAME} PROPERTIES EXPORT_NAME ${MEMBER_NAME})
 
 install(EXPORT pipluginImguiAdapterTargets
     FILE pipluginImguiAdapterTargets.cmake

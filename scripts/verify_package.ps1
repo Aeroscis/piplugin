@@ -5,7 +5,7 @@
 # examples/conan_consumer/ against three shapes of the distribution, and runs it:
 #
 #   A. install tree   -- cmake --install into a temporary prefix, then
-#                        find_package(piplugin) + link pi::piplugin / _host /
+#                        find_package(piplugin) + link pi::plugin / _host /
 #                        _events / _imgui and run the result.
 #   B. Conan package  -- conan create (builds the recipe into the local cache),
 #                        then a consumer that installs piplugin/<version> as a
@@ -139,10 +139,10 @@ if ($SkipConan) {
         # target_configuration.py::get_deps_targets_names resolves component
         # requires against the consumer's requirements and just `pass`es on
         # KeyError): no imgui-config.cmake is generated at all, the component's
-        # DEPENDENCIES list keeps only pi::piplugin, and the consumer fails to link
+        # DEPENDENCIES list keeps only pi::plugin, and the consumer fails to link
         # with 29 unresolved imgui symbols. Declaring it makes CMakeDeps emit
         # "piplugin_FIND_DEPENDENCY_NAMES imgui" and
-        # "piplugin_pi_piplugin_imgui_DEPENDENCIES_DEBUG pi::piplugin imgui::imgui".
+        # "piplugin_pi_plugin_imgui_DEPENDENCIES_DEBUG pi::plugin imgui::imgui".
         # Version is taken from the recipe so the two can never drift.
         $imguiVersion = (Select-String -Path (Join-Path $repoRoot "conanfile.py") `
                             -Pattern 'self\.requires\("imgui/([^"]+)"\)' |

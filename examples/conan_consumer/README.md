@@ -8,7 +8,7 @@ roadmap **ECO-04**。它**不** `add_subdirectory` 本仓库的任何东西，�
 
 | 形态 | 怎么产生 | 消费方拿到什么 |
 |---|---|---|
-| **A. 安装树** | `cmake --install build --prefix <前缀>` | 仓库自己导出的 target 文件（`pi::piplugin_imgui` 自带 `imgui::imgui`） |
+| **A. 安装树** | `cmake --install build --prefix <前缀>` | 仓库自己导出的 target 文件（`pi::plugin_imgui` 自带 `imgui::imgui`） |
 | **B. conan 包** | `conan create .` + `conan install`（CMakeDeps） | CMakeDeps 依据 `conanfile.py` 的 `package_info()` 生成的 target |
 
 ## 跑
@@ -40,10 +40,10 @@ B. Conan package
 ```cmake
 find_package(piplugin REQUIRED)          # 包名就是 piplugin（旧入口 find_package(pi) 仍可用）
 target_link_libraries(app PRIVATE
-    pi::piplugin            # 核心（SHARED）
-    pi::piplugin_host       # 宿主 kit L0 会话
-    pi::piplugin_events     # 宿主侧事件路由
-    pi::piplugin_imgui      # imgui 适配器套件（静态；imgui 依赖见下一节）
+    pi::plugin            # 核心（SHARED）
+    pi::plugin_host       # 宿主 kit L0 会话
+    pi::plugin_events     # 宿主侧事件路由
+    pi::plugin_imgui      # imgui 适配器套件（静态；imgui 依赖见下一节）
 )
 ```
 
@@ -68,8 +68,8 @@ imgui/1.92.8        # <- 必须；版本与本仓库 conanfile.py 保持一致
 |---|---|---|
 | 生成的配置 | 只有 `piplugin-config.cmake` | `piplugin-config.cmake` + `imgui-config.cmake` |
 | `piplugin_FIND_DEPENDENCY_NAMES` | 空 | `imgui` |
-| `piplugin_pi_piplugin_imgui_DEPENDENCIES_DEBUG` | `pi::piplugin` | `pi::piplugin imgui::imgui` |
-| 链接 `pi::piplugin_imgui` | 29 个 imgui 未解析符号 | 通过 |
+| `piplugin_pi_plugin_imgui_DEPENDENCIES_DEBUG` | `pi::plugin` | `pi::plugin imgui::imgui` |
+| 链接 `pi::plugin_imgui` | 29 个 imgui 未解析符号 | 通过 |
 
 代码位置在 Conan 自己身上：`conan/tools/cmake/cmakedeps/templates/target_configuration.py`
 的 `get_deps_targets_names()` 把"声明的组件 requires"拿去和**消费方的**依赖集合求交，
@@ -78,7 +78,7 @@ imgui/1.92.8        # <- 必须；版本与本仓库 conanfile.py 保持一致
 用探针打印可见 —— 声明是对的，丢的是传播。）
 
 **裸 CMake 安装树没有这个限制**：导出 target 里就带着 `imgui::imgui`，消费方 link
-`pi::piplugin_imgui` 即可。所以 `verify_package.ps1` 的 A 形态不需要写 imgui，
+`pi::plugin_imgui` 即可。所以 `verify_package.ps1` 的 A 形态不需要写 imgui，
 B 形态的 `conanfile.txt` 里有（脚本从 `conanfile.py` 解析版本，不会漂移）。
 
 **另一个坑是我们自己的，已修**：imgui / dx11 这些静态 kit 以 `PRIVATE`/`PUBLIC` 链接
@@ -99,5 +99,5 @@ lib/cmake/piplugin/pipluginConfig.cmake 伞配置：核心 + 按需导入各 kit
 bin/<Config>/piplugind.dll             运行期核心；套件 DLL（Qt）也在 bin
 ```
 
-Qt 相关组件（`pi_host_qt` / `piplugin_qt`）只在本地装了 Qt5、且 CMake 侧没被禁用时才进包；
+Qt 相关组件（`piplugin_host_qt` / `piplugin_qt`）只在本地装了 Qt5、且 CMake 侧没被禁用时才进包；
 它们是**本地安装依赖**，包本身从不要求 Qt5（详见 `src/cmake/piConfig.cmake.in` 的策略注释）。
