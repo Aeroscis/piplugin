@@ -1,51 +1,82 @@
 @PACKAGE_INIT@
 
 # ---------------------------------------------------------------------------
-# piplugin umbrella config (install tree; Conan generates its own next to this
-# one from conanfile.py's package_info()).
+# 家族伞配置：`pi` 是首选入口，与家族其它工程同形
+# （xdcs-naspes-common 那边是 find_package(dcs COMPONENTS baseutils) -> dcs::baseutils）。
 #
-# This file is installed as lib/cmake/piplugin/pipluginConfig.cmake, i.e. under the
-# PACKAGE name - find_package(<name>) only searches <prefix>/lib/cmake/<name>*/
-# directories, so a config living in cmake/pi/ is invisible to
-# find_package(piplugin). src/cmake/piForwardConfig.cmake.in keeps the historical
-# find_package(pi) entry point working.
+#   消费方写法                                  入口文件
+#   find_package(pi REQUIRED COMPONENTS ...)    lib/cmake/pi/piConfig.cmake（转发到本文件）
+#   find_package(piplugin ...)                  lib/cmake/piplugin/pipluginConfig.cmake（本文件本体）
 #
-# The core component config is pipluginCoreConfig.cmake (same directory), included
-# first; everything else is optional and handled by the policy below.
-# ---------------------------------------------------------------------------
-
-# 包含组件 config（piplugin 核心）
-include("${CMAKE_CURRENT_LIST_DIR}/pipluginCoreConfig.cmake")
-
-# ---------------------------------------------------------------------------
-# 可选组件（roadmap ECO-04 的打包策略）
+# 组件名 = target 的成员名，也就是链接时写的 pi::<成员>：
 #
-# 一个可选组件在两种情况下被 include：
-#   * 消费方**明确要求**它 —— find_package(piplugin REQUIRED COMPONENTS ...)：
-#     此时它的第三方依赖是硬性 find_dependency()，这是标准 CMake 契约；
-#   * 或者它存在于安装树里、且它的第三方依赖**本来就能找到** —— 顺势导入，方便使用。
+#   base            家族根层（pibase）-> pi::base
+#   plugin          核心 -> pi::plugin（**总是**导入，不必点名）
+#   plugin_host / plugin_events / plugin_host_dx11 /
+#   plugin_host_qt / plugin_imgui / plugin_qt      可选组件，按需导入
 #
-# 其余情况只打印 STATUS 后跳过，绝不因此让整个 find_package() 失败。
-# 没有这条规则，只想用核心库的消费方会在没装 Qt5 的机器上配置失败 ——
-# Qt 适配器套件装在同一个前缀里，而无条件的 find_dependency(Qt5) 会直接中断。
+# 组件变量一律走 ${CMAKE_FIND_PACKAGE_NAME}：本文件同时服务 pi 与 piplugin 两个包名，
+# 写死 pi 会让 find_package(piplugin COMPONENTS ...) 静默忽略组件请求（它此前就是）。
 #
-# Qt5 是**本地安装**（不是 conan 依赖）：本包从不要求它，想用 pi::plugin_qt 的
-# 消费方自己让 Qt5 可被找到（Qt5_DIR / CMAKE_PREFIX_PATH / PATH），
-# 与任何 Qt 工程的用法一致。imgui 相反：它是 conan 依赖，明确要求该组件时是硬依赖。
+# 为什么不能反过来（伞配置只放在 lib/cmake/pi/、piplugin 当转发）：CMake 按**包名**
+# 搜索 <prefix>/lib/cmake/<name>*/，而 conan 侧 CMakeDeps 生成的配置必然是包名
+# pipluginConfig.cmake —— 家族入口只能在安装树/归档里存在，两个形态都得有入口。
+#
+# 可选组件的第三方依赖策略（roadmap ECO-04）：
+#   * 消费方**明确要求**该组件 -> 硬 find_dependency()，这是标准 CMake 契约；
+#   * 或者组件存在于安装树里、且它的第三方依赖**本来就能找到** -> 顺势导入，方便使用；
+#   * 其余情况只打印 STATUS 后跳过，绝不因此让整个 find_package() 失败 ——
+#     没有这条规则，只想用核心库的消费方会在没装 Qt5 的机器上配置失败。
+# Qt5 是**本地安装**（不是 conan 依赖）：本包从不要求它，想用 pi::plugin_qt 的消费方
+# 自己让 Qt5 可被找到（Qt5_DIR / CMAKE_PREFIX_PATH / PATH）。imgui 相反：它是 conan
+# 依赖，明确要求该组件时是硬依赖。
 # ---------------------------------------------------------------------------
 include(CMakeFindDependencyMacro)
+
+set(_pi_known_components
+    base plugin
+    plugin_host plugin_events plugin_host_dx11 plugin_host_qt plugin_imgui plugin_qt)
+
+# 认不出的组件要说清认得哪些：check_required_components() 只会把 FOUND 置假，不说原因。
+foreach(_pi_requested IN LISTS ${CMAKE_FIND_PACKAGE_NAME}_FIND_COMPONENTS)
+    if(NOT _pi_requested IN_LIST _pi_known_components)
+        set(${CMAKE_FIND_PACKAGE_NAME}_FOUND FALSE)
+        set(${CMAKE_FIND_PACKAGE_NAME}_NOT_FOUND_MESSAGE
+            "unknown component '${_pi_requested}'; known components: ${_pi_known_components}")
+        return()
+    endif()
+endforeach()
+
+# 核心组件：家族根层的 find_dependency(pibase <pin 版本>) + 版本区间校验 +
+# pipluginTargets.cmake（pi::plugin）。核心没有"按需"一说，总是导入。
+include("${CMAKE_CURRENT_LIST_DIR}/pipluginCoreConfig.cmake")
+
+# 核心失败时（例如 pibase 的版本不在 pin 定的区间内）它已经把 <pkg>_FOUND 置假、
+# NOT_FOUND_MESSAGE 写好，这里立刻收手：继续导入可选组件只会盖掉那个结论。
+# 判据是核心自己设的 PI_PLUGIN_CORE_IMPORTED，不是 <pkg>_FOUND —— find_package()
+# 要到本文件处理结束之后才置真它，处理期间它还是空的（实测踩过）。
+if(NOT PI_PLUGIN_CORE_IMPORTED)
+    return()
+endif()
+set(${CMAKE_FIND_PACKAGE_NAME}_plugin_FOUND TRUE)
+
+# 家族根层：pi::base 由 pibase 自己的 config 提供，核心的 find_dependency 已经把它
+# 带进来了，这里只回报"被显式点名（COMPONENTS base）时找没找到"。
+if(pibase_FOUND)
+    set(${CMAKE_FIND_PACKAGE_NAME}_base_FOUND TRUE)
+endif()
 
 set(_pi_prefix "${CMAKE_CURRENT_LIST_DIR}")
 
 # 组件名=targets 文件名；顺序即 include 顺序（依赖者排在被依赖者之后：
 # host_qt 链接 host 核心，imgui/qt 套件链接核心）。
 set(_pi_optional_components
-    "piplugin_host=pipluginHostCoreTargets.cmake"
-    "piplugin_host_dx11=pipluginHostDx11Targets.cmake"
-    "piplugin_events=pipluginEventsTargets.cmake"
-    "piplugin_host_qt=pipluginHostQtTargets.cmake"
-    "piplugin_imgui=pipluginImguiAdapterTargets.cmake"
-    "piplugin_qt=pipluginQtAdapterTargets.cmake"
+    "plugin_host=pipluginHostCoreTargets.cmake"
+    "plugin_host_dx11=pipluginHostDx11Targets.cmake"
+    "plugin_events=pipluginEventsTargets.cmake"
+    "plugin_host_qt=pipluginHostQtTargets.cmake"
+    "plugin_imgui=pipluginImguiAdapterTargets.cmake"
+    "plugin_qt=pipluginQtAdapterTargets.cmake"
 )
 
 foreach(_pi_entry IN LISTS _pi_optional_components)
@@ -58,7 +89,7 @@ foreach(_pi_entry IN LISTS _pi_optional_components)
     endif()
 
     set(_pi_wanted FALSE)
-    if(_pi_component IN_LIST @NAMESPACE_NAME@_FIND_COMPONENTS)
+    if(_pi_component IN_LIST ${CMAKE_FIND_PACKAGE_NAME}_FIND_COMPONENTS)
         set(_pi_wanted TRUE)
     endif()
 
@@ -89,10 +120,12 @@ foreach(_pi_entry IN LISTS _pi_optional_components)
 
     if(_pi_deps_ok)
         include("${_pi_prefix}/${_pi_file}")
-        set(@NAMESPACE_NAME@_${_pi_component}_FOUND TRUE)
+        set(${CMAKE_FIND_PACKAGE_NAME}_${_pi_component}_FOUND TRUE)
     endif()
 endforeach()
 
+unset(_pi_known_components)
+unset(_pi_requested)
 unset(_pi_optional_components)
 unset(_pi_entry)
 unset(_pi_pair)
@@ -101,4 +134,4 @@ unset(_pi_file)
 unset(_pi_wanted)
 unset(_pi_deps_ok)
 
-check_required_components(pi)
+check_required_components(${CMAKE_FIND_PACKAGE_NAME})

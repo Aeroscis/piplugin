@@ -187,17 +187,22 @@ roadmap ECO-03：每个例子一个目录、一个 `CMakeLists.txt`、一份 REA
 
 | 形态 | 产生方式 | 消费方入口 |
 |---|---|---|
-| **安装树** | `cmake --install build --prefix <前缀>` | `find_package(piplugin)`（旧入口 `find_package(pi)` 仍可用，见 `src/cmake/piForwardConfig.cmake.in`） |
-| **Conan 包** | `conan create .` | `conanfile.txt` 里写 `piplugin/<版本>` |
+| **安装树** | `cmake --install build --prefix <前缀>` | **家族入口** `find_package(pi REQUIRED COMPONENTS base plugin ...)`：组件名 = target 的成员名（`base` → `pi::base`、`plugin` → `pi::plugin`、`plugin_imgui` → `pi::plugin_imgui` …） |
+| **Conan 包** | `conan create .` | `conanfile.txt` 写 `piplugin/<版本>`；CMake 侧入口是**包名** `find_package(piplugin)`（CMakeDeps 按包名生成配置，包里没有 `lib/cmake/pi/`） |
 
 要点（都是 ECO-04 修出来的真问题）：
 
 1. **配置放在包名目录**：`lib/cmake/piplugin/`。`find_package(<name>)` 只搜索
    `<prefix>/lib/cmake/<name>*/`，放在 `cmake/pi/` 下的配置对 `find_package(piplugin)`
-   是不可见的（旧入口因此只保留一个转发文件）；
-2. **伞配置按组件按需导入**（`src/cmake/piConfig.cmake.in`）：消费方明确要求某组件时，
-   它的第三方依赖是硬 `find_dependency`；只是"恰好装在同一前缀里"的组件，仅在依赖已能找到时
-   顺手导入，否则打印 STATUS 跳过 —— 于是只想用核心库的消费方不会因为这台机器没装 Qt5 而配置失败；
+   是不可见的（家族入口 `find_package(pi)` 因此只保留一个转发文件，它不再无条件
+   `set(pi_FOUND TRUE)` —— 那会把伞配置的失败结论抹掉）；
+2. **伞配置按组件按需导入**（`src/cmake/piConfig.cmake.in`）：组件名 = target 的成员名
+   （`base` / `plugin_host` / `plugin_imgui` …，与 `pi::` 后面的名字一一对应）；入口名不写死 ——
+   `find_package(pi COMPONENTS ...)` 与 `find_package(piplugin COMPONENTS ...)` 都按
+   `${CMAKE_FIND_PACKAGE_NAME}` 处理（此前只认 `pi`，走包名入口时组件请求被静默忽略），
+   认不出的组件会点名列出认得的。消费方明确要求某组件时，它的第三方依赖是硬
+   `find_dependency`；只是"恰好装在同一前缀里"的组件，仅在依赖已能找到时顺手导入，
+   否则打印 STATUS 跳过 —— 于是只想用核心库的消费方不会因为这台机器没装 Qt5 而配置失败；
 3. **`package_info()` 必须描述包里有什么**，而不是选项说了什么：CMake 侧可以静默禁用 target
    （找不到 Qt5 时 Qt 系列整批禁用，见 ECO-05），此时若仍声明该组件，消费方会拿到
    `Library 'xxx' not found in package`。`conanfile.py::_packaged()` 逐个核对产物；
@@ -273,13 +278,20 @@ SHARED 的 `piplugin_qt` 套件 DLL 同样由自身 POST_BUILD 部署到 `bin/<C
 cmake --install build --config Debug --prefix <prefix>
 ```
 
-或直接使用 CMake package（同一仓库内）：
+或直接使用 CMake package（同一仓库内，安装树/归档的家族入口）：
 
 ```cmake
-find_package(pi CONFIG REQUIRED)
+find_package(pi REQUIRED COMPONENTS base plugin)   # 组件名 = target 的成员名
 target_link_libraries(app PRIVATE pi::plugin)
-# 套件目标随安装树自动可用（该套件开关开启时才安装/导出）：
+# 套件目标随安装树自动可用（该套件开关开启、且它的第三方依赖找得到时才导入）：
 target_link_libraries(app PRIVATE pi::plugin_imgui)
+```
+
+conan 包那条路线的入口是**包名**（CMakeDeps 按包名生成配置，包里没有 `lib/cmake/pi/`）：
+
+```cmake
+find_package(piplugin REQUIRED)
+target_link_libraries(app PRIVATE pi::plugin pi::plugin_imgui)
 ```
 
 Conan 打包（adapters 已随核心一并打包，测试件不进包）：

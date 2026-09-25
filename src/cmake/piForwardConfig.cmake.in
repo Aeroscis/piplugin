@@ -1,10 +1,14 @@
 @PACKAGE_INIT@
 
-# 兼容入口：find_package(pi) 转发到包名配置 find_package(piplugin)。
+# 家族入口 find_package(pi)：真正的逻辑在伞配置里，这里只把它接到 `pi` 这个名字上。
 #
-# ECO-04 把 CMake 包的规范位置定为 lib/cmake/piplugin/（包名 = piplugin，
-# 与 Conan 生成的配置同名）。这个文件只是让旧的 find_package(pi) 调用点继续可用，
-# 它本身不定义任何 target。
+# 为什么伞配置本体放在 lib/cmake/piplugin/ 而不是这里：CMake 按**包名**搜索
+# <prefix>/lib/cmake/<name>*/，而 conan 侧 CMakeDeps 生成的配置必然是包名
+# pipluginConfig.cmake。家族入口只能存在于安装树/归档，包名入口两个形态都要有，
+# 所以本体跟着包名走，pi 这份做转发（含 launcher 语义：组件请求照旧生效，
+# 因为伞配置读的是 ${CMAKE_FIND_PACKAGE_NAME}，此处即 pi）。
+#
+# 不在这里 set(pi_FOUND TRUE)：伞配置已经按入口名设好了 FOUND 与
+# NOT_FOUND_MESSAGE（找到与否、组件认不认、pibase 版本在不在区间内），
+# 无条件置真会把它的失败结论抹掉。
 include("${CMAKE_CURRENT_LIST_DIR}/../piplugin/pipluginConfig.cmake")
-
-set(pi_FOUND TRUE)

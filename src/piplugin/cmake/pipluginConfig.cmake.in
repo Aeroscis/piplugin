@@ -1,5 +1,11 @@
 @PACKAGE_INIT@
 
+# 供伞配置判断"核心这次到底导入了没有"。
+# 判据不能用 <pkg>_FOUND：find_package() 是在配置文件处理**结束之后**才把它置真的，
+# 处理期间它是空的（实测），拿它当判据会把成功也判成失败 —— 伞配置随后就会
+# return()，所有可选组件一个都不导入。
+set(PI_PLUGIN_CORE_IMPORTED FALSE)
+
 include(CMakeFindDependencyMacro)
 
 # 家族根层（pibase）：核心目标的链接接口里有 pi::base，所以消费者路径必须把它找出来。
@@ -30,4 +36,6 @@ set(@NAMESPACE_NAME@_@COMPONENT_NAME@_FOUND TRUE)
 if(pibase_VERSION VERSION_LESS "@PI_PLUGIN_PIBASE_MIN_VERSION@" OR NOT pibase_VERSION VERSION_LESS "@PI_PLUGIN_PIBASE_MAX_VERSION@")
     set(${CMAKE_FIND_PACKAGE_NAME}_FOUND FALSE)
     set(${CMAKE_FIND_PACKAGE_NAME}_NOT_FOUND_MESSAGE "piplugin was built against pibase @PI_PLUGIN_PIBASE_MIN_VERSION@ (accepts >= @PI_PLUGIN_PIBASE_MIN_VERSION@, < @PI_PLUGIN_PIBASE_MAX_VERSION@), but pibase ${pibase_VERSION} was found at ${pibase_DIR}")
+else()
+    set(PI_PLUGIN_CORE_IMPORTED TRUE)
 endif()

@@ -9,9 +9,12 @@
 > **结论**：`conanfile.py` 的 components 为 `piplugin`（核心）/ `piplugin_host`（L0）/
 > `piplugin_host_qt` / `piplugin_events` / `piplugin_host_dx11` / `piplugin_imgui` /
 > `piplugin_qt`，各自带 libdirs / includedirs /（Windows 下）system_libs；
-> `find_package(piplugin)` 与旧 `find_package(pi)` 入口都可用。install 树与 conan 包
-> **两种形态**都有构建 + 运行的自动验证。
-> **复核**：`scripts/verify_package.ps1`（A/B 两段）；
+> 入口按形态分，且各自都有自动验证：install 树与 cpack 归档走**家族入口**
+> `find_package(pi COMPONENTS base plugin ...)`（组件名 = target 的成员名，伞配置按
+> `${CMAKE_FIND_PACKAGE_NAME}` 处理，两个入口名都认组件）；conan 包走**包名入口**
+> `find_package(piplugin)`（CMakeDeps 按包名生成配置）。install 树与 conan 包
+> **两种形态**都有构建 + 运行的自动验证，cpack 归档见第 5 条。
+> **复核**：`scripts/verify_package.ps1`（A/B/C 三段）；
 > `docs/design/build-system.md`；消费方示例 `examples/conan_consumer/`。
 
 ## 2. CI 流水线 [P1] —— 已完成（roadmap BLK-05；W-03、W-10 补齐另两条跑道）

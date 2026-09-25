@@ -1,20 +1,59 @@
 # ./examples/conan_consumer/CMakeLists.txt
 #
 # roadmap ECO-04 的消费方测试件：它**不** add_subdirectory 本仓库的任何东西，
-# 只做每个外部消费者都会做的事 —— find_package(piplugin) 然后链接官方 target。
-# 由 scripts/verify_package.ps1 在"安装树"和"conan 包"两种形态下各跑一遍。
+# 只做每个外部消费者都会做的事 —— find_package 然后链接官方 target。
+# 由 scripts/verify_package.ps1 在"安装树 / conan 包 / cpack 归档"三种形态下各跑一遍。
 #
-# 默认链接：核心 + 宿主 kit L0 + 事件路由 + imgui 适配器套件（四种都验证一遍）。
+# 入口按形态分（见 docs/design/build-system.md §5）：
+#   安装树 / cpack 归档：find_package(pi REQUIRED COMPONENTS ...) —— 家族入口，
+#                        组件名就是 target 的成员名（pi::base / pi::plugin / ...）
+#   conan 包：find_package(piplugin REQUIRED) —— CMakeDeps 按**包名**生成配置，
+#             conan 包里没有 lib/cmake/pi/，家族入口在那条路线上不存在
+# 默认 auto：先试 pi，不中再退 piplugin。verify_package.ps1 在 A/C 两段显式钉 pi、
+# B 段显式钉 piplugin —— 每条路线都断言该走的那条入口，而不是"谁先命中算谁"。
+#
+# 默认链接：根层 + 核心 + 宿主 kit L0 + 事件路由 + imgui 适配器套件。
 # -DPI_PLUGIN_CONSUMER_LINK_IMGUI=OFF 时跳过 imgui 套件。
 cmake_minimum_required(VERSION 3.23)
 project(piplugin_conan_consumer C)
 
 option(PI_PLUGIN_CONSUMER_LINK_IMGUI "Link the imgui adapter kit as well" ON)
+set(PI_PLUGIN_CONSUMER_ENTRY "auto" CACHE STRING "family entry to use: auto | pi | piplugin")
 
-find_package(piplugin REQUIRED)
-message(STATUS "consumer: piplugin_VERSION=${piplugin_VERSION}")
+# 家族入口点名要求的组件：都是必到的（根层 + 核心 + 两个宿主 kit）。
+# imgui / qt 套件不在这里点名 —— 它们按"能找到就顺势导入"的规则来，见文件末尾。
+set(_pi_consumer_family_components base plugin plugin_host plugin_events)
+
+if(PI_PLUGIN_CONSUMER_ENTRY STREQUAL "pi")
+    find_package(pi REQUIRED COMPONENTS ${_pi_consumer_family_components})
+    set(_pi_consumer_entry "pi")
+elseif(PI_PLUGIN_CONSUMER_ENTRY STREQUAL "piplugin")
+    find_package(piplugin REQUIRED)
+    set(_pi_consumer_entry "piplugin")
+elseif(PI_PLUGIN_CONSUMER_ENTRY STREQUAL "auto")
+    find_package(pi QUIET COMPONENTS ${_pi_consumer_family_components})
+    if(pi_FOUND)
+        set(_pi_consumer_entry "pi")
+    else()
+        find_package(piplugin REQUIRED)
+        set(_pi_consumer_entry "piplugin")
+    endif()
+else()
+    message(FATAL_ERROR
+        "PI_PLUGIN_CONSUMER_ENTRY must be auto, pi or piplugin, got '${PI_PLUGIN_CONSUMER_ENTRY}'")
+endif()
+message(STATUS "consumer: entry=${_pi_consumer_entry} version=${${_pi_consumer_entry}_VERSION}")
 
 add_executable(pi_plugin_consumer main.c)
+
+# 家族根层显式链一次：核心的链接接口里有它（pi::plugin 的
+# INTERFACE_LINK_LIBRARIES 就是 pi::base），点名它等于断言根层的 config 真被导入过，
+# 而不是靠传递侥幸成立。
+if(TARGET pi::base)
+    target_link_libraries(pi_plugin_consumer PRIVATE pi::base)
+else()
+    message(WARNING "consumer: pi::base missing from the package")
+endif()
 
 target_link_libraries(pi_plugin_consumer PRIVATE pi::plugin)
 if(TARGET pi::plugin_host)

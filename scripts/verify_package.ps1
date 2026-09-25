@@ -5,8 +5,9 @@
 # examples/conan_consumer/ against three shapes of the distribution, and runs it:
 #
 #   A. install tree   -- cmake --install into a temporary prefix, then
-#                        find_package(piplugin) + link pi::plugin / _host /
-#                        _events / _imgui and run the result.
+#                        find_package(pi COMPONENTS base plugin ...) - the FAMILY
+#                        entry - plus link pi::plugin / _host / _events / _imgui
+#                        and run the result.
 #   B. Conan package  -- conan create (builds the recipe into the local cache),
 #                        then a consumer that installs piplugin/<version> as a
 #                        Conan requirement, configures with the generated
@@ -117,9 +118,13 @@ Write-Host ("Qt adapter kit installed: {0} (the consumer does not need it)" -f $
 
 $conanToolchain = Join-Path $BuildDir "generators\conan_toolchain.cmake"
 $installConsumer = Join-Path $work "consumer-install"
+# -DPI_PLUGIN_CONSUMER_ENTRY=pi pins the FAMILY entry (find_package(pi COMPONENTS ...))
+# for this phase - the form the docs hand to an install-tree consumer. Phase B pins
+# piplugin instead: a conan package only has the package-name entry.
 Invoke-Native { cmake -S $consumerSrc -B $installConsumer -G "Visual Studio 17 2022" -A x64 `
     "-DCMAKE_TOOLCHAIN_FILE=$conanToolchain" `
-    "-DCMAKE_PREFIX_PATH=$prefix" -DPI_PLUGIN_CONSUMER_LINK_IMGUI=ON }
+    "-DCMAKE_PREFIX_PATH=$prefix" -DPI_PLUGIN_CONSUMER_LINK_IMGUI=ON `
+    -DPI_PLUGIN_CONSUMER_ENTRY=pi }
 if ($LASTEXITCODE -ne 0) {
     $failures += "install-tree configure"
     Write-Host "FAIL - configure against the install tree" -ForegroundColor Red
@@ -208,9 +213,12 @@ CMakeToolchain
             Write-Host "FAIL - conan install for the consumer" -ForegroundColor Red
         } else {
             $conanConsumer = Join-Path $work "consumer-conan"
+            # Package-name entry on purpose: a conan package has no lib/cmake/pi/, and
+            # CMakeDeps generates piplugin-config.cmake - the family entry does not
+            # exist on this route.
             Invoke-Native { cmake -S $consumerSrc -B $conanConsumer -G "Visual Studio 17 2022" -A x64 `
                 "-DCMAKE_TOOLCHAIN_FILE=$conanWork\conan_toolchain.cmake" -DCMAKE_BUILD_TYPE=$Config `
-                -DPI_PLUGIN_CONSUMER_LINK_IMGUI=ON }
+                -DPI_PLUGIN_CONSUMER_LINK_IMGUI=ON -DPI_PLUGIN_CONSUMER_ENTRY=piplugin }
             if ($LASTEXITCODE -ne 0) {
                 $failures += "conan consumer configure"
                 Write-Host "FAIL - configure against the Conan package" -ForegroundColor Red
@@ -372,8 +380,12 @@ if ($SkipCpack) {
 
         # -- the archive alone must be enough to build and RUN a host ----------
         $zipConsumer = Join-Path $work "consumer-cpack"
+        # The archive is a plain file tree with no conan, so this phase pins the family
+        # entry too: "the downloader can use the documented form" is asserted, not only
+        # documented.
         Invoke-Native { cmake -S $consumerSrc -B $zipConsumer -G "Visual Studio 17 2022" -A x64 `
-            "-DCMAKE_PREFIX_PATH=$pkgRoot" "-DCMAKE_BUILD_TYPE=$Config" }
+            "-DCMAKE_PREFIX_PATH=$pkgRoot" "-DCMAKE_BUILD_TYPE=$Config" `
+            -DPI_PLUGIN_CONSUMER_ENTRY=pi }
         if ($LASTEXITCODE -ne 0) {
             $failures += "cpack consumer configure"
             Write-Host "FAIL - configure against the unpacked archive" -ForegroundColor Red

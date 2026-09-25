@@ -1,15 +1,20 @@
 # conan_consumer — 站在"外部消费者"位置的测试件
 
 roadmap **ECO-04**。它**不** `add_subdirectory` 本仓库的任何东西，只做每个消费者都会做的事：
-`find_package(piplugin)` → 链接官方 target → 运行。单元测试与一致性验收都回答不了
-"别人拿到这个包能不能用"，这个目录就是为那个问题存在的。
+`find_package` → 链接官方 target → 运行。单元测试与一致性验收都回答不了"别人拿到这个包能不能用"，
+这个目录就是为那个问题存在的。
 
-由 [`scripts/verify_package.ps1`](../../scripts/verify_package.ps1) 驱动，两种分发形态各跑一遍：
+由 [`scripts/verify_package.ps1`](../../scripts/verify_package.ps1) 驱动，三种分发形态各跑一遍：
 
-| 形态 | 怎么产生 | 消费方拿到什么 |
+| 形态 | 怎么产生 | 消费方入口 |
 |---|---|---|
-| **A. 安装树** | `cmake --install build --prefix <前缀>` | 仓库自己导出的 target 文件（`pi::plugin_imgui` 自带 `imgui::imgui`） |
-| **B. conan 包** | `conan create .` + `conan install`（CMakeDeps） | CMakeDeps 依据 `conanfile.py` 的 `package_info()` 生成的 target |
+| **A. 安装树** | `cmake --install build --prefix <前缀>` | `find_package(pi REQUIRED COMPONENTS base plugin ...)` —— **家族入口** |
+| **B. conan 包** | `conan create .` + `conan install`（CMakeDeps） | `find_package(piplugin REQUIRED)` —— CMakeDeps 按**包名**生成配置，conan 包里没有 `lib/cmake/pi/` |
+| **C. cpack 归档** | `cpack` 出 ZIP，解压到干净目录、不带工具链 | 同 A：家族入口（"下载者按文档写法用得上"因此是被断言的，不只是写着的） |
+
+入口由 `-DPI_PLUGIN_CONSUMER_ENTRY=auto|pi|piplugin` 选定：`auto` 先试 `pi`、不中再退 `piplugin`；
+`verify_package.ps1` 在 A/C 两段显式钉 `pi`、B 段显式钉 `piplugin` —— 每条路线断言该走的那条入口，
+而不是"谁先命中算谁"。
 
 ## 跑
 
@@ -18,28 +23,31 @@ pwsh -NoProfile -File scripts\verify_package.ps1            # 两种形态都跑
 pwsh -NoProfile -File scripts\verify_package.ps1 -SkipConan  # 只跑 A（快）
 ```
 
-实测输出（两种形态都 PASS）：
+实测输出（三段都 PASS；入口按形态分别是 pi / piplugin / pi）：
 
 ```
-A. install tree
-   == piplugin packaged consumer ==
-   PI_PLUGIN_API_VERSION = 0.4 (0x00000004)
-   core + host kit L0 + event router: OK
-   imgui adapter kit linked: pi_plugin_imgui_view_create = 00007FF6BB971B3B
-   RESULT: PASS
-B. Conan package
-   == piplugin packaged consumer ==
-   PI_PLUGIN_API_VERSION = 0.4 (0x00000004)
-   core + host kit L0 + event router: OK
-   imgui adapter kit linked: pi_plugin_imgui_view_create = 00007FF60E941B3B
-   RESULT: PASS
+A. install tree                      B. Conan package                   C. cpack archive
+   consumer: entry=pi                   consumer: entry=piplugin           consumer: entry=pi
+   PI_PLUGIN_API_VERSION = 0.5          PI_PLUGIN_API_VERSION = 0.5        PI_PLUGIN_API_VERSION = 0.5
+   core + host kit L0 + event router: OK   core + host kit L0 + event router: OK   core + host kit L0 + event router: OK
+   imgui adapter kit linked: ...        imgui adapter kit linked: ...      imgui adapter kit: not linked in this configuration
+   RESULT: PASS                         RESULT: PASS                       RESULT: PASS
+install tree: PASS                   conan package: PASS                cpack archive: PASS
 ```
+
+C 段那个 "not linked in this configuration" 是有意的：归档里没有 conan 提供的 imgui，
+伞配置按"依赖找不到就不导入该组件"的规则跳过，见下一节。
 
 ## 消费方要写的东西
 
 ```cmake
-find_package(piplugin REQUIRED)          # 包名就是 piplugin（旧入口 find_package(pi) 仍可用）
+# 安装树 / cpack 归档：家族入口，组件名就是 target 的成员名
+find_package(pi REQUIRED COMPONENTS base plugin plugin_host plugin_events)
+# conan 包：包名入口（CMakeDeps 按包名生成配置）
+find_package(piplugin REQUIRED)
+
 target_link_libraries(app PRIVATE
+    pi::base              # 家族根层（pibase；核心的接口里也有它）
     pi::plugin            # 核心（SHARED）
     pi::plugin_host       # 宿主 kit L0 会话
     pi::plugin_events     # 宿主侧事件路由

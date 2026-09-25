@@ -621,6 +621,28 @@ own.
 
 ### Changed
 
+- **The family entry is now the documented one, and it is actually verified (ECO-04).** This
+  repository documented `find_package(pi)` + `pi::plugin` as the way to consume the install
+  tree, but the consumer fixture - and with it all three verification phases - used
+  `find_package(piplugin)`, so the documented entry was never executed by anything. It now
+  follows the family convention the sibling projects use
+  (`find_package(dcs COMPONENTS baseutils)` -> `dcs::baseutils`):
+  `find_package(pi REQUIRED COMPONENTS base plugin plugin_host ...)`, where a component name
+  is the member of `pi::<member>` and `base` names the root layer. Making it the tested
+  entry surfaced two real defects. The umbrella read its component list from
+  `pi_FIND_COMPONENTS` instead of `${CMAKE_FIND_PACKAGE_NAME}_FIND_COMPONENTS`, so
+  `find_package(piplugin COMPONENTS ...)` silently ignored every component request. And the
+  failure guard added with the pibase version range tested `<pkg>_FOUND`, which
+  `find_package()` sets to true only *after* the config file has finished: during processing
+  it is empty, so the guard fired on success and skipped every optional component (the
+  install-tree consumer then died compiling `pi_event_router.h`). The core config now
+  reports its own `PI_PLUGIN_CORE_IMPORTED`, unknown components are refused with the list of
+  the known ones, and `src/cmake/piForwardConfig.cmake.in` no longer sets `pi_FOUND TRUE`
+  unconditionally - that would have erased the umbrella's own verdict. Phases A and C of
+  `scripts/verify_package.ps1` pin the family entry and phase B the package-name entry (a
+  conan package has no `lib/cmake/pi/`), and the consumer now links `pi::base` explicitly
+  instead of relying on it arriving through `pi::plugin`.
+
 - **The family root layer's pin lived in four places, and none of them was compared with
   another (ECO-04).** The commit `scripts/fetch_pibase.ps1` checked out, the version
   `conanfile.py` required, whatever CI cloned, and - on the consumer side - nothing at all.

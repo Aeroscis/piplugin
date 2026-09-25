@@ -14,7 +14,7 @@ roadmap **ECO-03**：把 `docs/tutorial/` 里的代码段变成能跑的工程�
 | `minimal_kit_win32/` | **一个最小适配器套件**（纯 C + GDI，零工具包）+ 用它的插件 | 无（Windows） | `minimal_host` / 官方一致性宿主 |
 | `ffi/` | 用 **Python / Rust / C#** 各写一遍宿主（含本语言实现的宿主对象） | 对应语言的工具链 | 自己（`scripts/verify_ffi.ps1`） |
 | `specialized_app/` | app 自定义协议（通道 A）+ 宿主自定义服务（通道 B）+ 能力门禁 | 宿主 kit L0 | 自己（一个 exe + 一个插件） |
-| `conan_consumer/` | **站在"外部消费者"位置的测试件**：`find_package(piplugin)` → 链接 → 运行（安装树 / conan 包两种形态） | 已安装/已打包的本库 | `scripts/verify_package.ps1` 的 A/B 两段 |
+| `conan_consumer/` | **站在"外部消费者"位置的测试件**：`find_package(pi COMPONENTS ...)`（安装树/归档）或 `find_package(piplugin)`（conan 包）→ 链接 → 运行 | 已安装/已打包的本库 | `scripts/verify_package.ps1` 的 A/B/C 三段 |
 | `plugin_scan/` | **插件发现试水**（FUT-07 第一步）：扫目录 + 读 descriptor + 立刻卸载，打印清单 | 宿主 kit L0 | 自己（扫 `bin/<CONFIG>` 之类的目录） |
 
 ## 一起构建
