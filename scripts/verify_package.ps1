@@ -55,6 +55,10 @@
 param(
     [string]$BuildDir = "",
     [string]$Config   = "Debug",
+    # The consumer and cpack trees configure with an explicit generator so the
+    # verification does not depend on the registry default. Machines with a
+    # different Visual Studio pass -Generator (e.g. "Visual Studio 18 2026").
+    [string]$Generator = "Visual Studio 17 2022",
     [switch]$SkipConan,
     [switch]$SkipCpack,
     [switch]$KeepTemp
@@ -121,7 +125,7 @@ $installConsumer = Join-Path $work "consumer-install"
 # -DPI_PLUGIN_CONSUMER_ENTRY=pi pins the FAMILY entry (find_package(pi COMPONENTS ...))
 # for this phase - the form the docs hand to an install-tree consumer. Phase B pins
 # piplugin instead: a conan package only has the package-name entry.
-Invoke-Native { cmake -S $consumerSrc -B $installConsumer -G "Visual Studio 17 2022" -A x64 `
+Invoke-Native { cmake -S $consumerSrc -B $installConsumer -G $Generator -A x64 `
     "-DCMAKE_TOOLCHAIN_FILE=$conanToolchain" `
     "-DCMAKE_PREFIX_PATH=$prefix" -DPI_PLUGIN_CONSUMER_LINK_IMGUI=ON `
     -DPI_PLUGIN_CONSUMER_ENTRY=pi }
@@ -216,7 +220,7 @@ CMakeToolchain
             # Package-name entry on purpose: a conan package has no lib/cmake/pi/, and
             # CMakeDeps generates piplugin-config.cmake - the family entry does not
             # exist on this route.
-            Invoke-Native { cmake -S $consumerSrc -B $conanConsumer -G "Visual Studio 17 2022" -A x64 `
+            Invoke-Native { cmake -S $consumerSrc -B $conanConsumer -G $Generator -A x64 `
                 "-DCMAKE_TOOLCHAIN_FILE=$conanWork\conan_toolchain.cmake" -DCMAKE_BUILD_TYPE=$Config `
                 -DPI_PLUGIN_CONSUMER_LINK_IMGUI=ON -DPI_PLUGIN_CONSUMER_ENTRY=piplugin }
             if ($LASTEXITCODE -ne 0) {
@@ -304,7 +308,7 @@ if ($SkipCpack) {
     # Qt is deliberately off: without a Conan toolchain there is no imgui here
     # either, so the tree is core + host kits - the same subset the archive
     # must be able to serve on its own.
-    Invoke-Native { cmake -S $repoRoot -B $cpackTree -G "Visual Studio 17 2022" -A x64 `
+    Invoke-Native { cmake -S $repoRoot -B $cpackTree -G $Generator -A x64 `
         -DPI_PLUGIN_PIBASE_PROVIDER=fetch "-DPI_PLUGIN_PIBASE_SOURCE_DIR=$pibaseSrc" `
         -DPI_PLUGIN_BUILD_TESTS=False -DPI_PLUGIN_BUILD_EXAMPLES=False `
         -DPI_PLUGIN_BUILD_ADAPTER_QT=False }
@@ -383,7 +387,7 @@ if ($SkipCpack) {
         # The archive is a plain file tree with no conan, so this phase pins the family
         # entry too: "the downloader can use the documented form" is asserted, not only
         # documented.
-        Invoke-Native { cmake -S $consumerSrc -B $zipConsumer -G "Visual Studio 17 2022" -A x64 `
+        Invoke-Native { cmake -S $consumerSrc -B $zipConsumer -G $Generator -A x64 `
             "-DCMAKE_PREFIX_PATH=$pkgRoot" "-DCMAKE_BUILD_TYPE=$Config" `
             -DPI_PLUGIN_CONSUMER_ENTRY=pi }
         if ($LASTEXITCODE -ne 0) {
