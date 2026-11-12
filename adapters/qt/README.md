@@ -162,6 +162,7 @@ target_link_libraries(my_plugin PRIVATE piplugin piplugin_qt)
 
 - **Qt 宿主与其他宿主用同一个套件**。套件只负责「把 Qt 控件交出去」，与宿主用什么工具包无关；对称的那一半是宿主侧 kit（`host_kits/qt` 的 `PiPluginEmbedArea`），Qt 宿主链接它，非 Qt 宿主链接各自的 L1。
 - **`QApplication` 的归属按情况区分**：宿主自己不是 Qt 程序时，套件在 `attach` 时创建进程里唯一的 `QApplication`，最后一个视图销毁时由套件析构；宿主自己就是 Qt 程序时，套件**复用**宿主已有的那个（`QCoreApplication::instance()`），任何情况下都不析构它——宿主自己的应用对象不该由插件拆掉。两种情况的判别不需要配置，套件在 attach 时探测。非 Qt 的 `QCoreApplication` 无法承载控件，套件会拒绝 attach 而不是在构造控件时崩溃。
+- **套件被用过之后常驻到进程结束**。`on_idle()` 的 `processEvents()` 会重入派发宿主的输入事件：宿主在这个嵌套循环里卸载插件时，`FreeLibrary()` 连带卸载套件 DLL（套件只是插件的依赖，引用计数随之归零），而 Windows 不会为正在执行中的线程推迟卸载——`processEvents()` 返回时执行地址落在已卸载的代码上，实测 0xc0000005（faulting module `piplugin_qt.dll_unloaded`，位置是 `pi_plugin_qt_on_idle()` 里 `processEvents()` 调用之后的收尾指令）。因此套件在创建第一个视图前用 `GetModuleHandleExW` 的 PIN 标志固定自己的模块，此后驻留到进程退出（与 Qt 宿主自己的 Qt DLL 同理），任何重入卸载都返回到仍被映射的代码上。七步卸载序列仍然负责在模块卸载前析构全部 Qt 对象，固定只保证代码段活过这次返回。加载-卸载-再加载复用同一份模块状态。
 - **SHARED（APP-08）**：套件是 SHARED 库，进程里只有一份，因此**同一进程可以同时
   加载多个 Qt 插件 DLL**，它们共用一个 `QApplication`（Qt 只允许一个）。
   0.2.0 时套件是 STATIC：每个 Qt 插件 DLL 各带一份套件状态，第二个插件 attach 时

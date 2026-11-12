@@ -215,6 +215,7 @@ typedef struct PiRefCountedBase {
   Qt 用量都归我"的场景。回归用例 `tests/test_host_multi`（APP-08）。
 - **宿主不论是不是 Qt 程序都用同一个套件**：宿主已有 `QApplication` 时套件复用那个实例、不创建也不销毁它；宿主没有时套件自己创建，最后一个视图销毁时再析构；
   Linux/macOS 的嵌入未实现。
+- **套件被使用后常驻进程**：创建第一个视图前套件用 `GetModuleHandleExW` 的 PIN 标志固定自身模块。`on_idle()` 会重入派发宿主输入，宿主在嵌套 `processEvents()` 里卸载插件时若不固定，`FreeLibrary()` 连带卸载套件 DLL，而 Windows 不为执行中的线程推迟卸载，返回地址落在已卸载代码上（实测 0xc0000005，faulting module `piplugin_qt.dll_unloaded`，位置在 `pi_plugin_qt_on_idle()` 的 `processEvents()` 之后）。代价是套件 DLL 与共享的 Qt 运行时驻留到进程退出。
 
 ### 7.2 piplugin_imgui（imgui 套件）
 

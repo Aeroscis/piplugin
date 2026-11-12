@@ -89,6 +89,43 @@ own.
 
 ### Fixed
 
+- **Unloading a Qt plugin no longer crashes the host when the unload is
+  dispatched from inside the kit's own event pump.** A Qt host drives the
+  plugin with `pi_plugin_on_idle()`, and that call pumps host events through
+  `processEvents()`. The host's zero-interval idle timer means the process
+  spends most of its wall-clock time inside that nested pump, so a click on
+  the host's "Unload" button is usually dispatched *there*: the seven-step
+  teardown runs reentrantly, and its `pi_plugin_module_unload()` calls
+  `FreeLibrary()` on the plugin DLL - which also unmaps the kit DLL, since the
+  kit is only the plugin's dependency and its reference count drops to zero.
+  Windows does not defer the unmap for a thread that is executing inside the
+  module, so when `processEvents()` returned, execution continued at a return
+  address in `pi_plugin_qt_on_idle()` - now unmapped. Windows Error Reporting
+  recorded exception 0xc0000005 with the faulting module reported as
+  `piplugin_qt.dll_unloaded`, Release RVA 0x12c6 and Debug RVA 0x52bb - both
+  the epilogue right after that `processEvents()` call - and the host log
+  stopped at the last unload line with nothing after it. `--selftest` could
+  never see this: no user input arrives during its pump, so the repro needs a
+  real click while the pump is hot.
+
+  The fix is in the kit, not the host. Before the first view is created - the
+  first moment kit code can sit on the stack while host code runs below it -
+  the kit pins its own module with `GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_PIN)`.
+  From then on the module stays mapped until process exit, the same way a Qt
+  host's own Qt DLLs stay mapped, so any reentrant unload unwinds through
+  mapped code. The seven-step unload sequence is still what destroys every Qt
+  object before the plugin's module goes away; the pin only keeps the kit's
+  code alive across the unwind. A load - unload - load cycle reuses the same
+  module state instead of remapping the kit.
+
+  Cost: the kit DLL and the Qt runtime it shares stay resident for the rest of
+  the process, tens of kilobytes of code. Verified by driving the real GUI:
+  unload, reload and a second unload clicked while the pump was hot - two full
+  teardowns with the `FreeLibrary()` included - with the host alive throughout
+  and no new crash record in the event log; ctest passes in both
+  configurations. The imgui plugin in the same host does not pump from
+  `on_idle()`, so it never had this exposure.
+
 - **A Qt host can run a Qt plugin through the adapter kit again (W-06 revisited).**
   The recorded conclusion was that the combination is "unusable, use direct
   integration instead", and it was treated as a Qt limitation. It was not: the

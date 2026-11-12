@@ -102,6 +102,41 @@ void pi_plugin_qt_trace(char const* fmt, ...)
     va_end(ap);
 }
 
+#if PI_PLATFORM_WINDOWS
+/* Keep this module mapped for the rest of the process, once it is in use.
+ *
+ * Why this must exist: pi_plugin_on_idle() pumps host events with
+ * processEvents(), and a host handler dispatched INSIDE that nested pump is
+ * free to unload the plugin - whose FreeLibrary() also unmaps this kit (the
+ * kit is only the plugin's dependency). Windows does not defer the unmap for
+ * a thread that is executing in the module, so the return from processEvents
+ * back into pi_plugin_qt_on_idle lands in unmapped code: measured as
+ * 0xc0000005 with the faulting module reported as "piplugin_qt.dll_unloaded",
+ * at the epilogue right after the processEvents() call (Release RVA 0x12c6;
+ * the Debug build faults at the same spot, RVA 0x52bb). A regression test
+ * cannot see this through --selftest, because no user input arrives during
+ * its pump; it needs a real click while the pump is hot.
+ *
+ * The kit therefore pins itself before the first view exists - that is the
+ * first moment its code can sit on the stack while host code runs below it.
+ * Cost: this DLL (and the Qt runtime it shares with the host) stays mapped
+ * until process exit, exactly like the host's own Qt DLLs in a Qt host. The
+ * seven-step unload sequence stays responsible for destroying every Qt object
+ * the plugin owns BEFORE the module goes away; the pin only makes the module's
+ * CODE outlive the unwind. */
+void pi_plugin_qt_pin_module()
+{
+    static bool const pinned = []()
+    {
+        HMODULE self = nullptr;
+        return GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                                      GET_MODULE_HANDLE_EX_FLAG_PIN,
+                                  (LPCWSTR)&pi_plugin_qt_pin_module, &self) != FALSE;
+    }();
+    (void)pinned;
+}
+#endif
+
 } //namespace
 
 /* ==========================================================================
@@ -926,6 +961,9 @@ extern "C" PI_PLUGIN_QT_API PiResult pi_plugin_qt_view_create(PiPluginQtViewDesc
     {
         return PI_E_INVALIDARG;
     }
+#if PI_PLATFORM_WINDOWS
+    pi_plugin_qt_pin_module();
+#endif
     *out_view = NULL;
 
     PiPluginQtView* view = new PiPluginQtView(*desc);
