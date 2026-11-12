@@ -213,7 +213,7 @@ typedef struct PiRefCountedBase {
 - **多 Qt 插件同进程**：共用那一个 `QApplication`；拆控件用带 owner 的
   `pi_plugin_qt_view_shutdown_owner()`，进程级的 `pi_plugin_qt_view_shutdown()` 只用于"整个进程的
   Qt 用量都归我"的场景。回归用例 `tests/test_host_multi`（APP-08）。
-- **限制**：面向**非 Qt 宿主**（宿主自己就是 Qt 程序时不要把插件 Qt 再套一层）；
+- **宿主不论是不是 Qt 程序都用同一个套件**：宿主已有 `QApplication` 时套件复用那个实例、不创建也不销毁它；宿主没有时套件自己创建，最后一个视图销毁时再析构；
   Linux/macOS 的嵌入未实现。
 
 ### 7.2 piplugin_imgui（imgui 套件）

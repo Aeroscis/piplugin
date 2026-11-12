@@ -26,14 +26,25 @@ X11 嵌入。README（`adapters/qt/README.md`）已预留此方向。
 
 ## 4. Qt 宿主内嵌 Qt 插件的一等用法 [P2] —— 已完成（W-06）
 
-> **结论**：这类组合**不可用**（而不是"能用但不完美"）——套件的 `attach()` 在
-> `pi_plugin_qt_app_create()` 就失败，因为进程里已存在宿主的 `QApplication`，套件的
-> `PI_PLUGIN_QT_VIEW_TRACE=1` 表现为日志只到 `attach: enter` 一行。正确姿势是宿主直连插件的
-> `QWidget*`（插件不链接 `piplugin_qt`），并用能力门禁把走错路的插件在实例化**之前**
-> 挡下（`pi_plugin_host_session_require()` → `plugin does not provide iid ...`）。
-> **复核**：教程 `docs/tutorial/qt-host-direct.md`（症状与判定、宿主×插件选型表、
-> 四条硬规则、常见错误对照表）；可运行示例 `examples/qt_host_direct/`，其
-> `--self-test` 程序化点击插件按钮 → 断言消息到达宿主 → 按顺序卸载 → 退出码判定。
+> **结论（2026-11-12 修正）**：这类组合**可用**，而且有两条路，不必二选一。
+>
+> 原来的结论是"不可用、只能直连"，理由是套件的 `attach()` 在
+> `pi_plugin_qt_app_create()` 处失败、trace 只到 `attach: enter`。那是**实现缺陷**，不是
+> Qt 的限制：套件里 `g_app` 只用于"创建 / 销毁 / 判断存在"，驱动 Qt 走的是
+> `QCoreApplication::instance()`，因此套件根本不需要自己持有 application 对象。
+>
+> 现在两条路都成立：
+> - **套件**：进程里已有 `QApplication`（宿主是 Qt 程序）时复用它，不创建第二个、
+>   不销毁它；宿主没有时才自己创建、最后一个视图销毁时析构。回归用例
+>   `qt_host_loads_qt_plugin`（Qt 宿主 × Qt 插件，走完 attach → detach → 卸载）。
+>   插件只服务 Qt 宿主也照常链接套件，无需特殊处理。
+> - **直连**：插件不链接套件，把 `QWidget*` 交给宿主塞进 `QLayout`，
+>   `examples/qt_host_direct/` 是可运行版本。适合插件明确只服务 Qt 宿主、想少一层嵌入。
+>
+> 选型不再是"能不能"，而是"插件要不要同时进非 Qt 宿主"：要，用套件；不要，直连更薄。
+> **踩过的坑**：探测已有 application 不能跨模块 `qobject_cast`（套件是独立 DLL，宿主
+> 模块可能自带一份 Qt 静态 RTTI 数据），实测会死锁在 `attach: enter`；用
+> `QObject::inherits("QApplication")` 的字符串比较。
 
 ## 5. imgui 套件非 Windows backend [P1]
 

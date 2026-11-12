@@ -1,15 +1,20 @@
 # qt_host_direct — Qt 宿主直连 Qt 插件（不走套件）
 
-**宿主自己就是 Qt 程序**时的正确集成方式，与 `minimal_plugin_qt`（走 Qt 适配器套件）
+**宿主自己就是 Qt 程序**时的两种接法之一，与 `minimal_plugin_qt`（走 Qt 适配器套件）
 正好是一对对照。
 
 ## 为什么需要这个例子
 
-Qt 适配器套件（`piplugin_qt`）面向**非 Qt 宿主**：它负责创建进程里唯一的
-`QApplication` 并从宿主的 `pi_plugin_on_idle()` 里驱动 Qt。宿主自己已经有 `QApplication`
-时这条路径**不可用**——套件在 `pi_plugin_qt_app_create()` 里就会撞上宿主的实例（Qt 只允许
-一个 application object），`PI_PLUGIN_QT_VIEW_TRACE=1` 时日志只到 `attach: enter` 就不再前进。
-详见 `docs/tutorial/qt-host-direct.md`。
+Qt 宿主 × Qt 插件有两条合法路线：
+
+- **走套件**（`minimal_plugin_qt`）：插件链接 `piplugin_qt`，套件检测到宿主已有
+  `QApplication` 就复用它、不创建第二个也不销毁它；宿主用 `host_kits/qt` 的
+  `PiPluginEmbedArea` 承载。适合插件要同时进非 Qt 宿主。
+- **直连**（本例子）：插件把 `QWidget*` 交给宿主，宿主塞进自己的 `QLayout`。适合插件
+  只服务 Qt 宿主，少一层原生窗口嵌入。
+
+早先本文写的是"套件不可用、只能直连"，那个结论已修正：症状（trace 只到
+`attach: enter`）是套件的实现缺陷，不是 Qt 的限制。详见 `docs/tutorial/qt-host-direct.md` §1。
 
 直连的集成只有一行：**插件把 `QWidget*` 交给宿主，宿主塞进自己的 `QLayout`。**
 
@@ -86,5 +91,5 @@ RESULT: FAIL
 |---|---|
 | `docs/tutorial/qt-host-direct.md` | 何时走套件、何时直连；直连的四条硬规则与常见错误 |
 | `docs/tutorial/adapters.md` | 适配器套件本身的用法（imgui / Qt 套件） |
-| `examples/minimal_plugin_qt/` | 走套件的 Qt 插件（宿主不是 Qt 程序时用这个） |
+| `examples/minimal_plugin_qt/` | 走套件的 Qt 插件（宿主不是 Qt 程序时必须用它；宿主是 Qt 时也可以） |
 | `host_kits/qt/`（`PiPluginEmbedArea`） | Qt 宿主嵌**非 Qt**插件（imgui / 原生 HWND）时用 |

@@ -87,6 +87,41 @@ own.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A Qt host can run a Qt plugin through the adapter kit again (W-06 revisited).**
+  The recorded conclusion was that the combination is "unusable, use direct
+  integration instead", and it was treated as a Qt limitation. It was not: the
+  kit called `new QApplication` unconditionally, so in a host that already owned
+  one the trace stopped at `attach: enter` and never reached the plugin's widget
+  factory. Qt does allow only one application object per process, but that never
+  required the kit to own it - `g_app` was only ever created, destroyed and
+  null-checked, while every actual Qt drive point (`processEvents` in
+  `on_idle`, `postEvent` in the post marshaller) already went through
+  `QCoreApplication::instance()`. The kit now records `g_app_owned`: an existing
+  application is adopted (thread recorded, object never destroyed), and only one
+  the kit created is torn down with the last view. Both routes are valid now -
+  the kit for plugins that must also load into non-Qt hosts, direct integration
+  for plugins that only serve Qt hosts - and which to use is a packaging
+  decision, not a capability one.
+
+  Two things measured while doing it, both recorded where they bite.
+  `qobject_cast<QApplication*>` on the existing application is **not** usable
+  here: the kit is a separate DLL and the host may bring its own copy of Qt's
+  static RTTI data, and the result was a deadlock inside `attach` whose trace
+  looked exactly like the old symptom - `QObject::inherits("QApplication")`
+  compares meta-object names and works across the boundary. And an incremental
+  build can leave a stale kit DLL in `bin/<Config>` that the next `ctest` run
+  picks up, which is how a "restored but still red" state appeared; a
+  `--clean-first` rebuild is what makes the result trustworthy.
+
+  Regression: `qt_host_loads_qt_plugin` (Qt host × Qt plugin, attach through the
+  kit, detach, full seven-step unload, exit code as the verdict - the GUI host
+  gets a `--selftest` path because otherwise nothing can assert on unload).
+  Verified by breaking adoption on purpose: forcing a second `QApplication`
+  makes the case hang, which is the behaviour that used to be called
+  "unusable".
+
 ### Added
 
 - **Linux is compiled by CI now, and getting there found four real defects (W-10).**

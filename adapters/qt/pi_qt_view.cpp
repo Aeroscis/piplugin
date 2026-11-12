@@ -170,11 +170,23 @@ class PiPluginQtView;
 QMutex                  g_views_mutex;
 QList<PiPluginQtView*>* g_live_views = nullptr;
 
-/* The module's QApplication. Non-null only while at least one view is
- * attached, and only ever touched on the host GUI thread. */
+/* The process's QApplication, and who owns it.
+ *
+ * Two kinds of GUI host load Qt plugins:
+ *   - a host with no Qt of its own (imgui, wxWidgets, raw Win32): the kit
+ *     creates the QApplication and destroys it when the last view dies;
+ *   - a host that is itself a Qt program: a QApplication already exists on the
+ *     host's GUI thread, and the kit must REUSE it. Creating a second one is
+ *     undefined behaviour in Qt, and destroying the host's own application
+ *     from plugin teardown would take the host down with it.
+ *
+ * g_app_owned therefore records whether this kit created g_app. Adoption is
+ * detected, not requested: if a QApplication is already in the process when a
+ * view attaches, the kit has no legal alternative to reusing it. */
 QApplication* g_app          = nullptr;
-QThread*      g_app_thread   = nullptr; /* thread that created it */
-bool          g_app_shutdown = false;   /* teardown in progress */
+QThread*      g_app_thread   = nullptr; /* thread that owns g_app */
+bool          g_app_owned    = false;   /* true = this kit created g_app */
+bool          g_app_shutdown = false;   /* teardown in progress (owned apps) */
 
 void pi_plugin_qt_views_register(PiPluginQtView* v);
 void pi_plugin_qt_views_unregister(PiPluginQtView* v);
@@ -358,16 +370,72 @@ PiPluginQtPostMarshaller* g_post_marshaller = nullptr;
 
 /* ---------- QApplication lifetime (host GUI thread only) ---------- */
 
+/* Make sure the process has a usable QApplication, adopting the host's when it
+ * already has one.
+ *
+ * Why adoption is not optional: Qt allows exactly one application object per
+ * process. A host that is itself a Qt program owns that object, so the kit has
+ * no legal alternative to reusing it - creating a second one is the bug, not
+ * the fallback. The kit therefore only CREATES an application when the process
+ * has none, and only DESTROYS one it created itself; a host's application
+ * outlives every plugin.
+ *
+ * Note what the kit does with g_app: it creates it, destroys it (if owned), and
+ * checks it exists. Nothing here depends on the object being the kit's own -
+ * driving Qt goes through QCoreApplication::instance() elsewhere in this file.
+ * That is why a Qt host and a non-Qt host can share one code path. */
 bool pi_plugin_qt_app_create()
 {
     if (g_app)
     {
-        return true;
+        /* Already known; still require the caller to be on the GUI thread, the
+         * same rule the creation path enforces. */
+        return pi_plugin_qt_on_gui_thread();
     }
     if (g_app_shutdown)
     {
         return false;
     }
+
+    /* Adoption path: a QApplication created by the host, or by an earlier kit
+     * instance in a process where this DLL was reloaded. */
+    if (QCoreApplication* existing = QCoreApplication::instance())
+    {
+        /* No qobject_cast / dynamic_cast here on purpose. The kit is a DLL
+         * loaded next to the plugin, and the host may be a separate module with
+         * its own copy of Qt's static RTTI data; a cross-module dynamic_cast on
+         * QCoreApplication is not reliable (measured: it deadlocked inside
+         * attach, with the trace stopping right after "attach: enter").
+         * QObject::inherits() compares meta-object names and is safe across
+         * module boundaries. */
+        if (!existing->inherits("QApplication"))
+        {
+            /* A non-GUI QCoreApplication cannot host widgets. Refusing here is
+             * better than failing later inside QWidget construction. */
+            pi_plugin_qt_trace("app_create: refused - existing QCoreApplication is not a QApplication");
+            return false;
+        }
+        g_app        = static_cast<QApplication*>(existing);
+        g_app_thread = existing->thread();
+        g_app_owned  = false;
+        {
+            QMutexLocker lock(&g_post_mutex);
+            if (!g_post_marshaller)
+            {
+                g_post_marshaller = new PiPluginQtPostMarshaller();
+            }
+        }
+        if (g_app_thread != QThread::currentThread())
+        {
+            /* The host's application lives on another thread; widgets must be
+             * created there. Callers check once more after this returns. */
+            pi_plugin_qt_trace("app: adopted the host's QApplication, but the caller is not on its thread");
+            return false;
+        }
+        pi_plugin_qt_trace("app: adopted the host's QApplication (not owned by the kit)");
+        return true;
+    }
+
     if (!pi_plugin_qt_on_gui_thread())
     {
         pi_plugin_qt_trace("app_create: refused - not on the creating thread");
@@ -383,6 +451,7 @@ bool pi_plugin_qt_app_create()
     }
 
     g_app_thread = QThread::currentThread();
+    g_app_owned  = true;
     {
         QMutexLocker lock(&g_post_mutex);
         if (!g_post_marshaller)
@@ -394,10 +463,21 @@ bool pi_plugin_qt_app_create()
     return true;
 }
 
+/* Tear down the QApplication, but only when this kit created it. An adopted
+ * application belongs to the host and outlives every plugin. */
 void pi_plugin_qt_app_destroy()
 {
     if (!g_app)
     {
+        return;
+    }
+    if (!g_app_owned)
+    {
+        /* Host-owned: forget our bookkeeping, leave the object running.
+         * Plugin widgets are already destroyed by the caller. */
+        g_app        = nullptr;
+        g_app_thread = nullptr;
+        pi_plugin_qt_trace("app_destroy: skipped - QApplication belongs to the host");
         return;
     }
     if (!pi_plugin_qt_on_gui_thread())
@@ -412,6 +492,7 @@ void pi_plugin_qt_app_destroy()
     delete g_app;
     g_app        = nullptr;
     g_app_thread = nullptr;
+    g_app_owned  = false;
     pi_plugin_qt_trace("app_destroy: done");
 }
 
@@ -423,6 +504,23 @@ void pi_plugin_qt_app_destroy()
 
 namespace {
 
+#if PI_PLATFORM_WINDOWS
+/* Not every Qt platform backs its windows with HWNDs - offscreen and minimal
+ * hand out small integers as winIds. Those are non-null, so a null check alone
+ * lets them through into Win32, where GetClientRect fails and leaves the RECT
+ * untouched; sizing a widget from that stack garbage asks the raster engine to
+ * paint a surface billions of pixels wide. */
+bool pi_plugin_qt_host_client_rect(PiNativeWindow parent, RECT* out)
+{
+    HWND hwnd = (HWND)parent;
+    if (!IsWindow(hwnd))
+    {
+        return false;
+    }
+    return GetClientRect(hwnd, out) != FALSE;
+}
+#endif
+
 /* --------------------------------------------------------------------------
  * Embedding: tell Qt about the host's container window BEFORE it creates the
  * widget's native window, so Qt creates it as a WS_CHILD of that container
@@ -431,7 +529,7 @@ namespace {
 void PiPluginQtView::embed_into_host()
 {
 #if PI_PLATFORM_WINDOWS
-    if (!m_widget || !PI_IS_VALID_WINDOW(m_parent))
+    if (!m_widget || !IsWindow((HWND)m_parent))
     {
         return;
     }
@@ -459,7 +557,7 @@ void PiPluginQtView::embed_into_host()
 void PiPluginQtView::adopt_host_window_raw(HWND parent_hwnd)
 {
     HWND hwnd = (HWND)m_widget->winId();
-    if (!hwnd)
+    if (!IsWindow(hwnd))
     {
         return;
     }
@@ -480,7 +578,10 @@ void PiPluginQtView::adopt_host_window_raw(HWND parent_hwnd)
     }
 
     RECT r;
-    GetClientRect(parent_hwnd, &r);
+    if (!pi_plugin_qt_host_client_rect((PiNativeWindow)parent_hwnd, &r))
+    {
+        return;
+    }
     if (r.right <= 0 || r.bottom <= 0)
     {
         return;
@@ -498,14 +599,17 @@ void PiPluginQtView::adopt_host_window_raw(HWND parent_hwnd)
 void PiPluginQtView::apply_geometry()
 {
 #if PI_PLATFORM_WINDOWS
-    if (!m_widget || !PI_IS_VALID_WINDOW(m_parent))
+    if (!m_widget || !IsWindow((HWND)m_parent))
     {
         return;
     }
     HWND parent_hwnd = (HWND)m_parent;
 
     RECT r;
-    GetClientRect(parent_hwnd, &r);
+    if (!pi_plugin_qt_host_client_rect(m_parent, &r))
+    {
+        return;
+    }
     if (r.right <= 0 || r.bottom <= 0)
     {
         return;
@@ -532,7 +636,7 @@ void PiPluginQtView::apply_geometry()
     m_widget->setGeometry(0, 0, w, h);
 
     HWND hwnd = (HWND)m_widget->winId();
-    if (!hwnd)
+    if (!IsWindow(hwnd))
     {
         return;
     }
@@ -557,7 +661,8 @@ void PiPluginQtView::repaint_embedded()
     }
     m_widget->update();
 #if PI_PLATFORM_WINDOWS
-    if (HWND hwnd = (HWND)m_widget->winId())
+    HWND hwnd = (HWND)m_widget->winId();
+    if (IsWindow(hwnd))
     {
         RedrawWindow(hwnd, NULL, NULL,
                      RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN |
@@ -789,7 +894,8 @@ static void pi_plugin_qt_view_destroy(void* self_ptr)
 
     /* Last view gone: drop the QApplication now, on this thread, while the
      * module that owns its code is still mapped. The host is free to
-     * FreeLibrary() as soon as this returns. */
+     * FreeLibrary() as soon as this returns. An adopted (host-owned)
+     * application is left running - see pi_plugin_qt_app_destroy(). */
     {
         QMutexLocker lock(&g_views_mutex);
         if (g_live_views && !g_live_views->isEmpty())
@@ -799,8 +905,11 @@ static void pi_plugin_qt_view_destroy(void* self_ptr)
     }
     if (g_app)
     {
-        g_app_shutdown = true;
-        pi_plugin_qt_drain_events();
+        if (g_app_owned)
+        {
+            g_app_shutdown = true;
+            pi_plugin_qt_drain_events();
+        }
         pi_plugin_qt_app_destroy();
     }
     pi_plugin_qt_trace("view_destroy: done");
@@ -904,8 +1013,13 @@ extern "C" PI_PLUGIN_QT_API void pi_plugin_qt_view_shutdown(void)
         }
     }
 
-    g_app_shutdown = true;
-    pi_plugin_qt_drain_events();
+    /* Only an application this kit created may be torn down here; a host-owned
+     * one survives the process-wide sweep. */
+    if (g_app_owned)
+    {
+        g_app_shutdown = true;
+        pi_plugin_qt_drain_events();
+    }
     pi_plugin_qt_app_destroy();
     pi_plugin_qt_trace("shutdown: done");
 }

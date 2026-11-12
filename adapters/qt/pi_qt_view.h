@@ -44,9 +44,12 @@
  * Host requirements: call IPiPluginView::pi_plugin_on_idle() once per frame, and
  * detach + release the view before unloading the plugin module.
  *
- * Limitation: the kit is meant for hosts that do NOT themselves run Qt
- * (they use another toolkit). A Qt-based host should instead put the
- * plugin widgets into its own Qt event loop directly.
+ * QApplication ownership: when the host is not a Qt program the kit creates the
+ * process's single QApplication on the host GUI thread and destroys it with the
+ * last view. When the host IS a Qt program, the kit adopts the application the
+ * host already created and never destroys it. Adoption is detected at attach
+ * time (QCoreApplication::instance()), so both kinds of host use the same kit
+ * and the same plugin code. See README.md "边界与限制".
  */
 #ifndef PI_PLUGIN_QT_VIEW_H
 #define PI_PLUGIN_QT_VIEW_H

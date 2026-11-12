@@ -1,43 +1,36 @@
-# Qt 宿主里跑 Qt 插件：什么时候走套件，什么时候直连
+# Qt 宿主里跑 Qt 插件：套件和直连都行，看插件要不要跨宿主
 
 > 配套可运行示例：**`examples/qt_host_direct/`**（三步跑通 + `--self-test` 退出码）。
 > 本文讲判断依据与硬规则，示例是它的可执行版本。
 > 相关：`docs/tutorial/adapters.md`（套件本身的用法）、
 > `docs/design/adapter-spec.md`（自写套件的契约）、
-> `docs/todo/adapters.md` #4（本问题的原始记录）。
+> `docs/todo/adapters.md` #4（本问题的原始记录与修正）。
 
-## 1. 症状与判定
+## 1. 两条路，不是一条
 
-宿主本身是 Qt 程序（自己已经有 `QApplication`），却按"任意宿主"的说明加载了一个
-**用 Qt 套件写的插件**时，结果不是"界面难看"，而是**没有界面**，而且不一定报错：
+Qt 宿主 × Qt 插件有**两种**合法接法。选哪个取决于插件要不要同时进非 Qt 宿主，而不是
+"套件能不能用"：
 
-```
-[qtview ...] attach: enter parent=00000000000F1404      <- 日志到此为止
-```
+| 路线 | 插件链接 | 集成方式 | 什么时候选 |
+| --- | --- | --- | --- |
+| **套件** | `piplugin_qt` | 插件实现 `pi_plugin_get_view` 返回 `IPiPluginView`；宿主用 `PiPluginEmbedArea` 承载 | 插件要同时进非 Qt 宿主（imgui / 裸 Win32 / wxWidgets），一份代码到处跑 |
+| **直连** | 只链 `piplugin` | 插件用 app 自定义协议交出 `QWidget*`，宿主 `layout->addWidget(...)` | 插件只服务 Qt 宿主，想少一层原生窗口嵌入 |
 
-`PI_PLUGIN_QT_VIEW_TRACE=1` 下只有这一行；插件的 `create_widget` 根本没被调用，控件不存在。
-原因在套件的第一行 attach 逻辑里（`adapters/qt/pi_qt_view.cpp:386-390`）：
+两条路都已在仓库里验证：套件那条的回归用例是 `qt_host_loads_qt_plugin`（Qt 宿主加载
+`pi_plugin_test_plugin_qt.dll`，走完 attach → detach → 七步卸载），直连那条是
+`examples/qt_host_direct` 的 `--self-test`。
 
-```cpp
-bool PiPluginQtView::attach(PiNativeWindow parent)
-{
-    pi_plugin_qt_trace("attach: enter parent=%p", ...);
-    if (m_attached) return true;
-    if (!pi_plugin_qt_app_create()) return false;      /* <- 这里就出局了 */
-```
+### 曾经的错误结论，以及它错在哪
 
-而 `pi_plugin_qt_app_create()`（同文件 `:232-249`）会 `new QApplication(argc, argv)`：**进程里
-已经有一个宿主的 `QApplication`**，Qt 只允许一个 application object（Qt Debug 构建里
-是 `Q_ASSERT_X` 断言，Release 里断言被编掉、行为更加不可预期）。
+本文早先写过「Qt 宿主 + Qt 套件不可用，只能直连」，依据是实测 trace 只到
+`attach: enter` 就停住。**那个症状是真的，但归因错了**：它不是 Qt 的限制，是套件的一句
+多余判断——`pi_plugin_qt_app_create()` 无条件 `new QApplication`，撞上宿主已有的实例。
 
-实测记录（本仓库复核，2026-09-23）：`pi_plugin_test_host_qt.exe pi_plugin_test_plugin_qt.dll`
-（Qt 宿主 × Qt 插件）时，trace 只到 `attach: enter`，进程 5 秒后仍在运行、需要强杀；
-`docs/todo/adapters.md` #4 更早的一次实测记录为"静默失败"。两种表现指向同一结论：
-
-> **"Qt 宿主 + Qt 套件"不是一个"能用但不完美"的组合，是一个不可用的组合。**
-> 套件自己的头文件也这么写（`adapters/qt/pi_qt_view.h`）：
-> *"A Qt-based host should instead put the plugin widgets into its own Qt event loop
-> directly."*
+Qt 确实只允许一个 application object，但**这不构成"套件不能用"**。套件里 `g_app` 的
+全部用途只有三件：创建它、销毁它、判断它存不存在。真正驱动 Qt 的地方（`on_idle` 里的
+`processEvents`、post 队列里的 `postEvent`）走的是 `QCoreApplication::instance()`，
+即"进程里那个 application"，与谁创建无关。所以正确做法是让套件**复用**宿主已有的实例、
+且只销毁自己创建的那个——代码量很小，见 `pi_plugin_qt_app_create()` 的 `g_app_owned`。
 
 ## 2. 选型：一张表定生死
 
@@ -46,7 +39,7 @@ bool PiPluginQtView::attach(PiNativeWindow parent)
 | 宿主 | 插件 | 怎么办 |
 |---|---|---|
 | 非 Qt（imgui / 裸 Win32 / wxWidgets / 无头） | Qt（套件） | **走 Qt 套件**：套件建 `QApplication`、嵌原生子窗口、由宿主 `pi_plugin_on_idle()` 驱动。这是套件的目标场景（`examples/minimal_plugin_qt`） |
-| **Qt** | Qt | **直连**：插件把 `QWidget*` 交给宿主，宿主塞进自己的 `QLayout`，宿主的事件循环直接驱动它（**本文 §3**，`examples/qt_host_direct`） |
+| **Qt** | Qt | **套件或直连都行**，见本文 §1：插件要同时进非 Qt 宿主就用套件（套件复用宿主的 `QApplication`），只服务 Qt 宿主可用直连（`examples/qt_host_direct`） |
 | Qt | imgui | 走 imgui 套件 + 宿主侧 `PiPluginEmbedArea`（`host_kits/qt/`）：套件画在原生子窗口里，`PiPluginEmbedArea` 负责把它嵌进 Qt 控件树并转发尺寸/`pi_plugin_on_idle()` |
 | Qt | 裸 Win32 / 自写套件 | 同上，用 `PiPluginEmbedArea` |
 | 非 Qt | 非 Qt 且宿主愿意自绘 | 自写套件，照 `docs/design/adapter-spec.md`（可参考 `examples/minimal_kit_win32`） |
@@ -138,22 +131,26 @@ load failed (hr=-8): plugin does not provide iid data1=0x9C3E71B5 required by th
 
 门禁在 descriptor 阶段执行，插件连实例都不会被创建。
 
-### 4.4 别把套件 DLL 混进直连插件的依赖里
+### 4.4 直连插件不要链接套件
 
-即使你的插件代码没调套件，只要它的 DLL 依赖里有 `piplugin_qt`（`target_link_libraries`
-写错、或照抄了 `minimal_plugin_qt` 的 CMake），套件就被映射进进程。**当前套件在
-attach 之前不检查进程里是否已有 `QApplication`**（§1），所以这类插件仍然是定时炸弹。
-直连插件的链接只需要：
+直连插件只需要 `piplugin` 与 Qt：
 
 ```cmake
 target_link_libraries(my_qt_plugin PRIVATE piplugin Qt5::Widgets)   # 没有 piplugin_qt
 ```
 
+理由不是"套件会炸"（它现在会复用宿主的 `QApplication`），而是**多一层无用的嵌入**：
+直连时宿主直接持有 `QWidget*`，套件那一层原生子窗口、`on_idle` 驱动、resize 转发全部
+用不上，白白多一个 DLL 依赖。
+
+反过来，链接了套件却返回 `IPiPluginView` 的插件，在 Qt 宿主里也是能跑的（§1 的套件路线），
+只是没必要。
+
 ## 5. 常见错误与症状
 
 | 症状 | 原因 | 处置 |
 |---|---|---|
-| 插件界面完全不出现，trace 只有 `attach: enter` | 宿主持有 `QApplication`，套件要建第二个 | 改直连（本文） |
+| 插件界面完全不出现，trace 只有 `attach: enter` | 宿主持有 `QApplication`，套件版本过旧（没有复用分支，要建第二个） | 升级套件；当前版本会复用它 |
 | 加载成功但 QI 不到协议，界面空白 | 宿主没 `require()`，或插件没声明 `PI_PLUGIN_CAP_PROVIDES` | §4.3 |
 | 关闭窗口/卸载插件时崩溃 | 控件在模块卸载后仍活着（顺序错了） | §4.2：控件 → 接口 → unload |
 | 控件出现但尺寸是 0 / 看不见 | 建出来就 `show()` 了，或没进布局 | 契约：无父、未 `show()`，由宿主的布局决定 |

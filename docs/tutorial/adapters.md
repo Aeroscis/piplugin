@@ -153,7 +153,7 @@ Qt 插件部署时要带上套件 DLL（本仓库构建会自动部署到 `bin/<
 
 | 事项 | 说明 |
 |---|---|
-| Qt 套件面向**非 Qt 宿主** | 宿主本身是 Qt 时不要用本套件：套件会去建进程里唯一的 `QApplication`，而宿主已经有一个（`attach` 在 `pi_plugin_qt_app_create()` 处失败）。改走**直连**：[`qt-host-direct.md`](qt-host-direct.md) + `examples/qt_host_direct/` |
+| Qt 宿主 × Qt 插件 | ✅ 两种方式都可用。**套件**（本文）：插件链接 `piplugin_qt`，套件检测到宿主已有 `QApplication` 就复用、不销毁它；回归用例 `qt_host_loads_qt_plugin`。**直连**（[`qt-host-direct.md`](qt-host-direct.md) + `examples/qt_host_direct/`）：插件不链接套件，把 `QWidget*` 交给宿主塞进布局。选哪个：插件要同时进非 Qt 宿主时用套件，只服务 Qt 宿主可用直连（少一层嵌入） |
 | 多 Qt 插件同进程 | ✅ 已支持：套件是 SHARED，所有 Qt 插件共用进程里唯一一个 `QApplication`；回归用例 `tests/test_host_multi`（ctest `multi_plugin_qt_in_one_process`）。拆控件用 `pi_plugin_qt_view_shutdown_owner(owner)`，不要用进程级的 `pi_plugin_qt_view_shutdown()` |
 | Qt 套件 Linux/macOS 嵌入 | `SetParent` 仅 Windows；X11 XEmbed / NSView 嵌入未实现（TODO） |
 | imgui 套件 | 仅 Windows（D3D11 backend），其他平台待移植 |

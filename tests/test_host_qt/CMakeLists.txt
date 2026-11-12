@@ -23,8 +23,7 @@ if(NOT Qt5_FOUND)
     return()
 endif()
 if(NOT TARGET piplugin_imgui)
-    message(STATUS "ImGui adapter kit (piplugin_imgui) not built -> ${TARGET_NAME} DISABLED")
-    return()
+    message(STATUS "ImGui adapter kit (piplugin_imgui) not built -> this Qt host will only load Qt plugins")
 endif()
 # 宿主 kit 缺失则禁用本宿主（L0 会话 + L1 Qt 嵌入区域）
 if(NOT TARGET piplugin_host)
@@ -89,3 +88,22 @@ add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
         "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}/platforms"
     COMMENT "Deploy ${TARGET_NAME} + Qt runtime -> ${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
 )
+
+# 同框架配对的回归用例：Qt 宿主加载 Qt 插件。
+#
+# 这里要证明的是一件事 —— 宿主自己的 QApplication 已经存在时，Qt 适配器
+# 必须复用它，而不是再建第二个（Qt 不允许），也不能在卸载时把它销毁
+# （那是宿主自己的对象）。用例同时走完 detach -> release -> terminate ->
+# unload module 的卸载序列，退出码非 0 就说明这条路径崩了。
+#
+# 运行时用部署目录：插件 DLL、piplugin 与 Qt 运行时都聚在那里，构建树里的
+# exe 目录只有宿主自己。只构建宿主时该用例自动跳过。
+if(TARGET pi_plugin_test_plugin_qt)
+    add_test(NAME qt_host_loads_qt_plugin
+             COMMAND "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}/${TARGET_NAME}.exe"
+                     --selftest pi_plugin_test_plugin_qt.dll)
+    set_tests_properties(qt_host_loads_qt_plugin PROPERTIES
+        WORKING_DIRECTORY "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
+        TIMEOUT 60
+    )
+endif()

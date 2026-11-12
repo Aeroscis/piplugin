@@ -160,10 +160,8 @@ target_link_libraries(my_plugin PRIVATE piplugin piplugin_qt)
 
 ## 边界与限制
 
-- **面向"非 Qt 宿主"**：套件会创建进程里唯一的 `QApplication`，并把它放在
-  宿主的主线程/消息循环上（非 Qt 宿主的 GUI 线程就是进程主线程，符合 Qt 要求）。
-  如果宿主自己就是 Qt 程序，不要用这个套件——应该让插件控件直接进宿主自己的
-  Qt 事件循环。
+- **Qt 宿主与其他宿主用同一个套件**。套件只负责「把 Qt 控件交出去」，与宿主用什么工具包无关；对称的那一半是宿主侧 kit（`host_kits/qt` 的 `PiPluginEmbedArea`），Qt 宿主链接它，非 Qt 宿主链接各自的 L1。
+- **`QApplication` 的归属按情况区分**：宿主自己不是 Qt 程序时，套件在 `attach` 时创建进程里唯一的 `QApplication`，最后一个视图销毁时由套件析构；宿主自己就是 Qt 程序时，套件**复用**宿主已有的那个（`QCoreApplication::instance()`），任何情况下都不析构它——宿主自己的应用对象不该由插件拆掉。两种情况的判别不需要配置，套件在 attach 时探测。非 Qt 的 `QCoreApplication` 无法承载控件，套件会拒绝 attach 而不是在构造控件时崩溃。
 - **SHARED（APP-08）**：套件是 SHARED 库，进程里只有一份，因此**同一进程可以同时
   加载多个 Qt 插件 DLL**，它们共用一个 `QApplication`（Qt 只允许一个）。
   0.2.0 时套件是 STATIC：每个 Qt 插件 DLL 各带一份套件状态，第二个插件 attach 时

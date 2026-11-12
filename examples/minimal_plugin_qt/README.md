@@ -27,6 +27,6 @@ cd bin\Debug
   不带 owner 的 `pi_plugin_qt_view_shutdown()` 会把**别的** Qt 插件的控件一起拆掉；
 - widget 工厂返回的控件必须是**全新、未 show() 过**的控件：套件要在原生窗口创建前
   告诉 Qt "你的父窗口是宿主容器"（详见 `adapters/qt/README.md` 的嵌入说明）；
-- 宿主是 Qt 程序时不要用这个套件（让插件控件直接进宿主自己的 Qt 事件循环）。
+- 宿主是 Qt 程序时同样可以用本套件：套件检测到宿主已有 `QApplication` 就复用它，不创建第二个、也不会在卸载时销毁宿主的实例。
 
 配套阅读：`docs/tutorial/adapters.md`、`adapters/qt/README.md`。

@@ -233,14 +233,16 @@ public:
         QVBoxLayout* root = new QVBoxLayout(this);
 
         QHBoxLayout* bar       = new QHBoxLayout();
-        QLabel*      title     = new QLabel(QString::fromUtf8("piplugin Qt host — embedding an ImGui plugin"));
+        QLabel*      title     = new QLabel(QString::fromUtf8("piplugin Qt host — same-toolkit and foreign-toolkit plugins"));
         g_statusLabel          = new QLabel(QString::fromUtf8("No plugin loaded"));
         QPushButton* loadBtn   = new QPushButton(QString::fromUtf8("Load ImGui Plugin"));
+        QPushButton* loadQtBtn = new QPushButton(QString::fromUtf8("Load Qt Plugin"));
         QPushButton* unloadBtn = new QPushButton(QString::fromUtf8("Unload"));
 
         bar->addWidget(title, 1);
         bar->addWidget(g_statusLabel, 1);
         bar->addWidget(loadBtn);
+        bar->addWidget(loadQtBtn);
         bar->addWidget(unloadBtn);
         root->addLayout(bar);
 
@@ -252,6 +254,10 @@ public:
 
         connect(loadBtn, &QPushButton::clicked, this, [this]()
                 { LoadPlugin(ExeDirPath("pi_plugin_test_plugin_imgui.dll").c_str()); });
+        /* 同框架配对：Qt 插件用 piplugin_qt 套件画界面，套件会检测到本宿主
+         * 已经有一个 QApplication 并复用，而不是再建第二个。 */
+        connect(loadQtBtn, &QPushButton::clicked, this, [this]()
+                { LoadPlugin(ExeDirPath("pi_plugin_test_plugin_qt.dll").c_str()); });
         connect(unloadBtn, &QPushButton::clicked, this, [this]()
                 { UnloadPlugin(); });
 
@@ -286,6 +292,55 @@ protected:
 int main(int argc, char** argv)
 {
     QApplication app(argc, argv);
+
+    /* --selftest <plugin.dll>: load, drive some frames, unload everything, exit.
+     *
+     * This is the automated regression path for the same-toolkit case: a Qt host
+     * whose QApplication already exists, loading a Qt plugin whose kit must
+     * adopt that application instead of creating a second one. Without an exit
+     * path the GUI host runs until a human closes it, so nothing could assert
+     * on the unload sequence. Exit code 0 = clean, anything else = the unload
+     * path crashed. */
+    if (argc > 2 && argv[1] && std::string(argv[1]) == "--selftest")
+    {
+        PiPluginQtHostWindow window;
+        window.show();
+        /* Let Qt finish creating the native windows before the plugin needs a
+         * real container handle; without this pass the embed area has no
+         * native window yet and the attach path has nothing to embed into. */
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 200);
+        /* Touch the container's native window now, while the loop is still
+         * idle. winId() synchronously waits for the window to be created, so
+         * doing it from inside a Qt callback (or from LoadPlugin before any
+         * event has run) can deadlock against the very message it is waiting
+         * for. Pre-creating it here makes the later attach non-blocking. */
+        if (g_embedArea)
+        {
+            (void)g_embedArea->winId();
+        }
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+
+        LogStatus("selftest: loading %s", argv[2]);
+        LoadPlugin(argv[2]);
+        if (g_slot == PI_PLUGIN_HOST_SESSION_INVALID_SLOT)
+        {
+            LogStatus("selftest: FAIL - plugin did not load");
+            return 2;
+        }
+        for (int i = 0; i < 12; ++i)
+        {
+            if (g_embedArea)
+            {
+                g_embedArea->driveIdle();
+            }
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+        }
+        LogStatus("selftest: unloading");
+        window.close(); /* runs closeEvent -> UnloadPlugin + session destroy */
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 200);
+        LogStatus("selftest: PASS");
+        return 0;
+    }
 
     PiPluginQtHostWindow window;
     window.show();
