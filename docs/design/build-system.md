@@ -63,6 +63,33 @@ cmake --build --preset conan-release
 直接报 `Unable to find 'pibase/<版本>' in remotes` 并退出——它**不会**退化成"去拉源码
 一起构建"，那条路属于 CMake 侧的 fetch 分支（见 §6）。
 
+### 2.2 imgui：唯一走 Conan 的依赖，缓存清空后的恢复
+
+imgui（`imgui/1.92.8`）只来自 Conan 远端（conancenter），其 `source()` 从 GitHub 下载
+源码包。`~/.conan2` 缓存被清空后，受影响的有两类构建：
+
+- **§2.1 的完整路线**：按 §2.1 重建（pibase `conan create` + `conan install .`，imgui
+  随依赖图自动回来）。
+- **裸 CMake 树**（不用 `conan_toolchain.cmake`、手动 `cmake -G` 配置的构建树）：这类树
+  只需要 imgui 一个包，不必走完整 recipe。按需装包并让 CMake 找到它：
+
+  ```bash
+  conan install --requires=imgui/1.92.8 -g CMakeDeps \
+      -s build_type=Release --build=missing -of <构建树>/conan-imgui
+  # Debug 同理再执行一次（-s build_type=Debug）；两个配置装进同一个 -of 目录，
+  # 会生成 imgui-Target-release.cmake 与 imgui-Target-debug.cmake，多配置生成器通吃
+  cmake -S . -B <构建树> -DPI_PLUGIN_BUILD_ADAPTER_IMGUI=ON \
+      -DCMAKE_PREFIX_PATH=<构建树>/conan-imgui [原有的 Qt5_DIR 等变量]
+  ```
+
+  不传 `-DCMAKE_PREFIX_PATH` 时 `find_package(imgui CONFIG)` 找不到包，imgui 套件与
+  imgui 测试插件整组禁用（`adapters/imgui/CMakeLists.txt` 的守卫只报一行 STATUS），
+  依赖它的测试插件 DLL 就不会产出——宿主的"加载 imgui 插件"按钮在这类树上因此失效，
+  症状是 `LoadLibraryA(...imgui.dll) failed (err=126)`。
+
+网络提示：imgui 的 `source()` 直连 GitHub；直连不可达的网络需要给 `conan install` 配
+代理（`HTTPS_PROXY`/`HTTP_PROXY` 环境变量）。
+
 ## 3. CMake 层级结构
 
 ### 3.1 根 CMakeLists.txt
