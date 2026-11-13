@@ -31,6 +31,13 @@ typedef struct Win32Plugin {
     uint32_t               paints;
 } Win32Plugin;
 
+/* 0.6：界面能力是独立接口。一个对象不能有两个 vtbl，所以 provider 是一个
+ * 薄对象，持有一份插件引用；宿主 QI 一次拿一个，用完 release。 */
+typedef struct Win32PluginViewProvider {
+    PiRefCountedBase base;  /* MUST be first */
+    Win32Plugin*     owner; /* add-ref'd */
+} Win32PluginViewProvider;
+
 static uint32_t PI_CALL Plugin_AddRef(void* self)
 {
     return pi_refcounted_add_ref(self);
@@ -68,6 +75,18 @@ static void PaintUi(void* user_data, void* hdc_ptr, int32_t width, int32_t heigh
 }
 
 /* ---- IPiPluginBase ------------------------------------------------------- */
+/* provider 的实现排在后面（它要用到 paint 回调），这里先声明。
+ * 纯 C 里插件对象同时扮演两个接口的标准写法就是这个"薄对象 + QI 分发"。 */
+static IPiPluginViewProviderVtbl const s_provider_vtbl;
+static uint32_t PI_CALL                  Provider_AddRef(void* self_ptr);
+static uint32_t PI_CALL                  Provider_Release(void* self_ptr);
+static PiResult PI_CALL                  Provider_Qi(void* self_ptr, PiGuid const* iid, void** out);
+static PiResult PI_CALL Provider_Views(void* self_ptr, PiPluginViewInfo const** out_views,
+                                       uint32_t* out_count);
+static PiResult PI_CALL Provider_GetView(void* self_ptr, char const* view_id,
+                                         IPiPluginView** out);
+static void              Provider_Destroy(void* self_ptr);
+
 static PiResult PI_CALL Plugin_Qi(void* self_ptr, PiGuid const* iid, void** out)
 {
     if (!out)
@@ -78,6 +97,30 @@ static PiResult PI_CALL Plugin_Qi(void* self_ptr, PiGuid const* iid, void** out)
     {
         *out = self_ptr;
         pi_refcounted_add_ref(self_ptr);
+        return PI_OK;
+    }
+    if (pi_guid_equal(iid, &PI_PLUGIN_IID_VIEW_PROVIDER))
+    {
+        Win32Plugin*             me = (Win32Plugin*)self_ptr;
+        Win32PluginViewProvider* provider;
+
+        /* headless 宿主：不暴露界面能力（GUI 是 OPTIONAL，见 descriptor）。 */
+        if (!me->host_ui)
+        {
+            *out = NULL;
+            return PI_E_NOINTERFACE;
+        }
+        provider = (Win32PluginViewProvider*)calloc(1, sizeof(Win32PluginViewProvider));
+        if (!provider)
+        {
+            *out = NULL;
+            return PI_E_OUTOFMEMORY;
+        }
+        provider->owner = me;
+        pi_refcounted_init_with_destroy(&provider->base, (IPiUnknownVtbl const*)&s_provider_vtbl,
+                                        &Provider_Destroy);
+        pi_refcounted_add_ref(&me->base);
+        *out = (IPiPluginViewProvider*)&provider->base;
         return PI_OK;
     }
     *out = NULL;
@@ -99,8 +142,8 @@ static PiResult PI_CALL Plugin_Init(void* self_ptr, IPiPluginHostServices* host)
     me->host = host;
     pi_iunknown_add_ref((IPiUnknown*)host);
 
-    /* Optional capability: a headless host does not expose IPiPluginHostUI, and then we
-     * publish no view at all (see GetView). */
+    /* Optional capability: a headless host does not expose IPiPluginHostUI, and then
+     * we publish no view at all (see Plugin_Qi: the provider is not exposed). */
     if (PI_SUCCEEDED(pi_iunknown_query_interface((IPiUnknown*)host, &PI_PLUGIN_IID_HOST_UI,
                                                  (void**)&me->host_ui)))
     {
@@ -124,26 +167,94 @@ static PiResult PI_CALL Plugin_Term(void* self_ptr)
     return PI_OK;
 }
 
-static PiResult PI_CALL Plugin_GetView(void* self_ptr, IPiPluginView** out)
+/* ---- IPiPluginViewProvider (0.6) ---------------------------------------- */
+/* 造一个套件视图。只有 GUI 宿主走到这里（provider 本身在 headless 宿主上不暴露）。 */
+static PiResult Plugin_CreateView(void* self_ptr, IPiPluginView** out)
 {
     Win32Plugin*          me = (Win32Plugin*)self_ptr;
     PiPluginWin32ViewDesc desc;
-
-    if (!out)
-    {
-        return PI_E_INVALIDARG;
-    }
-    if (!me->host_ui)
-    {
-        *out = NULL;
-        return PI_E_NOINTERFACE;
-    }
 
     memset(&desc, 0, sizeof(desc));
     desc.paint     = &PaintUi;
     desc.user_data = me;
     return pi_plugin_win32_view_create(&desc, out);
 }
+
+static uint32_t PI_CALL Provider_AddRef(void* self_ptr)
+{
+    return pi_refcounted_add_ref(self_ptr);
+}
+static uint32_t PI_CALL Provider_Release(void* self_ptr)
+{
+    return pi_refcounted_release(self_ptr);
+}
+
+static void Provider_Destroy(void* self_ptr)
+{
+    Win32PluginViewProvider* provider = (Win32PluginViewProvider*)self_ptr;
+    if (provider->owner)
+    {
+        pi_iunknown_release((IPiUnknown*)&provider->owner->base);
+        provider->owner = NULL;
+    }
+    free(provider);
+}
+
+static PiResult PI_CALL Provider_Qi(void* self_ptr, PiGuid const* iid, void** out)
+{
+    if (!out)
+    {
+        return PI_E_INVALIDARG;
+    }
+    if (pi_guid_equal(iid, &PI_IID_UNKNOWN) || pi_guid_equal(iid, &PI_PLUGIN_IID_VIEW_PROVIDER))
+    {
+        *out = self_ptr;
+        pi_refcounted_add_ref(self_ptr);
+        return PI_OK;
+    }
+    *out = NULL;
+    return PI_E_NOINTERFACE;
+}
+
+static PiResult PI_CALL Provider_Views(void* self_ptr, PiPluginViewInfo const** out_views,
+                                       uint32_t* out_count)
+{
+    /* 单面板插件：一个视图，id 用框架约定的 "main"。借用数组，零分配。 */
+    static PiPluginViewInfo const kViews[] = {{"main"}};
+    (void)self_ptr;
+    if (!out_views || !out_count)
+    {
+        return PI_E_INVALIDARG;
+    }
+    *out_views = kViews;
+    *out_count = 1;
+    return PI_OK;
+}
+
+static PiResult PI_CALL Provider_GetView(void* self_ptr, char const* view_id, IPiPluginView** out)
+{
+    Win32PluginViewProvider* provider = (Win32PluginViewProvider*)self_ptr;
+    if (!out)
+    {
+        return PI_E_INVALIDARG;
+    }
+    *out = NULL;
+    if (!view_id || view_id[0] == '\0')
+    {
+        return PI_E_INVALIDARG;
+    }
+    if (strcmp(view_id, "main") != 0)
+    {
+        return PI_E_NOTFOUND;
+    }
+    return Plugin_CreateView(provider->owner, out);
+}
+
+static IPiPluginViewProviderVtbl const s_provider_vtbl = {
+    {&Provider_Qi, &Provider_AddRef, &Provider_Release},
+    &Provider_Views,
+    &Provider_GetView
+};
 
 static void Plugin_Destroy(void* self)
 {
@@ -164,8 +275,7 @@ static void Plugin_Destroy(void* self)
 static IPiPluginBaseVtbl const s_plugin_vtbl = {
     {&Plugin_Qi, &Plugin_AddRef, &Plugin_Release},
     &Plugin_Init,
-    &Plugin_Term,
-    &Plugin_GetView
+    &Plugin_Term
 };
 
 /* ---- factory + entry point ---------------------------------------------- */
@@ -273,7 +383,7 @@ PI_PLUGIN_ENTRY_DECL
     {
         pi_refcounted_init(&s_factory.base, (IPiUnknownVtbl const*)&s_factory_vtbl);
 
-        s_caps[0].iid   = PI_PLUGIN_IID_PLUGIN_VIEW;
+        s_caps[0].iid   = PI_PLUGIN_IID_VIEW_PROVIDER;
         s_caps[0].flags = PI_PLUGIN_CAP_PROVIDES;
         s_caps[1].iid   = PI_PLUGIN_IID_HOST_UI;
         s_caps[1].flags = PI_PLUGIN_CAP_OPTIONAL;

@@ -1,9 +1,22 @@
 /*
  * piplugin - IPiPluginBase
  *
- * Base interface for every plugin instance.
- * Provides lifecycle management (initialize / terminate) and
- * the bridge to obtain a GUI view.
+ * Base interface for every plugin instance. Lifecycle only:
+ * initialize / terminate.
+ *
+ * A plugin's GUI is NOT part of this interface. Views are an optional
+ * capability the host discovers by QueryInterface(PI_PLUGIN_IID_VIEW_PROVIDER)
+ * and are handed out by IPiPluginViewProvider (pi_plugin_view.h). That split has
+ * two consequences worth stating up front:
+ *
+ *   - a headless plugin never sees the word "view": it simply does not expose
+ *     the provider, and the host's query misses. Before 0.6 it had to implement
+ *     pi_plugin_get_view and return PI_E_NOINTERFACE from it, which is the one
+ *     place in this framework where "I do not have this capability" was not
+ *     expressed by a failing query;
+ *   - "how many views, and which ones" belongs to the view interface, so a
+ *     plugin with one view and a plugin with ten answer the framework through
+ *     the same shape.
  */
 #ifndef PI_PLUGIN_BASE_H
 #define PI_PLUGIN_BASE_H
@@ -15,9 +28,6 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-/* Forward */
-typedef struct IPiPluginView IPiPluginView;
 
 /* --------------------------------------------------------------------------
  * IPiPluginBaseVtbl
@@ -32,13 +42,13 @@ typedef struct IPiPluginBaseVtbl {
     PiResult(PI_CALL* pi_plugin_initialize)(void* this_ptr, IPiPluginHostServices* host);
 
     /* Terminate the plugin.
-     * Called before destruction. Plugin must release resources. */
+     *
+     * Called once, before destruction, after every view this plugin handed out
+     * has been detached and released. A plugin that started threads or owns
+     * top-level windows must have joined those threads and destroyed those
+     * windows before returning: the module is unmapped right after this
+     * returns, and any code still running from it is a crash, not a warning. */
     PiResult(PI_CALL* pi_plugin_terminate)(void* this_ptr);
-
-    /* Get the plugin's GUI view, if any.
-     *   out  — receives IPiPluginView (caller must ->release())
-     * Returns PI_OK on success, PI_E_NOINTERFACE if this plugin has no GUI. */
-    PiResult(PI_CALL* pi_plugin_get_view)(void* this_ptr, IPiPluginView** out);
 } IPiPluginBaseVtbl;
 
 typedef struct IPiPluginBase {
@@ -65,15 +75,6 @@ static inline PiResult pi_plugin_terminate(IPiPluginBase* self)
         return PI_E_INVALIDARG;
     }
     return self->lpVtbl->pi_plugin_terminate((void*)self);
-}
-
-static inline PiResult pi_plugin_get_view(IPiPluginBase* self, IPiPluginView** out)
-{
-    if (!self || !self->lpVtbl || !self->lpVtbl->pi_plugin_get_view)
-    {
-        return PI_E_INVALIDARG;
-    }
-    return self->lpVtbl->pi_plugin_get_view((void*)self, out);
 }
 
 #ifdef __cplusplus

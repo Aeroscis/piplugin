@@ -53,6 +53,7 @@ typedef struct IPiPluginHostUI       IPiPluginHostUI;
 typedef struct IPiPluginFactory      IPiPluginFactory;
 typedef struct IPiPluginBase         IPiPluginBase;
 typedef struct IPiPluginView         IPiPluginView;
+typedef struct IPiPluginViewProvider IPiPluginViewProvider;
 typedef struct IPiPluginService      IPiPluginService;
 
 /* --------------------------------------------------------------------------
@@ -61,11 +62,14 @@ typedef struct IPiPluginService      IPiPluginService;
  * A plugin declares, in its descriptor, which interfaces it
  *   - REQUIRES from the host   (e.g. PI_PLUGIN_IID_HOST_UI: needs a GUI host)
  *   - OPTIONALLY uses          (degrades gracefully if absent)
- *   - PROVIDES                 (e.g. PI_PLUGIN_IID_PLUGIN_VIEW, PI_PLUGIN_IID_SERVICE)
+ *   - PROVIDES                 (e.g. PI_PLUGIN_IID_VIEW_PROVIDER, PI_PLUGIN_IID_SERVICE)
  *
  * The host can inspect this list BEFORE instantiating the plugin, e.g. a
  * headless task server only instantiates plugins that PROVIDE PI_PLUGIN_IID_SERVICE,
  * and skips (or rejects) plugins that REQUIRE PI_PLUGIN_IID_HOST_UI.
+ *
+ * A GUI plugin declares PROVIDES PI_PLUGIN_IID_VIEW_PROVIDER. The provider then
+ * answers how many views it has and hands them out; see pi_plugin_view.h.
  * -------------------------------------------------------------------------- */
 #define PI_PLUGIN_CAP_REQUIRED ((uint32_t)1) /* host must provide, else init fails */
 #define PI_PLUGIN_CAP_OPTIONAL ((uint32_t)2) /* plugin uses it if the host has it  */
@@ -198,16 +202,19 @@ PI_PLUGIN_API const char* pi_plugin_descriptor_find_property(PiPluginDescriptor 
 #define PI_PLUGIN_API_VERSION_MAKE(major, minor) \
     ((uint32_t)((((uint32_t)(major) & 0xFFFFu) << 16) | ((uint32_t)(minor) & 0xFFFFu)))
 
-/* 本库自己的 API 版本，**始终与发布版本一致**（当前发布 0.4.0 → API 0.4）。
+/* 本库自己的 API 版本，**始终与发布版本一致**（当前发布 0.6.0 → API 0.6）。
  *
  * 历史：0.3 来自 APP-04（descriptor 追加 properties，二进制布局变化），
- * 0.4 来自 APP-06（新增事件接口 IPiPluginEventSink / IPiPluginHostEvents）。
+ * 0.4 来自 APP-06（新增事件接口 IPiPluginEventSink / IPiPluginHostEvents），
+ * 0.5 来自库名与 pibase 的拆分，
+ * 0.6 来自视图能力的重排：IPiPluginBase 只留生命周期，视图改由
+ *     IPiPluginViewProvider 交付（可交付多个视图，且"没有界面"变成 QI 失败）。
  * 三处版本（CMakeLists 的 project(VERSION)、conanfile.py 的 version、这里的
  * major.minor）必须一起改 —— 单测里的版本 tripwire 就是提醒这件事的机制。
  *
  * 1.0 是"ABI 冻结承诺"的时刻：在那之前每个 x 版本都可以改 ABI，
  * 所以插件应随宿主一起升级；升级时同步 CHANGELOG.md 与 interfaces.md 1.5。 */
-#define PI_PLUGIN_API_VERSION PI_PLUGIN_API_VERSION_MAKE(0, 5)
+#define PI_PLUGIN_API_VERSION PI_PLUGIN_API_VERSION_MAKE(0, 6)
 
 /* 宿主版本与插件版本是否兼容。返回非 0 = 可以加载。 */
 PI_PLUGIN_API int pi_plugin_api_version_compatible(uint32_t host_version, uint32_t plugin_version);
@@ -261,7 +268,7 @@ typedef PiResult (*PiPluginEntryProc)(IPiPluginFactory** out_factory);
  * GUID 分配规则（规范与完整示例见 docs/design/interfaces.md §5）：
  *
  *   1) 框架接口 IID：data1 < 0x80000000，由框架在 src/pi_plugin_unknown.c 中
- *      集中分配（当前已用 data1 = 0x00000000/01/02/03/10/11/20/30/31；
+ *      集中分配（当前已用 data1 = 0x00000000/01/02/03/04/10/11/20/30/31；
  *      完整表见 docs/design/architecture.md §3，以那张表为准）。
  *      **第三方不得在这个区间自行编号** —— 那是框架未来的接口保留区。
  *
@@ -285,6 +292,10 @@ extern PI_PLUGIN_API const PiGuid PI_PLUGIN_IID_HOST_SERVICES;  /* IPiPluginHost
 extern PI_PLUGIN_API const PiGuid PI_PLUGIN_IID_HOST_UI;        /* IPiPluginHostUI         */
 extern PI_PLUGIN_API const PiGuid PI_PLUGIN_IID_PLUGIN_FACTORY; /* IPiPluginFactory  */
 extern PI_PLUGIN_API const PiGuid PI_PLUGIN_IID_PLUGIN_BASE;    /* IPiPluginBase     */
+/* 0.6: the view capability is its own interface. IPiPluginView is one view;
+ * IPiPluginViewProvider is what a plugin exposes to hand them out (the plugin
+ * declares PROVIDES on this IID, and a plugin without a GUI simply does not). */
+extern PI_PLUGIN_API const PiGuid PI_PLUGIN_IID_VIEW_PROVIDER;  /* IPiPluginViewProvider */
 extern PI_PLUGIN_API const PiGuid PI_PLUGIN_IID_PLUGIN_VIEW;    /* IPiPluginView     */
 extern PI_PLUGIN_API const PiGuid PI_PLUGIN_IID_SERVICE;        /* IPiPluginService        */
 /* 0.4 additions (roadmap APP-06, channel C) - interfaces first, nothing changed */

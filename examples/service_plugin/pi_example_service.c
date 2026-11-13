@@ -259,17 +259,6 @@ static PiResult PI_CALL Plugin_Term(void* self_ptr)
     return PI_OK;
 }
 
-static PiResult PI_CALL Plugin_GetView(void* self_ptr, IPiPluginView** out)
-{
-    (void)self_ptr;
-    if (!out)
-    {
-        return PI_E_INVALIDARG;
-    }
-    *out = NULL;
-    return PI_E_NOINTERFACE; /* headless plugin */
-}
-
 static void Plugin_Destroy(void* self)
 {
     ExampleService* me = (ExampleService*)self;
@@ -284,8 +273,7 @@ static void Plugin_Destroy(void* self)
 static IPiPluginBaseVtbl const s_plugin_vtbl = {
     {&Plugin_Qi, &Plugin_AddRef, &Plugin_Release},
     &Plugin_Init,
-    &Plugin_Term,
-    &Plugin_GetView
+    &Plugin_Term
 };
 
 /* --------------------------------------------------------------------------

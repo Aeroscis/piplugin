@@ -262,10 +262,15 @@ static void Dx11LogProc(void* user_data, char const* message)
 }
 
 /* 当前槽位的 view（借用指针：所有权在 session，卸载也由 session 负责）。
- * 没有插件、插件是 headless、或槽位已卸载时返回 NULL。 */
+ * 没有插件、插件是 headless、或槽位已卸载时返回 NULL。
+ *
+ * 0.6 起视图按 id 取：这个宿主一次只显示一个视图，约定取 "main"
+ * （单面板插件的标准 id）。多视图宿主会按枚举结果给每个 id 配一个容器。 */
+#define PI_PLUGIN_IMGUI_HOST_VIEW_ID "main"
+
 static IPiPluginView* CurrentView(void)
 {
-    return pi_plugin_host_session_get_view(g_session, g_slot);
+    return pi_plugin_host_session_get_view(g_session, g_slot, PI_PLUGIN_IMGUI_HOST_VIEW_ID);
 }
 
 /* --------------------------------------------------------------------------
@@ -403,7 +408,7 @@ static bool RenderFrame(bool resizeFrame, bool present, unsigned overrideW, unsi
 
             ImGui::Separator();
             ImGui::Text("Has GUI view:   %s",
-                        pi_plugin_host_session_get_view(g_session, g_slot) ? "yes" : "no");
+                        pi_plugin_host_session_get_view_provider(g_session, g_slot) ? "yes" : "no");
             ImGui::Text("Has service:    %s",
                         pi_plugin_host_session_get_service(g_session, g_slot) ? "yes" : "no");
 
@@ -985,6 +990,7 @@ static void LoadPlugin(char const* dllPath)
     if (CurrentView() && g_embedContainer)
     {
         PiResult ahr = pi_plugin_host_session_attach_view(g_session, g_slot,
+                                                          PI_PLUGIN_IMGUI_HOST_VIEW_ID,
                                                           (PiNativeWindow)g_embedContainer, 1);
         if (PI_FAILED(ahr))
         {

@@ -3,6 +3,7 @@
 #include <d3d11.h>
 #include <dxgi.h>
 #include <stdio.h>
+#include <string>
 #include <windows.h>
 
 #include "imgui.h"
@@ -41,7 +42,14 @@ public:
         , m_swapChain(NULL)
         , m_rtv(NULL)
         , m_imguiCtx(NULL)
-    {}
+    {
+        /* The descriptor's title is borrowed; keep our own copy so the view can
+         * answer pi_plugin_view_get_title() after the caller's string is gone. */
+        if (m_desc.title)
+        {
+            m_title = m_desc.title;
+        }
+    }
 
     PiPluginImGuiViewDesc   m_desc;
     bool                    m_attached;
@@ -51,6 +59,8 @@ public:
     IDXGISwapChain*         m_swapChain;
     ID3D11RenderTargetView* m_rtv;
     ImGuiContext*           m_imguiCtx;
+    /* Optional view title, copied from the descriptor. Empty = no title. */
+    std::string             m_title;
     /* Window class name for THIS view. Unique per view on purpose - see
      * create_resources(). */
     wchar_t                 m_className[64];
@@ -434,6 +444,23 @@ PiResult PI_CALL pi_plugin_imgui_set_visible(void* self_ptr, int32_t visible)
     return PI_OK;
 }
 
+PiResult PI_CALL pi_plugin_imgui_view_get_title(void* self_ptr, char const** out_title)
+{
+    PiPluginImGuiView* me = PiPluginImGuiView::from_iface(self_ptr);
+    if (!out_title)
+    {
+        return PI_E_INVALIDARG;
+    }
+    *out_title = NULL;
+    if (me->m_title.empty())
+    {
+        return PI_E_NOTIMPL;
+    }
+    /* Borrowed from the view: valid until detach, as documented. */
+    *out_title = me->m_title.c_str();
+    return PI_OK;
+}
+
 IPiPluginViewVtbl const PiPluginImGuiView::s_vtbl = {
     {&pi_plugin_imgui_qi, &pi_refcounted_add_ref, &pi_refcounted_release},
     &pi_plugin_imgui_attach,
@@ -442,7 +469,8 @@ IPiPluginViewVtbl const PiPluginImGuiView::s_vtbl = {
     &pi_plugin_imgui_on_resize,
     &pi_plugin_imgui_on_idle,
     &pi_plugin_imgui_get_preferred_size,
-    &pi_plugin_imgui_set_visible
+    &pi_plugin_imgui_set_visible,
+    &pi_plugin_imgui_view_get_title
 };
 
 static void pi_plugin_imgui_view_destroy(void* self_ptr)

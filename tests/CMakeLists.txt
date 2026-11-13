@@ -14,6 +14,7 @@ option(PI_PLUGIN_BUILD_TEST_PLUGIN_BADVERSION "Build the bad-api_version test pl
 option(PI_PLUGIN_BUILD_TEST_PLUGIN_GUIREQUIRED "Build the GUI-required test plugin (ECO-08 negative case)" ON)  # 依赖: framework core
 option(PI_PLUGIN_BUILD_TEST_PLUGIN_SERVICE "Build the service (headless, IPiPluginService) test plugin (APP-07)" ON)  # 依赖: framework core
 option(PI_PLUGIN_BUILD_TEST_PLUGIN_EVENTS "Build the events (IPiPluginEventSink + publish/subscribe) test plugin (APP-06)" ON)  # 依赖: framework core
+option(PI_PLUGIN_BUILD_TEST_PLUGIN_MULTIVIEW "Build the multi-view (one plugin, two views) test plugin (0.6 acceptance)" ON)  # 依赖: framework core
 option(PI_PLUGIN_BUILD_TEST_HOST "Build the imgui-based test host" ON)                    # 依赖: imgui
 option(PI_PLUGIN_BUILD_TEST_HOST_QT "Build the Qt-based test host" ON)                    # 依赖: Qt5 imgui adapter
 option(PI_PLUGIN_BUILD_HEADLESS_HOST "Build the headless (console) test host" ON)         # 依赖: framework core
@@ -60,6 +61,11 @@ endif()
 # events test plugin（APP-06：sink + 发布/订阅，纯 C 无依赖）
 if(PI_PLUGIN_BUILD_TEST_PLUGIN_EVENTS)
     add_subdirectory(test_plugin_events)
+endif()
+
+# multi-view test plugin（0.6 视图能力拆分：一个插件两个视图，纯 C 无 GUI 依赖）
+if(PI_PLUGIN_BUILD_TEST_PLUGIN_MULTIVIEW)
+    add_subdirectory(test_plugin_multiview)
 endif()
 
 # ---- 宿主 ----

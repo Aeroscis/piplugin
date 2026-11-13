@@ -8,12 +8,18 @@ the one that fits in a pull-request description.
 
 Semantic Versioning, in its pre-1.0 reading:
 
+- **Not released yet** — no stable version of this library has been published, so no ABI is
+  frozen today. Before 1.0.0, a vtbl already written into a header may still change: slots
+  added, removed or reshaped. The rule is to say so in this file and move the
+  `PI_PLUGIN_API_VERSION` minor with it (see
+  [docs/design/interfaces.md](docs/design/interfaces.md) 1.5). "Interfaces can only be added"
+  is the rule for *released* interfaces.
 - **0.x.y** — the API is still moving. A `y` release only fixes; an `x` release
   may change behaviour or the API, and its entry says so. Nothing an application
   can see changes without a line in here.
 - **1.0.0** — when the surface documented in
-  [docs/design/interfaces.md](docs/design/interfaces.md) stops moving. From that
-  point every vtbl is frozen: interfaces can only be added, never changed.
+  [docs/design/interfaces.md](docs/design/interfaces.md) stops moving: from the first stable
+  release on, every vtbl is frozen and interfaces can only be added, never changed.
 
 `PI_PLUGIN_API_VERSION` (`include/piplugin/pi_plugin_types.h`) carries the same
 `major.minor`. It is what a host compares against a plugin's `api_version` before
@@ -35,6 +41,76 @@ the same-major rule in [docs/design/interfaces.md](docs/design/interfaces.md) 1.
 and `pi_descriptor_find_property()` already treats a plugin `minor < 3` as
 "the pre-properties descriptor layout", so nothing else needed a 0.3.0 of its
 own.
+
+## [0.6.0]
+
+### Breaking — plugins and hosts must be rebuilt together
+
+**The GUI capability moved off `IPiPluginBase` onto its own interface.** This is
+an ABI break with no compatibility path: there is no deprecation layer, no
+`#ifdef`, and the old shape is gone from the headers. A 0.5 plugin will not load
+into a 0.6 host (and vice versa) — recompile both sides together.
+
+- `IPiPluginBaseVtbl` now has **two slots** (`pi_plugin_initialize`,
+  `pi_plugin_terminate`). `pi_plugin_get_view` is gone from it.
+- New `IPiPluginViewProvider` (`PI_PLUGIN_IID_VIEW_PROVIDER`, data1 `0x04`), what
+  a plugin exposes to hand out views:
+  - `pi_plugin_views(this, &views, &count)` — enumerate the views that exist
+    **right now**. The array and the ids are borrowed, zero-allocation, and may
+    change between calls; hosts are expected to re-read it every frame they
+    already pump. There is deliberately no "the list changed" event: events here
+    are best effort and can be dropped, and a dropped list-change event is a
+    window that never appears.
+  - `pi_plugin_get_view(this, id, &view)` — take one view by id, add-ref'd, not
+    attached yet. Unknown id -> `PI_E_NOTFOUND`; NULL/empty id or NULL out ->
+    `PI_E_INVALIDARG`.
+  - Helpers: `pi_plugin_views`, `pi_plugin_get_view` (on the provider) and
+    `pi_plugin_query_view_provider` (QI + count in one call).
+- **A view's identity is a string id, not an index.** An index is only a cursor
+  through the current enumeration; when a plugin closes the middle view of three,
+  indices shift and the host would paint A's content into B's window. A
+  single-panel plugin uses `"main"`.
+- `IPiPluginViewVtbl` gained one slot at the end:
+  `pi_plugin_view_get_title(this, &title)` — borrowed string owned by the view,
+  valid until detach, UTF-8; `PI_E_NOTIMPL` means "no title of mine", which is not
+  an error. Titles are read by getter and not carried in the enumeration because
+  they change far more often than the set of views does.
+- Capability declarations change from `PROVIDES PI_PLUGIN_IID_PLUGIN_VIEW` to
+  `PROVIDES PI_PLUGIN_IID_VIEW_PROVIDER`. A plugin without a GUI simply does not
+  expose the provider, so "I have no UI" is a failing query instead of a method
+  that returns failure.
+- `PI_PLUGIN_API_VERSION` 0.5 -> 0.6; the project version and the conan version
+  move with it.
+
+### Changed
+
+- **Host kit L0** (`host_kits/core/pi_host_session`) keeps a per-slot view table:
+  `pi_plugin_host_session_views` forwards the provider (never caches),
+  `pi_plugin_host_session_get_view(session, slot, id)` takes and remembers one
+  view per id, `attach_view` / `detach_view` take an id, and `drive_idle`
+  pumps every view the slot has. The teardown sequence now expands the view step
+  to N views (each detached and released before the module is unmapped),
+  followed by the provider release.
+- **Host kit L1** (`host_kits/qt/pi_host_embed_area`): `attach()` takes a view id,
+  `view()` takes an id too (or returns the bound one), and the class still never
+  caches an `IPiPluginView*` — it asks the session every time, which is what keeps
+  a released view from being touched.
+- Adapter kits: both descriptors gained an optional `title` field (copied by the
+  kit), and both views implement `pi_plugin_view_get_title`.
+- All test plugins, test hosts and examples were ported; the service/events
+  plugins and the headless examples dropped their "return `PI_E_NOINTERFACE`"
+  stubs.
+
+### Added
+
+- `tests/test_plugin_multiview` + ctest `multi_view_one_plugin_two_containers`:
+  one plugin, two views (`alpha`, `beta`), two containers. Asserts the whole
+  sequence — QI the provider, enumerate two ids, take each once (and the same
+  object on a second ask), reject an unknown id, attach each into its own
+  container, read both titles, pump both (per-view idle counters advance),
+  detach each, release the host's provider reference, unload, and the plugin
+  reporting **zero live views** in `terminate`. Toolkit-free on purpose: it tests
+  the bookkeeping, not rendering.
 
 ## [0.5.0]
 

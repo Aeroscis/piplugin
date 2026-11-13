@@ -189,7 +189,7 @@ static void LoadPlugin(char const* dllPath)
     PiPluginDescriptor const* desc = pi_plugin_host_session_get_descriptor(g_session, slot);
 
     /* 嵌入：区域是本宿主创建并摆位的，L1 kit 负责让它成为 embed host */
-    bool const view_attached = PI_SUCCEEDED(g_embedArea->attach(g_session, slot, true));
+    bool const view_attached = PI_SUCCEEDED(g_embedArea->attach(g_session, slot, "main", true));
 
     if (desc)
     {

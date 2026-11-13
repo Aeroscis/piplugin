@@ -201,9 +201,13 @@ CI（GitHub Actions，见 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
 
 ## 版本与兼容
 
+- **尚未发布**：本库还没有对外发布过稳定版本，因此**当前没有任何已冻结的 ABI**。
+  在 1.0.0 之前，改一个已经写进头文件的 vtbl（增删槽位、调整参数）是允许的 ——
+  代价是同步更新 [`CHANGELOG.md`](CHANGELOG.md) 并把 `PI_PLUGIN_API_VERSION` 的
+  minor 前进一位。"只能新增接口、不得修改"约束的是**已发布**的接口，不是现在。
 - 当前为 **0.x**：接口仍可能变动。`y` 版本只修问题，`x` 版本可能改行为或 API，
   每次都会写进 [`CHANGELOG.md`](CHANGELOG.md)。
-- `1.0.0` 留给"ABI 冻结承诺"的时刻：从那时起 vtbl 只增不改。
+- `1.0.0` 留给"ABI 冻结承诺"的时刻：**从第一次稳定发布起** vtbl 只增不改。
 - 插件在自己的 descriptor 里声明 `PI_PLUGIN_API_VERSION`；宿主据此在实例化前门禁。
   规则见 [`docs/design/interfaces.md`](docs/design/interfaces.md) 1.5。
 

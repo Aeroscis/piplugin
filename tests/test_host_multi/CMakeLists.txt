@@ -120,3 +120,17 @@ if(TARGET pi_plugin_test_plugin_imgui AND TARGET pi_plugin_test_plugin_imgui2)
         )
     set_tests_properties(multi_plugin_imgui_in_one_process PROPERTIES TIMEOUT 180)
 endif()
+
+# ---- 0.6 视图能力拆分：一个插件、两个视图、两个容器 ----
+# 宿主做完整流程：QI provider → 枚举两个 id → 各取一次（再取一次必须还是同一个对象）
+# → 分别 attach 到两个不同容器 → 读两条标题 → pump（两个视图的 on_idle 计数都要推进）
+# → 分别 detach → 释放宿主自己那份 provider → 卸载；并断言插件的 terminate 看到
+# 0 个活着的视图（= 视图全部在模块卸载前还回去了）。退出码判定。
+if(TARGET pi_plugin_test_plugin_multiview)
+    add_test(NAME multi_view_one_plugin_two_containers
+        COMMAND "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}/${TARGET_NAME}.exe"
+                "--multi-view" "pi_plugin_test_plugin_multiview.dll"
+        WORKING_DIRECTORY "${GLOBAL_PROJECT_BIN_BUILD_TYPE_PATH}"
+        )
+    set_tests_properties(multi_view_one_plugin_two_containers PROPERTIES TIMEOUT 180)
+endif()

@@ -94,17 +94,10 @@ public:
     }
 
     /* NO IPiPluginView, deliberately: in the direct integration the UI does not
-     * travel over PI_PLUGIN_IID_PLUGIN_VIEW (that is the adapter kit's channel, and the
-     * kit needs to own the event loop). It travels over the app's protocol. */
-    PiResult GetView(IPiPluginView** out)
-    {
-        if (!out)
-        {
-            return PI_E_INVALIDARG;
-        }
-        *out = nullptr;
-        return PI_E_NOINTERFACE;
-    }
+     * travel over the framework's view channel (PI_PLUGIN_IID_VIEW_PROVIDER +
+     * PI_PLUGIN_IID_PLUGIN_VIEW is the adapter kit's channel, and the kit needs to
+     * own the event loop). It travels over the app's protocol. That is also why
+     * this plugin exposes no view provider at all: QI for it simply fails. */
 
     PiResult Terminate()
     {
@@ -208,10 +201,6 @@ private:
     {
         return ((QtDirectPlugin*)self_ptr)->Terminate();
     }
-    static PiResult PI_CALL GetViewThunk(void* self_ptr, IPiPluginView** out)
-    {
-        return ((QtDirectPlugin*)self_ptr)->GetView(out);
-    }
 
     static IPiPluginBaseVtbl const s_vtbl;
 
@@ -222,8 +211,7 @@ private:
 IPiPluginBaseVtbl const QtDirectPlugin::s_vtbl = {
     {&QtDirectPlugin::Qi, &pi_refcounted_add_ref, &pi_refcounted_release},
     &QtDirectPlugin::InitThunk,
-    &QtDirectPlugin::TermThunk,
-    &QtDirectPlugin::GetViewThunk
+    &QtDirectPlugin::TermThunk
 };
 
 /* ---- the protocol wrapper ---- */

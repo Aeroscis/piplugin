@@ -118,7 +118,7 @@ PI_PLUGIN_ENTRY_DECL
 
         /* 关键的一行：REQUIRED 而不是 OPTIONAL。headless 宿主给不出 IPiPluginHostUI，
          * 于是双向门禁的第一向就会拒绝（方向二 = 宿主生态要求插件 PROVIDES 什么）。 */
-        s_caps[0].iid   = PI_PLUGIN_IID_PLUGIN_VIEW;
+        s_caps[0].iid   = PI_PLUGIN_IID_VIEW_PROVIDER;
         s_caps[0].flags = PI_PLUGIN_CAP_PROVIDES;
         s_caps[1].iid   = PI_PLUGIN_IID_HOST_UI;
         s_caps[1].flags = PI_PLUGIN_CAP_REQUIRED;

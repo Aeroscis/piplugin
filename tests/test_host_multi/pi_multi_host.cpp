@@ -58,6 +58,21 @@
 #define PI_PLUGIN_QT_POST_REPORT_MSG  0x2010u /* wparam: 1 = 回调跑在宿主 GUI 线程 */
 #define PI_PLUGIN_QT_WORKER_ALIVE_MSG 0x2011u /* wparam: 子线程发出的第几条 */
 
+/* 单面板插件的标准视图 id（框架约定的 "main"）。
+ *
+ * 除了 --multi-view 模式（它自己枚举 provider 拿 id），这个宿主的每个模式都只
+ * 显示"每个插件的一个视图"，所以把 id 固定成 "main" 就够了 —— 这也是所有
+ * 单面板插件必须使用的 id。 */
+#define PI_PLUGIN_SINGLE_VIEW_ID "main"
+
+/* --multi-view 模式用的两视图插件（tests/test_plugin_multiview）的消息码。
+ * 插件在 attach / on_idle / detach 时把可断言的事实报回来：
+ * 它看到的是哪个容器、被 pump 了多少帧。 */
+#define PI_PLUGIN_MULTIVIEW_ATTACHED   0x2100u /* wparam: 1=alpha 2=beta, lparam: parent hwnd */
+#define PI_PLUGIN_MULTIVIEW_DETACHED   0x2101u /* wparam: 1=alpha 2=beta */
+#define PI_PLUGIN_MULTIVIEW_IDLE_TICKS 0x2102u /* wparam: 1=alpha 2=beta, lparam: tick count */
+#define PI_PLUGIN_MULTIVIEW_TERMINATE  0x2103u /* lparam: views still alive at terminate */
+
 static IPiPluginHostServices* g_services = NULL;
 static PiPluginHostSession*   g_session  = NULL;
 static HWND                   g_window   = NULL;
@@ -68,6 +83,16 @@ static uint32_t               g_imgui_frames[PI_PLUGIN_MULTI_PLUGIN_COUNT];    /
 static uintptr_t              g_imgui_last_tick[PI_PLUGIN_MULTI_PLUGIN_COUNT]; /* 心跳里的帧计数 */
 static char const*            g_paths[PI_PLUGIN_MULTI_PLUGIN_COUNT];
 static int                    g_failures = 0;
+
+/* ---- --multi-view 模式的账本（一插件两视图）--------------------------------
+ * 插件把"我 attach 到了哪个容器 / 被 pump 了多少帧 / terminate 时还有几个视图
+ * 活着"经 post_message 报回来，下面的断言全部基于这些消息，而不是基于宿主
+ * 自己的猜测。下标 1 = alpha，2 = beta（0 不用）。 */
+static HWND      g_mv_parent[3];
+static int       g_mv_attach_msgs[3];
+static int       g_mv_detach_msgs[3];
+static uintptr_t g_mv_ticks[3];
+static int       g_mv_terminate_live = -1;
 
 /* ---- W-04 探针模式的宿主侧账本 ------------------------------------------
  * 宿主消息回调**可能在任意线程上**被调到（这就是 pi_plugin_host_post_message 的
@@ -167,6 +192,24 @@ static void HostMessageProc(void* user_data, uint32_t msg,
         g_imgui_last_tick[1] = wparam;
     }
 
+    if (msg == PI_PLUGIN_MULTIVIEW_ATTACHED && wparam >= 1 && wparam <= 2)
+    {
+        ++g_mv_attach_msgs[wparam];
+        g_mv_parent[wparam] = (HWND)lparam;
+    }
+    else if (msg == PI_PLUGIN_MULTIVIEW_DETACHED && wparam >= 1 && wparam <= 2)
+    {
+        ++g_mv_detach_msgs[wparam];
+    }
+    else if (msg == PI_PLUGIN_MULTIVIEW_IDLE_TICKS && wparam >= 1 && wparam <= 2)
+    {
+        g_mv_ticks[wparam] = (uintptr_t)lparam;
+    }
+    else if (msg == PI_PLUGIN_MULTIVIEW_TERMINATE)
+    {
+        g_mv_terminate_live = (int)lparam;
+    }
+
     if (g_probe_mode)
     {
         int const on_main = ((unsigned long)GetCurrentThreadId() == g_main_thread_id);
@@ -264,7 +307,7 @@ static LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
                         continue;
                     }
                     SetWindowPos(g_containers[i], NULL, i * w, 0, w, h, SWP_NOZORDER);
-                    IPiPluginView* view = pi_plugin_host_session_get_view(g_session, g_slots[i]);
+                    IPiPluginView* view = pi_plugin_host_session_get_view(g_session, g_slots[i], PI_PLUGIN_SINGLE_VIEW_ID);
                     if (view && w > 0 && h > 0)
                     {
                         pi_plugin_view_on_resize(view, w, h);
@@ -388,7 +431,7 @@ static void TearDownHostShell(void)
  * -------------------------------------------------------------------------- */
 static void CheckPluginUi(unsigned index)
 {
-    IPiPluginView*            view = pi_plugin_host_session_get_view(g_session, g_slots[index]);
+    IPiPluginView*            view = pi_plugin_host_session_get_view(g_session, g_slots[index], PI_PLUGIN_SINGLE_VIEW_ID);
     PiPluginDescriptor const* desc = pi_plugin_host_session_get_descriptor(g_session, g_slots[index]);
     HWND                      plugin_window;
     HWND                      parent;
@@ -470,7 +513,7 @@ static int RunMultiPluginMode(char const* path_a, char const* path_b)
             continue;
         }
         /* 每个插件嵌进它自己的容器：容器由宿主创建并摆位，kit 只接收它 */
-        hr = pi_plugin_host_session_attach_view(g_session, g_slots[i],
+        hr = pi_plugin_host_session_attach_view(g_session, g_slots[i], PI_PLUGIN_SINGLE_VIEW_ID,
                                                 (PiNativeWindow)g_containers[i], /*set_visible=*/1);
         if (PI_FAILED(hr))
         {
@@ -599,13 +642,14 @@ static int RunPostThreadMode(const char* dll_path)
         return 1;
     }
     if (PI_FAILED(pi_plugin_host_session_attach_view(g_session, g_slots[0],
+                                                     PI_PLUGIN_SINGLE_VIEW_ID,
                                                      (PiNativeWindow)g_containers[0], 1)))
     {
         Fail("attach failed: %s", pi_plugin_host_session_last_error(g_session));
         TearDownHostShell();
         return 1;
     }
-    view = pi_plugin_host_session_get_view(g_session, g_slots[0]);
+    view = pi_plugin_host_session_get_view(g_session, g_slots[0], PI_PLUGIN_SINGLE_VIEW_ID);
     if (!view)
     {
         Fail("plugin published no view");
@@ -827,12 +871,27 @@ static void CheckEmbedded(char const* stage, IPiPluginView* view, HWND expected_
 }
 
 /* 一次完整的切换：关掉投递闸 -> detach（同步销毁控件）-> 改宿主报告窗口 ->
- * attach 到新容器 -> 泵几帧 */
-static int SwitchContainerTo(IPiPluginView* view, HWND target, char const* stage)
+ * attach 到新容器 -> 泵几帧
+ *
+ * detach / attach 都走 L0 session（而不是直接调 view 的方法）：session 记着
+ * "哪个视图 attach 到了哪个容器"，绕过它就会让卸载序列按陈旧的记账再 detach 一次。
+ * 0.6 起视图按 id 表达，所以这里把单面板插件的 "main" 传进去。 */
+static int SwitchContainerTo(uint32_t slot, HWND target, char const* stage)
 {
-    HWND before = PluginWindow(view);
+    IPiPluginView* view   = pi_plugin_host_session_get_view(g_session, slot, PI_PLUGIN_SINGLE_VIEW_ID);
+    HWND           before = view ? PluginWindow(view) : NULL;
 
-    pi_plugin_view_detach(view);
+    if (!view)
+    {
+        Fail("%s: the plugin has no view '%s'", stage, PI_PLUGIN_SINGLE_VIEW_ID);
+        return 1;
+    }
+    if (PI_FAILED(pi_plugin_host_session_detach_view(g_session, slot, PI_PLUGIN_SINGLE_VIEW_ID)))
+    {
+        Fail("%s: pi_plugin_host_session_detach_view() failed: %s", stage,
+             pi_plugin_host_session_last_error(g_session));
+        return 1;
+    }
     /* detach 的契约是**同步**的：返回时控件的原生窗口必须已经不在了。
      * 这条断言正是"切换容器"值得单独测的原因——旧窗口要是还在，新窗口就会
      * 和它抢同一个容器的绘制区域。 */
@@ -849,12 +908,13 @@ static int SwitchContainerTo(IPiPluginView* view, HWND target, char const* stage
         return 1;
     }
 
-    if (PI_FAILED(pi_plugin_view_attach(view, (PiNativeWindow)target)))
+    if (PI_FAILED(pi_plugin_host_session_attach_view(g_session, slot, PI_PLUGIN_SINGLE_VIEW_ID,
+                                                     (PiNativeWindow)target, 1)))
     {
-        Fail("%s: pi_plugin_view_attach(new container) failed", stage);
+        Fail("%s: attach to the new container failed: %s", stage,
+             pi_plugin_host_session_last_error(g_session));
         return 1;
     }
-    pi_plugin_view_set_visible(view, 1);
     DriveFrames(PI_PLUGIN_SWITCH_FRAMES_CALM);
     return 0;
 }
@@ -887,7 +947,7 @@ static int RunContainerSwitchMode(char const* dll_path)
         TearDownHostShell();
         return 1;
     }
-    view = pi_plugin_host_session_get_view(g_session, g_slots[0]);
+    view = pi_plugin_host_session_get_view(g_session, g_slots[0], PI_PLUGIN_SINGLE_VIEW_ID);
     if (!view)
     {
         Fail("the plugin published no view");
@@ -902,6 +962,7 @@ static int RunContainerSwitchMode(char const* dll_path)
         ok = 0;
     }
     if (PI_FAILED(pi_plugin_host_session_attach_view(g_session, g_slots[0],
+                                                     PI_PLUGIN_SINGLE_VIEW_ID,
                                                      (PiNativeWindow)container_a, 1)))
     {
         Fail("attach into container A failed: %s", pi_plugin_host_session_last_error(g_session));
@@ -912,7 +973,7 @@ static int RunContainerSwitchMode(char const* dll_path)
     CheckEmbedded("attach A", view, container_a, ClientWidth(container_a), ClientHeight(container_a));
 
     /* 2) 切到 B */
-    if (SwitchContainerTo(view, container_b, "switch A->B") != 0)
+    if (SwitchContainerTo(g_slots[0], container_b, "switch A->B") != 0)
     {
         ok = 0;
     }
@@ -923,7 +984,7 @@ static int RunContainerSwitchMode(char const* dll_path)
     }
 
     /* 3) 再切回 A */
-    if (SwitchContainerTo(view, container_a, "switch B->A") != 0)
+    if (SwitchContainerTo(g_slots[0], container_a, "switch B->A") != 0)
     {
         ok = 0;
     }
@@ -1041,7 +1102,7 @@ static int RunImguiPairMode(const char* path_a, const char* path_b)
             ok         = 0;
             continue;
         }
-        hr = pi_plugin_host_session_attach_view(g_session, g_slots[i],
+        hr = pi_plugin_host_session_attach_view(g_session, g_slots[i], PI_PLUGIN_SINGLE_VIEW_ID,
                                                 (PiNativeWindow)g_containers[i], 1);
         if (PI_FAILED(hr))
         {
@@ -1051,7 +1112,7 @@ static int RunImguiPairMode(const char* path_a, const char* path_b)
             continue;
         }
         CheckPluginUi((unsigned)i); /* 自己的容器 / 可见 / 非空矩形 */
-        windows[i] = PluginWindow(pi_plugin_host_session_get_view(g_session, g_slots[i]));
+        windows[i] = PluginWindow(pi_plugin_host_session_get_view(g_session, g_slots[i], PI_PLUGIN_SINGLE_VIEW_ID));
     }
 
     /* imgui 套件在本进程里的形态：STATIC -> 每个插件模块各带一份，进程里没有
@@ -1093,7 +1154,7 @@ static int RunImguiPairMode(const char* path_a, const char* path_b)
         {
             continue;
         }
-        view = pi_plugin_host_session_get_view(g_session, g_slots[i]);
+        view = pi_plugin_host_session_get_view(g_session, g_slots[i], PI_PLUGIN_SINGLE_VIEW_ID);
 
         LogStatus("plugin[%d]: %u heartbeat(s), last frame counter=%llu",
                   i, (unsigned)g_imgui_frames[i], (unsigned long long)g_imgui_last_tick[i]);
@@ -1156,6 +1217,299 @@ static int RunImguiPairMode(const char* path_a, const char* path_b)
     return g_failures ? 1 : 0;
 }
 
+/* --------------------------------------------------------------------------
+ * Mode: --multi-view - ONE plugin, TWO views, TWO containers (0.6 acceptance)
+ *
+ * This is the acceptance case for the view capability split: the interesting
+ * claim is not "a plugin can draw something", it is that the host can hold
+ * SEVERAL views of ONE instance at the same time without confusing them.
+ *
+ * The run covers, in order, every step the 0.6 design says a host must do:
+ *
+ *   1. QI the provider (pi_plugin_query_view_provider) and check the count;
+ *   2. enumerate it twice - once on the provider we own, once through the L0
+ *      session - and check the ids are the two the plugin promised;
+ *   3. take each view once (get_view by id), check that asking again returns the
+ *      same object, and that an unknown id is PI_E_NOTFOUND;
+ *   4. attach the two views into two DIFFERENT containers;
+ *   5. read each title (pi_plugin_view_get_title) and check they differ;
+ *   6. pump frames: the plugin counts on_idle per view, and the counts must both
+ *      advance - one view being pumped is not enough;
+ *   7. detach each view, check the detach messages and the per-view tick counts;
+ *   8. release the provider WE got (the session keeps its own reference);
+ *   9. unload the slot, and check the plugin saw ZERO live views in terminate -
+ *      i.e. both views were released before the module was unmapped.
+ *
+ * The plugin (tests/test_plugin_multiview) owns no window and uses no toolkit:
+ * it reports attach/pump/detach/terminate over post_message, so every assertion
+ * above is about the framework's bookkeeping and not about rendering.
+ * -------------------------------------------------------------------------- */
+#define PI_PLUGIN_MULTIVIEW_FRAMES  10
+
+static int RunMultiViewMode(char const* dll_path)
+{
+    IPiPluginViewProvider*  owned_provider = NULL;
+    IPiPluginViewProvider*  session_provider = NULL;
+    PiPluginViewInfo const* views          = NULL;
+    IPiPluginView*          alpha          = NULL;
+    IPiPluginView*          beta           = NULL;
+    IPiPluginView*          again          = NULL;
+    IPiPluginBase*          plugin         = NULL;
+    uint32_t                view_count     = 0;
+    PiResult                hr;
+    int                     ok = 1;
+
+    LogStatus("== piplugin multi-view test host (0.6: one plugin, two views, two containers) ==");
+    LogStatus("plugin = %s", dll_path);
+
+    g_slots[0] = PI_PLUGIN_HOST_SESSION_INVALID_SLOT;
+    if (CreateHostShell(2, 0) != 0)
+    {
+        return 1; /* 两个容器：alpha -> [0]，beta -> [1] */
+    }
+    ResizeContainer(g_containers[0], 0, 0, 420, 300);
+    ResizeContainer(g_containers[1], 440, 0, 420, 300);
+    ::UpdateWindow(g_window);
+
+    hr = pi_plugin_host_session_load(g_session, dll_path, &g_slots[0]);
+    if (PI_FAILED(hr))
+    {
+        Fail("load failed (hr=%d): %s", (int)hr, pi_plugin_host_session_last_error(g_session));
+        TearDownHostShell();
+        return 1;
+    }
+    plugin = pi_plugin_host_session_get_plugin(g_session, g_slots[0]);
+
+    /* --- 1) QI the provider: "does this plugin have a GUI, and how many views" --- */
+    hr = pi_plugin_query_view_provider(plugin, &owned_provider, &view_count);
+    if (PI_FAILED(hr) || !owned_provider)
+    {
+        Fail("pi_plugin_query_view_provider() failed (hr=%d): the plugin exposes no GUI", (int)hr);
+        ok = 0;
+    }
+    else if (view_count != 2)
+    {
+        Fail("the plugin reported %u view(s), expected 2", (unsigned)view_count);
+        ok = 0;
+    }
+    else
+    {
+        LogStatus("provider: %u view(s) - OK", (unsigned)view_count);
+    }
+
+    session_provider = pi_plugin_host_session_get_view_provider(g_session, g_slots[0]);
+    if (!session_provider)
+    {
+        Fail("the session did not keep a provider for the slot");
+        ok = 0;
+    }
+
+    /* --- 2) enumerate: ids, not indices --- */
+    view_count = 0;
+    views      = NULL;
+    if (!owned_provider || PI_FAILED(pi_plugin_views(owned_provider, &views, &view_count)) ||
+        !views || view_count != 2)
+    {
+        Fail("pi_plugin_views() did not return the two views");
+        ok = 0;
+    }
+    else
+    {
+        LogStatus("enumerated: '%s' and '%s'", views[0].id ? views[0].id : "(null)",
+                  views[1].id ? views[1].id : "(null)");
+        if (!views[0].id || strcmp(views[0].id, "alpha") != 0 || !views[1].id ||
+            strcmp(views[1].id, "beta") != 0)
+        {
+            Fail("the enumerated ids are not alpha/beta - identity must be the string, not the index");
+            ok = 0;
+        }
+    }
+    {
+        /* 同一个枚举经 L0 session 转发（借用数组，不缓存）：也必须是两个 */
+        PiPluginViewInfo const* session_views = NULL;
+        uint32_t                session_count = 0;
+        if (PI_FAILED(pi_plugin_host_session_views(g_session, g_slots[0], &session_views,
+                                                   &session_count)) ||
+            !session_views || session_count != 2)
+        {
+            Fail("pi_plugin_host_session_views() did not forward the provider's two views");
+            ok = 0;
+        }
+        else
+        {
+            LogStatus("session forwarded %u view(s) - OK", (unsigned)session_count);
+        }
+    }
+
+    /* --- 3) take each view once; the same id must give the same object --- */
+    alpha = pi_plugin_host_session_get_view(g_session, g_slots[0], "alpha");
+    beta  = pi_plugin_host_session_get_view(g_session, g_slots[0], "beta");
+    if (!alpha || !beta || alpha == beta)
+    {
+        Fail("get_view() did not give two distinct views (alpha=%p beta=%p)", (void*)alpha,
+             (void*)beta);
+        ok = 0;
+    }
+    again = pi_plugin_host_session_get_view(g_session, g_slots[0], "alpha");
+    if (again != alpha)
+    {
+        Fail("asking for 'alpha' twice returned two different objects (%p vs %p)", (void*)alpha,
+             (void*)again);
+        ok = 0;
+    }
+    if (pi_plugin_host_session_get_view(g_session, g_slots[0], "gamma") != NULL)
+    {
+        Fail("get_view(\"gamma\") returned a view for an id the plugin never listed");
+        ok = 0;
+    }
+    if (owned_provider)
+    {
+        IPiPluginView* bad = NULL;
+        if (pi_plugin_get_view(owned_provider, NULL, &bad) != PI_E_INVALIDARG)
+        {
+            Fail("pi_plugin_get_view(NULL id) did not return PI_E_INVALIDARG");
+            ok = 0;
+        }
+        if (pi_plugin_get_view(owned_provider, "gamma", &bad) != PI_E_NOTFOUND)
+        {
+            Fail("pi_plugin_get_view(\"gamma\") did not return PI_E_NOTFOUND");
+            ok = 0;
+        }
+    }
+
+    /* --- 4) attach each view into its OWN container --- */
+    if (PI_FAILED(pi_plugin_host_session_attach_view(g_session, g_slots[0], "alpha",
+                                                     (PiNativeWindow)g_containers[0], 1)))
+    {
+        Fail("attaching 'alpha' failed: %s", pi_plugin_host_session_last_error(g_session));
+        ok = 0;
+    }
+    if (PI_FAILED(pi_plugin_host_session_attach_view(g_session, g_slots[0], "beta",
+                                                     (PiNativeWindow)g_containers[1], 1)))
+    {
+        Fail("attaching 'beta' failed: %s", pi_plugin_host_session_last_error(g_session));
+        ok = 0;
+    }
+    /* 一个视图只能在一个容器里：再 attach 一次必须被拒绝，而不是悄悄搬家 */
+    if (pi_plugin_host_session_attach_view(g_session, g_slots[0], "alpha",
+                                           (PiNativeWindow)g_containers[1], 1) != PI_E_UNEXPECTED)
+    {
+        Fail("attaching 'alpha' a second time was not rejected with PI_E_UNEXPECTED");
+        ok = 0;
+    }
+
+    /* --- 5) titles: two views must be distinguishable by name too --- */
+    if (alpha && beta)
+    {
+        char const* alpha_title = NULL;
+        char const* beta_title  = NULL;
+        if (PI_FAILED(pi_plugin_view_get_title(alpha, &alpha_title)) || !alpha_title)
+        {
+            Fail("'alpha' has no title");
+            ok = 0;
+        }
+        if (PI_FAILED(pi_plugin_view_get_title(beta, &beta_title)) || !beta_title)
+        {
+            Fail("'beta' has no title");
+            ok = 0;
+        }
+        if (alpha_title && beta_title)
+        {
+            LogStatus("titles: '%s' / '%s'", alpha_title, beta_title);
+            if (strcmp(alpha_title, beta_title) == 0)
+            {
+                Fail("both views report the same title '%s'", alpha_title);
+                ok = 0;
+            }
+        }
+    }
+
+    /* --- 6) pump: BOTH views must be driven by one drive_idle() call --- */
+    DriveFrames(PI_PLUGIN_MULTIVIEW_FRAMES);
+
+    /* --- 7) detach each view (per-view, not "the slot's view") --- */
+    if (PI_FAILED(pi_plugin_host_session_detach_view(g_session, g_slots[0], "alpha")))
+    {
+        Fail("detaching 'alpha' failed: %s", pi_plugin_host_session_last_error(g_session));
+        ok = 0;
+    }
+    if (PI_FAILED(pi_plugin_host_session_detach_view(g_session, g_slots[0], "beta")))
+    {
+        Fail("detaching 'beta' failed: %s", pi_plugin_host_session_last_error(g_session));
+        ok = 0;
+    }
+
+    /* --- 8) assert what the plugin actually observed --- */
+    if (g_mv_attach_msgs[1] != 1 || g_mv_parent[1] != g_containers[0])
+    {
+        Fail("'alpha' saw %d attach(es), container=0x%p (expected container 0x%p)",
+             g_mv_attach_msgs[1], (void*)g_mv_parent[1], (void*)g_containers[0]);
+        ok = 0;
+    }
+    if (g_mv_attach_msgs[2] != 1 || g_mv_parent[2] != g_containers[1])
+    {
+        Fail("'beta' saw %d attach(es), container=0x%p (expected container 0x%p)",
+             g_mv_attach_msgs[2], (void*)g_mv_parent[2], (void*)g_containers[1]);
+        ok = 0;
+    }
+    if (g_mv_detach_msgs[1] != 1 || g_mv_detach_msgs[2] != 1)
+    {
+        Fail("detach messages: alpha=%d beta=%d (expected 1 each)", g_mv_detach_msgs[1],
+             g_mv_detach_msgs[2]);
+        ok = 0;
+    }
+    if (g_mv_ticks[1] == 0 || g_mv_ticks[2] == 0)
+    {
+        Fail("on_idle ticks: alpha=%llu beta=%llu - at least one view was never pumped",
+             (unsigned long long)g_mv_ticks[1], (unsigned long long)g_mv_ticks[2]);
+        ok = 0;
+    }
+    else
+    {
+        LogStatus("on_idle ticks: alpha=%llu beta=%llu - both views were pumped",
+                  (unsigned long long)g_mv_ticks[1], (unsigned long long)g_mv_ticks[2]);
+    }
+
+    /* --- 9) release the provider WE took (the session keeps its own) --- */
+    if (owned_provider)
+    {
+        pi_iunknown_release((IPiUnknown*)owned_provider);
+        owned_provider = NULL;
+        LogStatus("released the host's own provider reference - OK");
+    }
+
+    /* --- 10) unload: views + provider + terminate + module --- */
+    if (PI_FAILED(pi_plugin_host_session_unload(g_session, g_slots[0])))
+    {
+        Fail("unload failed: %s", pi_plugin_host_session_last_error(g_session));
+        ok = 0;
+    }
+    g_slots[0] = PI_PLUGIN_HOST_SESSION_INVALID_SLOT;
+
+    /* terminate 必须在"所有视图都已释放"之后被调到；插件把当时活着的视图数报回来 */
+    if (g_mv_terminate_live < 0)
+    {
+        Fail("the plugin never reached terminate (no 0x%04X message)", PI_PLUGIN_MULTIVIEW_TERMINATE);
+        ok = 0;
+    }
+    else if (g_mv_terminate_live != 0)
+    {
+        Fail("terminate saw %d view(s) still alive - the host unmapped the module with live views",
+             g_mv_terminate_live);
+        ok = 0;
+    }
+    else
+    {
+        LogStatus("terminate: 0 live views - both views were released before module unload");
+    }
+
+    TearDownHostShell();
+
+    LogStatus("[host] multi-view result: failures=%d", g_failures);
+    LogStatus("RESULT: %s", (ok && g_failures == 0) ? "PASS" : "FAIL");
+    return (ok && g_failures == 0) ? 0 : 1;
+}
+
 int main(int argc, char** argv)
 {
     /* Qt drives the clipboard / drag-and-drop through OLE on Windows; the host
@@ -1173,6 +1527,10 @@ int main(int argc, char** argv)
     if (argc > 3 && strcmp(argv[1], "--imgui-pair") == 0)
     {
         return RunImguiPairMode(argv[2], argv[3]);
+    }
+    if (argc > 2 && strcmp(argv[1], "--multi-view") == 0)
+    {
+        return RunMultiViewMode(argv[2]);
     }
 
     return RunMultiPluginMode((argc > 1) ? argv[1] : "pi_plugin_test_plugin_qt.dll",

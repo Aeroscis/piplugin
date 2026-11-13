@@ -61,8 +61,9 @@ piplugin 是一个 **跨平台、纯 C ABI 的插件框架**，采用 **COM 风�
 |---|---|---|
 | `IPiUnknown` | 根 | 引用计数 + `QueryInterface`（COM 身份规则） |
 | `IPiPluginFactory` | 插件→宿主 | 工厂：元数据、枚举类、创建实例 |
-| `IPiPluginBase` | 插件 | 生命周期：`pi_plugin_initialize` / `pi_plugin_terminate` / `pi_plugin_get_view` |
-| `IPiPluginView` | 插件 | GUI 视图：`pi_plugin_attach` / `pi_plugin_on_idle` / `pi_plugin_on_resize` 等 |
+| `IPiPluginBase` | 插件 | 生命周期：`pi_plugin_initialize` / `pi_plugin_terminate`（0.6 起不含视图） |
+| `IPiPluginViewProvider` | 插件(可选) | 视图提供者：`pi_plugin_views` / `pi_plugin_get_view`（0.6） |
+| `IPiPluginView` | 插件 | GUI 视图：`pi_plugin_attach` / `pi_plugin_on_idle` / `pi_plugin_on_resize` / `pi_plugin_view_get_title` 等 |
 | `IPiPluginService` | 插件 | headless 服务：`pi_plugin_service_start` / `stop` / `poll` / `get_status` |
 | `IPiPluginHostServices` | 宿主 | 总是提供：内存分配、消息投递 |
 | `IPiPluginHostUI` | 宿主(可选) | GUI 宿主能力：父窗口句柄、UI 线程 id |
@@ -79,6 +80,7 @@ piplugin 是一个 **跨平台、纯 C ABI 的插件框架**，采用 **COM 风�
 | `0x00000001` | `PI_PLUGIN_IID_PLUGIN_FACTORY` |
 | `0x00000002` | `PI_PLUGIN_IID_PLUGIN_BASE` |
 | `0x00000003` | `PI_PLUGIN_IID_PLUGIN_VIEW` |
+| `0x00000004` | `PI_PLUGIN_IID_VIEW_PROVIDER`（0.6 新增） |
 | `0x00000010` | `PI_PLUGIN_IID_HOST_SERVICES`（0.2 新增） |
 | `0x00000011` | `PI_PLUGIN_IID_HOST_UI`（0.2 新增） |
 | `0x00000020` | `PI_PLUGIN_IID_SERVICE`（0.2 新增） |
@@ -100,7 +102,7 @@ typedef struct PiPluginCapability {
 |---|---|
 | `PI_PLUGIN_CAP_REQUIRED` (1) | 宿主**必须**提供，否则实例化/初始化失败 |
 | `PI_PLUGIN_CAP_OPTIONAL` (2) | 插件"用了更好"，宿主没有则优雅降级 |
-| `PI_PLUGIN_CAP_PROVIDES` (4) | 插件实现该接口（如 `PI_PLUGIN_IID_PLUGIN_VIEW`、`PI_PLUGIN_IID_SERVICE`） |
+| `PI_PLUGIN_CAP_PROVIDES` (4) | 插件实现该接口（如 `PI_PLUGIN_IID_VIEW_PROVIDER`、`PI_PLUGIN_IID_SERVICE`） |
 
 **双向协商**：
 
@@ -112,8 +114,8 @@ typedef struct PiPluginCapability {
 示例（Qt 测试插件 `tests/test_plugin`）：
 
 ```c
-m_capabilities[0].iid = PI_PLUGIN_IID_PLUGIN_VIEW;
-m_capabilities[0].flags = PI_PLUGIN_CAP_PROVIDES;   /* 我提供 GUI 视图 */
+m_capabilities[0].iid = PI_PLUGIN_IID_VIEW_PROVIDER;
+m_capabilities[0].flags = PI_PLUGIN_CAP_PROVIDES;   /* 我能给界面（几个视图由 provider 回答） */
 m_capabilities[1].iid = PI_PLUGIN_IID_HOST_UI;
 m_capabilities[1].flags = PI_PLUGIN_CAP_OPTIONAL;   /* 有 GUI 宿主就用，没有也活 */
 ```

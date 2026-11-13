@@ -94,6 +94,12 @@ static void TestGuidEqual(void)
     CHECK_EQ_INT(pi_guid_equal(&PI_PLUGIN_IID_PLUGIN_VIEW, &PI_PLUGIN_IID_HOST_UI), 0);
     CHECK_EQ_INT(pi_guid_equal(&PI_PLUGIN_IID_HOST_UI, &PI_PLUGIN_IID_SERVICE), 0);
     CHECK_EQ_INT(pi_guid_equal(&PI_PLUGIN_IID_PLUGIN_FACTORY, &PI_PLUGIN_IID_PLUGIN_BASE), 0);
+    /* 0.6：视图能力有了自己的 IID（data1 = 4）。它必须与 IPiPluginView 的 IID、
+     * 与其它框架接口都不同 —— 插件"声明 PROVIDES 视图能力"指的是这一个。 */
+    CHECK_EQ_INT(PI_PLUGIN_IID_VIEW_PROVIDER.data1, 4);
+    CHECK_EQ_INT(pi_guid_equal(&PI_PLUGIN_IID_VIEW_PROVIDER, &PI_PLUGIN_IID_PLUGIN_VIEW), 0);
+    CHECK_EQ_INT(pi_guid_equal(&PI_PLUGIN_IID_VIEW_PROVIDER, &PI_PLUGIN_IID_SERVICE), 0);
+    CHECK_EQ_INT(pi_guid_equal(&PI_PLUGIN_IID_VIEW_PROVIDER, &PI_PLUGIN_IID_PLUGIN_BASE), 0);
 }
 
 /* --------------------------------------------------------------------------
@@ -522,7 +528,7 @@ static void TestApiVersion(void)
      * 0.3 = APP-04（descriptor 追加 properties），0.4 = APP-06（新增事件接口），
      * 0.5 = 本库标识符改前缀 + 家族根词汇移到基础层 pibase。 */
     CHECK_EQ_INT(PI_PLUGIN_API_VERSION_MAJOR(PI_PLUGIN_API_VERSION), 0);
-    CHECK_EQ_INT(PI_PLUGIN_API_VERSION_MINOR(PI_PLUGIN_API_VERSION), 5);
+    CHECK_EQ_INT(PI_PLUGIN_API_VERSION_MINOR(PI_PLUGIN_API_VERSION), 6);
     CHECK_EQ_INT(PI_PLUGIN_API_VERSION_MAKE(1, 0), 0x00010000);
     CHECK_EQ_INT(PI_PLUGIN_API_VERSION_MAKE(2, 5), 0x00020005);
     CHECK_EQ_INT(PI_PLUGIN_API_VERSION_MAJOR(PI_PLUGIN_API_VERSION_MAKE(0xFFFF, 0xFFFF)), 0xFFFF);

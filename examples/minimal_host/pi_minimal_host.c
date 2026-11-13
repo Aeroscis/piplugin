@@ -67,7 +67,8 @@ static LRESULT WINAPI WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
         /* Forward the size to the plugin's view (the view is not ours to resize). */
         if (g_session && g_slot != PI_PLUGIN_HOST_SESSION_INVALID_SLOT)
         {
-            IPiPluginView* view = pi_plugin_host_session_get_view(g_session, g_slot);
+            /* 单面板插件用约定的 id "main"；多视图宿主会按枚举结果分别转发。 */
+            IPiPluginView* view = pi_plugin_host_session_get_view(g_session, g_slot, "main");
             if (view && LOWORD(lparam) > 0 && HIWORD(lparam) > 0)
             {
                 pi_plugin_view_on_resize(view, (int32_t)LOWORD(lparam), (int32_t)HIWORD(lparam));
@@ -161,10 +162,11 @@ int main(int argc, char** argv)
 
         /* --- 4a) a view: attach it to OUR container and pump it ------------- */
         {
-            IPiPluginView* view = pi_plugin_host_session_get_view(g_session, g_slot);
+            /* 0.6 起视图按 id 取；单面板插件的标准 id 就是 "main"。 */
+            IPiPluginView* view = pi_plugin_host_session_get_view(g_session, g_slot, "main");
             if (view)
             {
-                hr = pi_plugin_host_session_attach_view(g_session, g_slot,
+                hr = pi_plugin_host_session_attach_view(g_session, g_slot, "main",
                                                         (PiNativeWindow)g_container, /*set_visible=*/1);
                 printf("view: %s (native window %p)\n",
                        PI_SUCCEEDED(hr) ? "attached to our container" : "attach FAILED",

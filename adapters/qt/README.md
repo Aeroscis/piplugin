@@ -82,17 +82,21 @@ static QWidget* MakeUi(void* user) {
     return w;
 }
 
-// 2. 在 IPiPluginBase::pi_plugin_get_view 里把工厂交给套件
-PiResult PI_CALL MyPlugin::GetView(void* self, IPiPluginView** out) {
+// 2. 在插件的 IPiPluginViewProvider::pi_plugin_get_view 里把工厂交给套件
+PiResult PI_CALL MyPlugin::GetView(void* self, const char* view_id, IPiPluginView** out) {
     MyPlugin* me = (MyPlugin*)self;
-    if (!me->m_hostUI) { *out = NULL; return PI_E_NOINTERFACE; } // 无头宿主
+    if (!view_id || strcmp(view_id, "main") != 0) { *out = NULL; return PI_E_NOTFOUND; }
     PiPluginQtViewDesc desc = {};
     desc.create_widget = &MakeUi;
     desc.user_data     = me;
+    desc.title         = "My panel";           // 可选：多窗口宿主拿它当窗口标题
     desc.retain        = &MyPlugin::Retain;    // 可选：让套件在控件存活期间保活插件
     desc.release       = &MyPlugin::Release;
     return pi_plugin_qt_view_create(&desc, out);
 }
+
+// 2b. 无头宿主上不暴露 provider（QueryInterface(PI_PLUGIN_IID_VIEW_PROVIDER)
+//     直接返回 PI_E_NOINTERFACE），所以上面这段根本不会被调到。
 
 // 3. 插件的 pi_plugin_terminate() 里收尾（可选但强烈建议）
 PiResult PI_CALL MyPlugin::Term(void* self) {

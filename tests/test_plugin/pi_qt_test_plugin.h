@@ -5,6 +5,13 @@
  * Qt integration code at all: no QApplication management, no embedding,
  * no event-loop plumbing. It only provides a widget factory and the
  * plugin lifecycle.
+ *
+ * Since 0.6 the GUI is a separate capability interface: IPiPluginBase carries
+ * lifecycle only, and QueryInterface(PI_PLUGIN_IID_VIEW_PROVIDER) hands out a
+ * small IPiPluginViewProvider tear-off (the same containment pattern the pure-C
+ * test plugins use for their service / sink objects). The provider enumerates
+ * the views this plugin has - here exactly one, id "main" - and builds them on
+ * demand.
  */
 #ifndef PI_PLUGIN_QT_TEST_PLUGIN_H
 #define PI_PLUGIN_QT_TEST_PLUGIN_H
@@ -21,10 +28,13 @@
 class QWidget;
 class QThread;
 
+class QtPluginViewProvider;
+
 class QtPlugin
 {
 public:
     friend class QtPluginFactory;
+    friend class QtPluginViewProvider;
 
     QtPlugin();
     ~QtPlugin();
@@ -35,7 +45,6 @@ public:
     static PiResult PI_CALL Qi_PluginBase(void* self_ptr, PiGuid const* iid, void** out);
     static PiResult PI_CALL Init(void* self_ptr, IPiPluginHostServices* host);
     static PiResult PI_CALL Term(void* self_ptr);
-    static PiResult PI_CALL GetView(void* self_ptr, IPiPluginView** out);
 
     /* Widget factory handed to the Qt adapter kit. Called on the Qt
      * runtime thread; builds the whole demo UI. */
@@ -48,6 +57,11 @@ public:
 
 private:
     static void Destroy(void* self_ptr) { delete static_cast<QtPlugin*>(self_ptr); }
+
+    /* 造一个 Qt 套件的视图（provider 的 pi_plugin_get_view 落到这里）。
+     * On a headless host (no IPiPluginHostUI) there is nothing to build;
+     * the provider is not even exposed in that case, see Qi_PluginBase. */
+    PiResult CreateView(IPiPluginView** out);
 
     /* W-04：跨线程 pi_plugin_qt_view_post 的验收辅助（默认关闭，见 .cpp 里的开关）。
      * 起一条后台线程，从那条线程调用套件的 pi_plugin_qt_view_post()，并把"回调最终跑在
@@ -64,8 +78,8 @@ private:
 
     PiPluginPtr<IPiPluginHostServices> m_host;   /* 借用入参 -> 自己 add-ref，析构自动 release */
     PiPluginPtr<IPiPluginHostUI>       m_hostUI; /* headless 宿主上为空句柄 */
-    /* weak: owned by the host, see GetView。原子是因为 W-04 的探针线程会读它，
-     * 而 GetView / Terminate 在宿主 GUI 线程上写它。 */
+    /* weak: owned by the host, see CreateView。原子是因为 W-04 的探针线程会读它，
+     * 而 CreateView / Terminate 在宿主 GUI 线程上写它。 */
     std::atomic<IPiPluginView*>        m_view;
 
     QThread*          m_uiThread; /* create_widget 时所在的线程（= 宿主 GUI 线程） */
@@ -73,6 +87,30 @@ private:
     std::atomic<bool> m_postWorkerStop;
     std::atomic<bool> m_postProbeDone;
     std::atomic<int>  m_postProbeRuns; /* 回调被执行了几次 */
+};
+
+/* IPiPluginViewProvider 的"第二个 vtbl"对象。
+ *
+ * 一个对象不能有两个 vtbl（接口指针必须指向以 vtbl 为第一个成员的结构），
+ * 所以 provider 是一个独立的、被插件持有的薄对象：它各自持有一份插件引用，
+ * 释放时把那份引用还回去。宿主 QI 一次拿一个，用完 release 即可。 */
+class QtPluginViewProvider
+{
+public:
+    static IPiPluginViewProviderVtbl const s_vtbl;
+
+    explicit QtPluginViewProvider(QtPlugin* plugin);
+    static void Destroy(void* self_ptr);
+
+    static uint32_t PI_CALL AddRef(void* self_ptr);
+    static uint32_t PI_CALL Release(void* self_ptr);
+    static PiResult PI_CALL Qi(void* self_ptr, PiGuid const* iid, void** out);
+    static PiResult PI_CALL Views(void* self_ptr, PiPluginViewInfo const** out_views,
+                                  uint32_t* out_count);
+    static PiResult PI_CALL GetView(void* self_ptr, char const* view_id, IPiPluginView** out);
+
+    PiRefCountedBase m_base;   /* MUST be first data member */
+    QtPlugin*        m_plugin; /* add-ref'd */
 };
 
 class QtPluginFactory

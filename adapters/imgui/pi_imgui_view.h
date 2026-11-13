@@ -24,7 +24,7 @@
  *       ImGui::End();
  *   }
  *
- *   // inside IPiPluginBase::pi_plugin_get_view:
+ *   // inside IPiPluginViewProvider::pi_plugin_get_view:
  *   PiPluginImGuiViewDesc desc = {};
  *   desc.init = &SetupStyle;   // optional, runs once
  *   desc.draw = &DrawUi;
@@ -66,6 +66,10 @@ typedef struct PiPluginImGuiViewDesc {
     PiPluginImGuiRetainProc  retain;    /* optional */
     PiPluginImGuiReleaseProc release;   /* optional */
     void*                    user_data; /* passed to all callbacks */
+    /* Optional view title for hosts that open one window per view. Copied by
+     * the kit; NULL or empty means "no title", and the view then answers
+     * PI_E_NOTIMPL from pi_plugin_view_get_title. */
+    char const*              title;
 } PiPluginImGuiViewDesc;
 
 /* Create an ImGui-backed IPiPluginView. Nothing is created until the

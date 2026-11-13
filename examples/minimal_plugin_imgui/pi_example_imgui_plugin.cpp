@@ -5,13 +5,15 @@
  * about embedding, contexts and event pumping lives in the imgui adapter kit
  * (piplugin_imgui), so the plugin never touches a window handle.
  *
- * It advertises PI_PLUGIN_IID_PLUGIN_VIEW (PROVIDES) and PI_PLUGIN_IID_HOST_UI (OPTIONAL):
- * a headless host loads it fine and simply never gets a view.
+ * It advertises PI_PLUGIN_IID_VIEW_PROVIDER (PROVIDES) and PI_PLUGIN_IID_HOST_UI (OPTIONAL):
+ * a headless host loads it fine and simply never gets a view (the provider is
+ * only exposed on a host that has a GUI).
  *
  * Run it with examples/minimal_host:
  *     pi_plugin_example_minimal_host.exe pi_plugin_example_plugin_imgui.dll
  */
 #include <stdio.h>
+#include <string.h>
 
 #include "imgui.h"
 #include "pi_imgui_view.h"
@@ -70,7 +72,8 @@ public:
         return PI_OK;
     }
 
-    PiResult GetView(IPiPluginView** out)
+    /* 造一个视图。0.6 起它由 IPiPluginViewProvider 调用（见文件末尾）。 */
+    PiResult CreateView(IPiPluginView** out)
     {
         if (!out)
         {
@@ -88,6 +91,7 @@ public:
         desc.retain                = &Retain;
         desc.release               = &Release;
         desc.user_data             = this;
+        desc.title                 = "ImGui example";
         return pi_plugin_imgui_view_create(&desc, out);
     }
 
@@ -159,6 +163,16 @@ private:
             me->m_base.unk.lpVtbl->pi_add_ref(self_ptr);
             return PI_OK;
         }
+        if (pi_guid_equal(iid, &PI_PLUGIN_IID_VIEW_PROVIDER))
+        {
+            /* headless 宿主上不暴露界面：能力声明里 GUI 是 OPTIONAL。 */
+            if (!me->m_hostUI)
+            {
+                *out = nullptr;
+                return PI_E_NOINTERFACE;
+            }
+            return CreateProvider(me, out);
+        }
         *out = nullptr;
         return PI_E_NOINTERFACE;
     }
@@ -171,10 +185,7 @@ private:
         (void)self_ptr;
         return PI_OK;
     }
-    static PiResult PI_CALL GetViewThunk(void* self_ptr, IPiPluginView** out)
-    {
-        return ((ExamplePlugin*)self_ptr)->GetView(out);
-    }
+    static PiResult PI_CALL CreateProvider(void* self_ptr, void** out); /* defined below */
 
     static IPiPluginBaseVtbl const s_vtbl;
 
@@ -187,9 +198,106 @@ private:
 IPiPluginBaseVtbl const ExamplePlugin::s_vtbl = {
     {&ExamplePlugin::Qi, &pi_refcounted_add_ref, &pi_refcounted_release},
     &ExamplePlugin::Init,
-    &ExamplePlugin::Term,
-    &ExamplePlugin::GetViewThunk
+    &ExamplePlugin::Term
 };
+
+/* --------------------------------------------------------------------------
+ * IPiPluginViewProvider (0.6) - 与 Qt 例子逐个字段同构
+ * -------------------------------------------------------------------------- */
+struct ExampleViewProvider
+{
+    PiRefCountedBase base;  /* MUST be first */
+    ExamplePlugin*   owner; /* add-ref'd */
+};
+
+static uint32_t PI_CALL ExampleProvider_AddRef(void* self)
+{
+    return pi_refcounted_add_ref(self);
+}
+static uint32_t PI_CALL ExampleProvider_Release(void* self)
+{
+    return pi_refcounted_release(self);
+}
+static void ExampleProvider_Destroy(void* self)
+{
+    ExampleViewProvider* provider = (ExampleViewProvider*)self;
+    if (provider->owner)
+    {
+        pi_iunknown_release((IPiUnknown*)&provider->owner->m_base);
+        provider->owner = nullptr;
+    }
+    delete provider;
+}
+static PiResult PI_CALL ExampleProvider_Qi(void* self, PiGuid const* iid, void** out)
+{
+    if (!out)
+    {
+        return PI_E_INVALIDARG;
+    }
+    if (pi_guid_equal(iid, &PI_IID_UNKNOWN) || pi_guid_equal(iid, &PI_PLUGIN_IID_VIEW_PROVIDER))
+    {
+        *out = self;
+        pi_refcounted_add_ref(self);
+        return PI_OK;
+    }
+    *out = nullptr;
+    return PI_E_NOINTERFACE;
+}
+static PiResult PI_CALL ExampleProvider_Views(void* self, PiPluginViewInfo const** out_views,
+                                              uint32_t* out_count)
+{
+    static PiPluginViewInfo const kViews[] = {{"main"}};
+    (void)self;
+    if (!out_views || !out_count)
+    {
+        return PI_E_INVALIDARG;
+    }
+    *out_views = kViews;
+    *out_count = 1;
+    return PI_OK;
+}
+static PiResult PI_CALL ExampleProvider_GetView(void* self, char const* view_id,
+                                                IPiPluginView** out)
+{
+    ExampleViewProvider* provider = (ExampleViewProvider*)self;
+    if (!out)
+    {
+        return PI_E_INVALIDARG;
+    }
+    *out = nullptr;
+    if (!view_id || view_id[0] == '\0')
+    {
+        return PI_E_INVALIDARG;
+    }
+    if (strcmp(view_id, "main") != 0)
+    {
+        return PI_E_NOTFOUND;
+    }
+    return provider->owner->CreateView(out);
+}
+
+static IPiPluginViewProviderVtbl const s_view_provider_vtbl = {
+    {&ExampleProvider_Qi, &ExampleProvider_AddRef, &ExampleProvider_Release},
+    &ExampleProvider_Views,
+    &ExampleProvider_GetView
+};
+
+PiResult PI_CALL ExamplePlugin::CreateProvider(void* self_ptr, void** out)
+{
+    ExamplePlugin*       me       = (ExamplePlugin*)self_ptr;
+    ExampleViewProvider* provider = new ExampleViewProvider();
+    if (!provider)
+    {
+        *out = nullptr;
+        return PI_E_OUTOFMEMORY;
+    }
+    provider->owner = me;
+    pi_refcounted_init_with_destroy(&provider->base, (IPiUnknownVtbl const*)&s_view_provider_vtbl,
+                                    &ExampleProvider_Destroy);
+    pi_refcounted_add_ref(&me->m_base);
+    *out = (IPiPluginViewProvider*)&provider->base;
+    return PI_OK;
+}
 
 /* --------------------------------------------------------------------------
  * Factory
@@ -206,7 +314,7 @@ public:
          * See pi_plugin_descriptor_init() in pi_plugin_types.h. */
         pi_plugin_descriptor_init(&m_desc);
 
-        m_caps[0].iid   = PI_PLUGIN_IID_PLUGIN_VIEW;
+        m_caps[0].iid   = PI_PLUGIN_IID_VIEW_PROVIDER;
         m_caps[0].flags = PI_PLUGIN_CAP_PROVIDES;
         m_caps[1].iid   = PI_PLUGIN_IID_HOST_UI;
         m_caps[1].flags = PI_PLUGIN_CAP_OPTIONAL;

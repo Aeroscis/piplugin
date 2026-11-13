@@ -1,6 +1,7 @@
 #include "pi_imgui_test_plugin.h"
 
 #include <stdio.h>
+#include <string.h>
 
 #include "imgui.h"
 #include "pi_imgui_view.h"
@@ -56,7 +57,7 @@ ImGuiPluginFactory::ImGuiPluginFactory()
     m_descriptor.category    = "UI/Test";
     m_descriptor.api_version = PI_PLUGIN_API_VERSION;
 
-    m_capabilities[0].iid   = PI_PLUGIN_IID_PLUGIN_VIEW;
+    m_capabilities[0].iid   = PI_PLUGIN_IID_VIEW_PROVIDER;
     m_capabilities[0].flags = PI_PLUGIN_CAP_PROVIDES;
     m_capabilities[1].iid   = PI_PLUGIN_IID_HOST_UI;
     m_capabilities[1].flags = PI_PLUGIN_CAP_OPTIONAL;
@@ -157,8 +158,7 @@ PiResult PI_CALL ImGuiPluginFactory::CreateInstance(void* self_ptr, PiGuid const
 IPiPluginBaseVtbl const ImGuiPlugin::s_base_vtbl = {
     {&ImGuiPlugin::Qi_PluginBase, &pi_refcounted_add_ref, &pi_refcounted_release},
     &ImGuiPlugin::Init,
-    &ImGuiPlugin::Term,
-    &ImGuiPlugin::GetView
+    &ImGuiPlugin::Term
 };
 
 ImGuiPlugin::ImGuiPlugin()
@@ -340,6 +340,23 @@ PiResult PI_CALL ImGuiPlugin::Qi_PluginBase(void* self_ptr, PiGuid const* iid, v
         me->m_base.unk.lpVtbl->pi_add_ref(self_ptr);
         return PI_OK;
     }
+    if (pi_guid_equal(iid, &PI_PLUGIN_IID_VIEW_PROVIDER))
+    {
+        /* 无头宿主上不暴露界面：GUI 是可选能力，"这里没有界面"由 QI 失败表达。 */
+        if (!me->m_hostUI)
+        {
+            *out = NULL;
+            return PI_E_NOINTERFACE;
+        }
+        ImGuiPluginViewProvider* provider = new ImGuiPluginViewProvider(me);
+        if (!provider)
+        {
+            *out = NULL;
+            return PI_E_OUTOFMEMORY;
+        }
+        *out = (IPiPluginViewProvider*)&provider->m_base;
+        return PI_OK;
+    }
     *out = NULL;
     return PI_E_NOINTERFACE;
 }
@@ -351,24 +368,113 @@ PiResult PI_CALL ImGuiPlugin::Term(void* self_ptr)
 {
     return ((ImGuiPlugin*)self_ptr)->Terminate();
 }
-PiResult PI_CALL ImGuiPlugin::GetView(void* self_ptr, IPiPluginView** out)
+PiResult ImGuiPlugin::CreateView(IPiPluginView** out)
 {
     if (!out)
     {
         return PI_E_INVALIDARG;
     }
-    ImGuiPlugin* me = (ImGuiPlugin*)self_ptr;
-    if (!me->m_hostUI)
-    {
-        *out = NULL;
-        return PI_E_NOINTERFACE;
-    }
+    *out = NULL;
 
     PiPluginImGuiViewDesc desc = {};
     desc.init                  = &ImGuiPlugin::SetupUi;
     desc.draw                  = &ImGuiPlugin::DrawUi;
     desc.retain                = &ImGuiPlugin::Retain;
     desc.release               = &ImGuiPlugin::Release;
-    desc.user_data             = me;
+    desc.user_data             = this;
+    desc.title                 = "ImGui Test Plugin";
     return pi_plugin_imgui_view_create(&desc, out);
+}
+
+/* ==========================================================================
+ * IPiPluginViewProvider (0.6): one static view, id "main"
+ * ======================================================================== */
+IPiPluginViewProviderVtbl const ImGuiPluginViewProvider::s_vtbl = {
+    {&ImGuiPluginViewProvider::Qi, &ImGuiPluginViewProvider::AddRef,
+     &ImGuiPluginViewProvider::Release},
+    &ImGuiPluginViewProvider::Views,
+    &ImGuiPluginViewProvider::GetView
+};
+
+ImGuiPluginViewProvider::ImGuiPluginViewProvider(ImGuiPlugin* plugin)
+    : m_plugin(plugin)
+{
+    pi_refcounted_init_with_destroy(&m_base, (IPiUnknownVtbl const*)&s_vtbl,
+                                    &ImGuiPluginViewProvider::Destroy);
+    if (m_plugin)
+    {
+        m_plugin->m_base.unk.lpVtbl->pi_add_ref((void*)m_plugin);
+    }
+}
+
+void ImGuiPluginViewProvider::Destroy(void* self_ptr)
+{
+    ImGuiPluginViewProvider* me = static_cast<ImGuiPluginViewProvider*>(self_ptr);
+    if (me->m_plugin)
+    {
+        me->m_plugin->m_base.unk.lpVtbl->pi_release((void*)me->m_plugin);
+        me->m_plugin = nullptr;
+    }
+    delete me;
+}
+
+uint32_t PI_CALL ImGuiPluginViewProvider::AddRef(void* self_ptr)
+{
+    return pi_refcounted_add_ref(self_ptr);
+}
+
+uint32_t PI_CALL ImGuiPluginViewProvider::Release(void* self_ptr)
+{
+    return pi_refcounted_release(self_ptr);
+}
+
+PiResult PI_CALL ImGuiPluginViewProvider::Qi(void* self_ptr, PiGuid const* iid, void** out)
+{
+    if (!out)
+    {
+        return PI_E_INVALIDARG;
+    }
+    ImGuiPluginViewProvider* me = (ImGuiPluginViewProvider*)self_ptr;
+    if (pi_guid_equal(iid, &PI_IID_UNKNOWN) || pi_guid_equal(iid, &PI_PLUGIN_IID_VIEW_PROVIDER))
+    {
+        *out = me;
+        me->m_base.unk.lpVtbl->pi_add_ref(self_ptr);
+        return PI_OK;
+    }
+    *out = NULL;
+    return PI_E_NOINTERFACE;
+}
+
+PiResult PI_CALL ImGuiPluginViewProvider::Views(void* self_ptr, PiPluginViewInfo const** out_views,
+                                                uint32_t* out_count)
+{
+    static PiPluginViewInfo const kViews[] = {{"main"}};
+    (void)self_ptr;
+    if (!out_views || !out_count)
+    {
+        return PI_E_INVALIDARG;
+    }
+    *out_views = kViews;
+    *out_count = 1;
+    return PI_OK;
+}
+
+PiResult PI_CALL ImGuiPluginViewProvider::GetView(void* self_ptr, char const* view_id,
+                                                  IPiPluginView** out)
+{
+    if (!out)
+    {
+        return PI_E_INVALIDARG;
+    }
+    *out = NULL;
+    if (!view_id || view_id[0] == '\0')
+    {
+        return PI_E_INVALIDARG;
+    }
+    if (strcmp(view_id, "main") != 0)
+    {
+        return PI_E_NOTFOUND;
+    }
+    ImGuiPluginViewProvider* me = (ImGuiPluginViewProvider*)self_ptr;
+    return me->m_plugin->CreateView(out);
 }

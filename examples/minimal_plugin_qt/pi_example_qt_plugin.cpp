@@ -12,6 +12,7 @@
  *     pi_plugin_example_minimal_host.exe pi_plugin_example_plugin_qt.dll
  */
 #include <stdio.h>
+#include <string.h>
 
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QLabel>
@@ -71,7 +72,9 @@ public:
         return PI_OK;
     }
 
-    PiResult GetView(IPiPluginView** out)
+    /* 造一个视图。0.6 起它由 IPiPluginViewProvider 调用（见文件末尾），
+     * 而不是 IPiPluginBase 的一个槽位。 */
+    PiResult CreateView(IPiPluginView** out)
     {
         if (!out)
         {
@@ -88,6 +91,7 @@ public:
         desc.retain             = &Retain;
         desc.release            = &Release;
         desc.user_data          = this;
+        desc.title              = "Qt example";
         return pi_plugin_qt_view_create(&desc, out);
     }
 
@@ -164,6 +168,16 @@ private:
             me->m_base.unk.lpVtbl->pi_add_ref(self_ptr);
             return PI_OK;
         }
+        if (pi_guid_equal(iid, &PI_PLUGIN_IID_VIEW_PROVIDER))
+        {
+            /* headless 宿主上不暴露界面：能力声明里 GUI 是 OPTIONAL。 */
+            if (!me->m_hostUI)
+            {
+                *out = nullptr;
+                return PI_E_NOINTERFACE;
+            }
+            return CreateProvider(me, out);
+        }
         *out = nullptr;
         return PI_E_NOINTERFACE;
     }
@@ -175,10 +189,7 @@ private:
     {
         return ((ExampleQtPlugin*)self_ptr)->Terminate();
     }
-    static PiResult PI_CALL GetViewThunk(void* self_ptr, IPiPluginView** out)
-    {
-        return ((ExampleQtPlugin*)self_ptr)->GetView(out);
-    }
+    static PiResult PI_CALL CreateProvider(void* self_ptr, void** out); /* defined below */
 
     static IPiPluginBaseVtbl const s_vtbl;
 
@@ -190,9 +201,109 @@ private:
 IPiPluginBaseVtbl const ExampleQtPlugin::s_vtbl = {
     {&ExampleQtPlugin::Qi, &pi_refcounted_add_ref, &pi_refcounted_release},
     &ExampleQtPlugin::Init,
-    &ExampleQtPlugin::Term,
-    &ExampleQtPlugin::GetViewThunk
+    &ExampleQtPlugin::Term
 };
+
+/* --------------------------------------------------------------------------
+ * IPiPluginViewProvider (0.6)
+ *
+ * 一个对象不能有两个 vtbl，所以界面能力是一个独立的薄对象：它持有一份插件
+ * 引用，宿主 QI 一次拿一个、用完 release。单面板插件只有一个 id "main"。
+ * -------------------------------------------------------------------------- */
+struct ExampleQtViewProvider
+{
+    PiRefCountedBase base;  /* MUST be first */
+    ExampleQtPlugin* owner; /* add-ref'd */
+};
+
+static uint32_t PI_CALL ExampleProvider_AddRef(void* self)
+{
+    return pi_refcounted_add_ref(self);
+}
+static uint32_t PI_CALL ExampleProvider_Release(void* self)
+{
+    return pi_refcounted_release(self);
+}
+static void ExampleProvider_Destroy(void* self)
+{
+    ExampleQtViewProvider* provider = (ExampleQtViewProvider*)self;
+    if (provider->owner)
+    {
+        pi_iunknown_release((IPiUnknown*)&provider->owner->m_base);
+        provider->owner = nullptr;
+    }
+    delete provider;
+}
+static PiResult PI_CALL ExampleProvider_Qi(void* self, PiGuid const* iid, void** out)
+{
+    if (!out)
+    {
+        return PI_E_INVALIDARG;
+    }
+    if (pi_guid_equal(iid, &PI_IID_UNKNOWN) || pi_guid_equal(iid, &PI_PLUGIN_IID_VIEW_PROVIDER))
+    {
+        *out = self;
+        pi_refcounted_add_ref(self);
+        return PI_OK;
+    }
+    *out = nullptr;
+    return PI_E_NOINTERFACE;
+}
+static PiResult PI_CALL ExampleProvider_Views(void* self, PiPluginViewInfo const** out_views,
+                                              uint32_t* out_count)
+{
+    static PiPluginViewInfo const kViews[] = {{"main"}};
+    (void)self;
+    if (!out_views || !out_count)
+    {
+        return PI_E_INVALIDARG;
+    }
+    *out_views = kViews;
+    *out_count = 1;
+    return PI_OK;
+}
+static PiResult PI_CALL ExampleProvider_GetView(void* self, char const* view_id,
+                                                IPiPluginView** out)
+{
+    ExampleQtViewProvider* provider = (ExampleQtViewProvider*)self;
+    if (!out)
+    {
+        return PI_E_INVALIDARG;
+    }
+    *out = nullptr;
+    if (!view_id || view_id[0] == '\0')
+    {
+        return PI_E_INVALIDARG;
+    }
+    if (strcmp(view_id, "main") != 0)
+    {
+        return PI_E_NOTFOUND;
+    }
+    return provider->owner->CreateView(out);
+}
+
+static IPiPluginViewProviderVtbl const s_view_provider_vtbl = {
+    {&ExampleProvider_Qi, &ExampleProvider_AddRef, &ExampleProvider_Release},
+    &ExampleProvider_Views,
+    &ExampleProvider_GetView
+};
+
+PiResult PI_CALL ExampleQtPlugin::CreateProvider(void* self_ptr, void** out)
+{
+    ExampleQtPlugin*       me       = (ExampleQtPlugin*)self_ptr;
+    ExampleQtViewProvider* provider = new ExampleQtViewProvider();
+    if (!provider)
+    {
+        *out = nullptr;
+        return PI_E_OUTOFMEMORY;
+    }
+    provider->owner = me;
+    pi_refcounted_init_with_destroy(&provider->base, (IPiUnknownVtbl const*)&s_view_provider_vtbl,
+                                    &ExampleProvider_Destroy);
+    pi_refcounted_add_ref(&me->m_base);
+    *out = (IPiPluginViewProvider*)&provider->base;
+    return PI_OK;
+}
 
 /* --------------------------------------------------------------------------
  * Factory
@@ -209,7 +320,7 @@ public:
          * See pi_plugin_descriptor_init() in pi_plugin_types.h. */
         pi_plugin_descriptor_init(&m_desc);
 
-        m_caps[0].iid   = PI_PLUGIN_IID_PLUGIN_VIEW;
+        m_caps[0].iid   = PI_PLUGIN_IID_VIEW_PROVIDER;
         m_caps[0].flags = PI_PLUGIN_CAP_PROVIDES;
         m_caps[1].iid   = PI_PLUGIN_IID_HOST_UI;
         m_caps[1].flags = PI_PLUGIN_CAP_OPTIONAL;

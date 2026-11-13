@@ -64,7 +64,6 @@ static uint32_t PI_CALL Plugin_Release(void* self_ptr);
 static PiResult PI_CALL Plugin_Qi(void* self_ptr, PiGuid const* iid, void** out);
 static PiResult PI_CALL Plugin_Initialize(void* self_ptr, IPiPluginHostServices* host);
 static PiResult PI_CALL Plugin_Terminate(void* self_ptr);
-static PiResult PI_CALL Plugin_GetView(void* self_ptr, IPiPluginView** out);
 
 static uint32_t PI_CALL Sink_AddRef(void* self_ptr);
 static uint32_t PI_CALL Sink_Release(void* self_ptr);
@@ -93,8 +92,7 @@ static uint32_t PI_CALL Sink_Release(void* self_ptr)
 static IPiPluginBaseVtbl const s_plugin_vtbl = {
     {&Plugin_Qi, &Plugin_AddRef, &Plugin_Release},
     &Plugin_Initialize,
-    &Plugin_Terminate,
-    &Plugin_GetView
+    &Plugin_Terminate
 };
 
 static IPiPluginEventSinkVtbl const s_sink_vtbl = {
@@ -302,17 +300,6 @@ static PiResult PI_CALL Plugin_Terminate(void* self_ptr)
                (unsigned)plugin->broadcast_seen, (unsigned)plugin->ack_published);
     }
     return PI_OK;
-}
-
-static PiResult PI_CALL Plugin_GetView(void* self_ptr, IPiPluginView** out)
-{
-    (void)self_ptr;
-    if (!out)
-    {
-        return PI_E_INVALIDARG;
-    }
-    *out = NULL;
-    return PI_E_NOINTERFACE; /* headless plugin: no UI */
 }
 
 static PiResult PI_CALL Plugin_Qi(void* self_ptr, PiGuid const* iid, void** out)

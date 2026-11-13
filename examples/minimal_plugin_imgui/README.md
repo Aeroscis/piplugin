@@ -17,9 +17,9 @@ cd bin\Debug
 
 ## 值得抄的几点
 
-- 能力声明：`PI_PLUGIN_IID_PLUGIN_VIEW (PROVIDES)` + `PI_PLUGIN_IID_HOST_UI (OPTIONAL)`；
-  headless 宿主下 `QueryInterface(PI_PLUGIN_IID_HOST_UI)` 失败 → **不创建 view**（本插件在
-  `GetView()` 里就是这么判断的），插件照常被加载；
+- 能力声明：`PI_PLUGIN_IID_VIEW_PROVIDER (PROVIDES)` + `PI_PLUGIN_IID_HOST_UI (OPTIONAL)`；
+  headless 宿主下 `QueryInterface(PI_PLUGIN_IID_HOST_UI)` 失败 → **不暴露视图 provider**
+  （本插件在 `Qi()` 里就是这么判断的），插件照常被加载；
 - 入口用 `PI_PLUGIN_ENTRY_DECL` —— 它自带 C 链接（C++ 的名字修饰会让宿主找不到
   `pi_plugin_entry`，这一点由宏负责，写插件的人不用管）；
 - 套件回调（`draw` / `retain` / `release`）都在**宿主 GUI 线程**上被调用，

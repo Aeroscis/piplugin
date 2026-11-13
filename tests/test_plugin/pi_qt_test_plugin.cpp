@@ -1,6 +1,7 @@
 #include "pi_qt_test_plugin.h"
 
 #include <stdio.h>
+#include <string.h>
 
 #include <QLabel>
 #include <QPainter>
@@ -156,7 +157,7 @@ QtPluginFactory::QtPluginFactory()
     /* LV2-style capability declaration:
      *  - this plugin provides a GUI view
      *  - it optionally uses the host's UI services (runs headless without) */
-    m_capabilities[0].iid   = PI_PLUGIN_IID_PLUGIN_VIEW;
+    m_capabilities[0].iid   = PI_PLUGIN_IID_VIEW_PROVIDER;
     m_capabilities[0].flags = PI_PLUGIN_CAP_PROVIDES;
     m_capabilities[1].iid   = PI_PLUGIN_IID_HOST_UI;
     m_capabilities[1].flags = PI_PLUGIN_CAP_OPTIONAL;
@@ -257,8 +258,7 @@ PiResult PI_CALL QtPluginFactory::CreateInstance(void* self_ptr, PiGuid const* g
 IPiPluginBaseVtbl const QtPlugin::s_base_vtbl = {
     {&QtPlugin::Qi_PluginBase, &pi_refcounted_add_ref, &pi_refcounted_release},
     &QtPlugin::Init,
-    &QtPlugin::Term,
-    &QtPlugin::GetView
+    &QtPlugin::Term
 };
 
 QtPlugin::QtPlugin()
@@ -537,6 +537,24 @@ PiResult PI_CALL QtPlugin::Qi_PluginBase(void* self_ptr, PiGuid const* iid, void
         me->m_base.unk.lpVtbl->pi_add_ref(self_ptr);
         return PI_OK;
     }
+    if (pi_guid_equal(iid, &PI_PLUGIN_IID_VIEW_PROVIDER))
+    {
+        /* On a headless host we advertise no view at all: the GUI is an optional
+         * capability, and "no GUI here" is expressed by a failing query. */
+        if (!me->m_hostUI)
+        {
+            *out = NULL;
+            return PI_E_NOINTERFACE;
+        }
+        QtPluginViewProvider* provider = new QtPluginViewProvider(me);
+        if (!provider)
+        {
+            *out = NULL;
+            return PI_E_OUTOFMEMORY;
+        }
+        *out = (IPiPluginViewProvider*)&provider->m_base;
+        return PI_OK;
+    }
     *out = NULL;
     return PI_E_NOINTERFACE;
 }
@@ -548,30 +566,120 @@ PiResult PI_CALL QtPlugin::Term(void* self_ptr)
 {
     return ((QtPlugin*)self_ptr)->Terminate();
 }
-PiResult PI_CALL QtPlugin::GetView(void* self_ptr, IPiPluginView** out)
+PiResult QtPlugin::CreateView(IPiPluginView** out)
 {
     if (!out)
     {
         return PI_E_INVALIDARG;
     }
-    QtPlugin* me = (QtPlugin*)self_ptr;
-    /* On a headless host we advertise no view at all. */
-    if (!me->m_hostUI)
-    {
-        *out = NULL;
-        return PI_E_NOINTERFACE;
-    }
+    *out = NULL;
 
     /* All Qt integration is delegated to the adapter kit. */
     PiPluginQtViewDesc desc = {};
     desc.create_widget      = &QtPlugin::CreateUi;
     desc.retain             = &QtPlugin::Retain;
     desc.release            = &QtPlugin::Release;
-    desc.user_data          = me;
+    desc.user_data          = this;
+    desc.title              = "Qt Test Plugin";
     PiResult hr             = pi_plugin_qt_view_create(&desc, out);
     if (PI_SUCCEEDED(hr))
     {
-        me->m_view = *out; /* weak: host owns the ref */
+        m_view = *out; /* weak: host owns the ref */
     }
     return hr;
+}
+
+/* ==========================================================================
+ * IPiPluginViewProvider (0.6): one static view, id "main"
+ * ======================================================================== */
+IPiPluginViewProviderVtbl const QtPluginViewProvider::s_vtbl = {
+    {&QtPluginViewProvider::Qi, &QtPluginViewProvider::AddRef, &QtPluginViewProvider::Release},
+    &QtPluginViewProvider::Views,
+    &QtPluginViewProvider::GetView
+};
+
+QtPluginViewProvider::QtPluginViewProvider(QtPlugin* plugin)
+    : m_plugin(plugin)
+{
+    pi_refcounted_init_with_destroy(&m_base, (IPiUnknownVtbl const*)&s_vtbl,
+                                    &QtPluginViewProvider::Destroy);
+    if (m_plugin)
+    {
+        m_plugin->m_base.unk.lpVtbl->pi_add_ref((void*)m_plugin);
+    }
+}
+
+void QtPluginViewProvider::Destroy(void* self_ptr)
+{
+    QtPluginViewProvider* me = static_cast<QtPluginViewProvider*>(self_ptr);
+    if (me->m_plugin)
+    {
+        me->m_plugin->m_base.unk.lpVtbl->pi_release((void*)me->m_plugin);
+        me->m_plugin = nullptr;
+    }
+    delete me;
+}
+
+uint32_t PI_CALL QtPluginViewProvider::AddRef(void* self_ptr)
+{
+    return pi_refcounted_add_ref(self_ptr);
+}
+
+uint32_t PI_CALL QtPluginViewProvider::Release(void* self_ptr)
+{
+    return pi_refcounted_release(self_ptr);
+}
+
+PiResult PI_CALL QtPluginViewProvider::Qi(void* self_ptr, PiGuid const* iid, void** out)
+{
+    if (!out)
+    {
+        return PI_E_INVALIDARG;
+    }
+    QtPluginViewProvider* me = (QtPluginViewProvider*)self_ptr;
+    if (pi_guid_equal(iid, &PI_IID_UNKNOWN) || pi_guid_equal(iid, &PI_PLUGIN_IID_VIEW_PROVIDER))
+    {
+        *out = me;
+        me->m_base.unk.lpVtbl->pi_add_ref(self_ptr);
+        return PI_OK;
+    }
+    *out = NULL;
+    return PI_E_NOINTERFACE;
+}
+
+PiResult PI_CALL QtPluginViewProvider::Views(void* self_ptr, PiPluginViewInfo const** out_views,
+                                             uint32_t* out_count)
+{
+    /* One panel per instance: the id is "main", exactly as the framework's
+     * single-panel convention says. A real multi-document plugin would return a
+     * freshly built array here and could change its length between calls. */
+    static PiPluginViewInfo const kViews[] = {{"main"}};
+    (void)self_ptr;
+    if (!out_views || !out_count)
+    {
+        return PI_E_INVALIDARG;
+    }
+    *out_views = kViews;
+    *out_count = 1;
+    return PI_OK;
+}
+
+PiResult PI_CALL QtPluginViewProvider::GetView(void* self_ptr, char const* view_id,
+                                               IPiPluginView** out)
+{
+    if (!out)
+    {
+        return PI_E_INVALIDARG;
+    }
+    *out = NULL;
+    if (!view_id || view_id[0] == '\0')
+    {
+        return PI_E_INVALIDARG;
+    }
+    if (strcmp(view_id, "main") != 0)
+    {
+        return PI_E_NOTFOUND;
+    }
+    QtPluginViewProvider* me = (QtPluginViewProvider*)self_ptr;
+    return me->m_plugin->CreateView(out);
 }

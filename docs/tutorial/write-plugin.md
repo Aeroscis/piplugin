@@ -47,9 +47,9 @@ public:
         m_descriptor.category = "Demo";
         m_descriptor.api_version = PI_PLUGIN_API_VERSION;
 
-        // 能力声明（LV2 风格）：提供视图，可选使用宿主 GUI
-        m_capabilities[0] = { PI_PLUGIN_IID_PLUGIN_VIEW, PI_PLUGIN_CAP_PROVIDES };
-        m_capabilities[1] = { PI_PLUGIN_IID_HOST_UI,     PI_PLUGIN_CAP_OPTIONAL };
+        // 能力声明（LV2 风格）：提供界面能力，可选使用宿主 GUI
+        m_capabilities[0] = { PI_PLUGIN_IID_VIEW_PROVIDER, PI_PLUGIN_CAP_PROVIDES };
+        m_capabilities[1] = { PI_PLUGIN_IID_HOST_UI,       PI_PLUGIN_CAP_OPTIONAL };
         m_descriptor.capabilities = m_capabilities;
         m_descriptor.capability_count = 2;
     }
@@ -141,14 +141,64 @@ public:
         return ((MyPlugin*)s)->Initialize(host);
     }
     static PiResult PI_CALL Term(void* s) { (void)s; return PI_OK; }
-    static PiResult PI_CALL GetView(void* s, IPiPluginView** out) {
-        if (!out) return PI_E_INVALIDARG;
-        MyPlugin* me = (MyPlugin*)s;
-        if (!me->m_hostUI) { *out = NULL; return PI_E_NOINTERFACE; }  // 无头宿主不给视图
-        // ... 通过 UI 适配器创建视图（见 adapters.md）
-        return PI_E_NOINTERFACE;
-    }
+    static PiResult PI_CALL CreateProvider(void* s, void** out); // 见下
 };
+
+// 界面能力是**独立接口**：一个对象不能有两个 vtable，所以 provider 是一个薄对象，
+// 持有一份插件引用。宿主 QI(PI_PLUGIN_IID_VIEW_PROVIDER) 拿到它，用完 release。
+struct MyViewProvider {
+    PiRefCountedBase base;   // 必须第一个成员
+    MyPlugin*        owner;  // 已 AddRef
+};
+// provider 的 vtbl：qi / add_ref / release / pi_plugin_views / pi_plugin_get_view
+
+static PiResult PI_CALL MyPlugin::CreateProvider(void* s, void** out) {
+    MyPlugin* me = (MyPlugin*)s;
+    MyViewProvider* p = new MyViewProvider();
+    p->owner = me;
+    pi_refcounted_init_with_destroy(&p->base, (const IPiUnknownVtbl*)&s_provider_vtbl,
+                                    &pi_plugin_cpp_destroy<MyViewProvider>);
+    pi_iunknown_add_ref((IPiUnknown*)&me->m_base);
+    *out = (IPiPluginViewProvider*)&p->base;
+    return PI_OK;
+}
+```
+
+provider 的两个方法（单面板插件的最小形状）：
+
+```cpp
+static PiResult PI_CALL MyPlugin::ProviderViews(void* s, const PiPluginViewInfo** out, uint32_t* n) {
+    // 借用数组、零分配、每帧可调；集合的**内容与数量**都可以变。
+    static const PiPluginViewInfo kViews[] = {{"main"}};
+    (void)s;
+    if (!out || !n) return PI_E_INVALIDARG;
+    *out = kViews; *n = 1;
+    return PI_OK;
+}
+
+static PiResult PI_CALL MyPlugin::ProviderGetView(void* s, const char* view_id, IPiPluginView** out) {
+    MyViewProvider* p = (MyViewProvider*)s;
+    if (!out) return PI_E_INVALIDARG;
+    *out = NULL;
+    if (!view_id || !view_id[0]) return PI_E_INVALIDARG;
+    if (strcmp(view_id, "main") != 0) return PI_E_NOTFOUND;
+    // ... 通过 UI 适配器创建视图（见 adapters.md），返回时引用计数为 1
+    return pi_plugin_qt_view_create(&desc, out);
+}
+```
+
+`Qi_Base` 里加一条分支（无头宿主就**不暴露** provider）：
+
+```cpp
+    if (pi_guid_equal(iid, &PI_PLUGIN_IID_VIEW_PROVIDER)) {
+        if (!me->m_hostUI) { *out = NULL; return PI_E_NOINTERFACE; }
+        return CreateProvider(me, out);
+    }
+```
+
+> 视图身份是**字符串 id**，不是下标。多视图插件（一个文档一个视图）每次调用
+> `pi_plugin_views` 返回当前存在的 id 列表，宿主每帧重读并对账；不要发"列表变了"
+> 事件 —— 事件是 best effort，丢一个就是"窗口永远不出现"。
 ```
 
 ### 1.4 vtable 与 GUID
@@ -167,7 +217,7 @@ const IPiPluginFactoryVtbl MyPluginFactory::s_factory_vtbl = {
 
 const IPiPluginBaseVtbl MyPlugin::s_base_vtbl = {
     { &MyPlugin::Qi_Base, &pi_refcounted_add_ref, &pi_refcounted_release },
-    &MyPlugin::Init, &MyPlugin::Term, &MyPlugin::GetView
+    &MyPlugin::Init, &MyPlugin::Term          // 0.6 起只有这两个槽位
 };
 ```
 
@@ -197,12 +247,15 @@ target_link_libraries(${TARGET_NAME} PRIVATE piplugin)
 | 引用计数 | 用 `pi_refcounted_*` 标准实现；C++ 对象 destroy 用 `pi_plugin_cpp_destroy<T>` |
 | `QueryInterface` | 必须支持对应 IID 与 `PI_IID_UNKNOWN`，且返回时已 AddRef |
 | 宿主指针 | 保存宿主对象时要 AddRef；析构时 Release |
-| 无头宿主 | `m_hostUI == NULL` → 不创建视图，`pi_plugin_get_view` 返回 `PI_E_NOINTERFACE` |
+| 无头宿主 | `m_hostUI == NULL` → **不暴露** `PI_PLUGIN_IID_VIEW_PROVIDER`（QI 失败），插件照常加载 |
 
 ## 4. 能力声明技巧
 
-- **GUI 插件**：`PI_PLUGIN_IID_PLUGIN_VIEW (PROVIDES)` + `PI_PLUGIN_IID_HOST_UI (OPTIONAL)`。
-- **纯服务插件（任务服务器）**：`PI_PLUGIN_IID_SERVICE (PROVIDES)`，不依赖任何宿主能力。
+- **GUI 插件**：`PI_PLUGIN_IID_VIEW_PROVIDER (PROVIDES)` + `PI_PLUGIN_IID_HOST_UI (OPTIONAL)`。
+  视图本身（`IPiPluginView`）是实现细节，不写进能力表；"有几个视图、叫什么 id"由
+  provider 在运行期回答（单面板插件用 `"main"`）。
+- **纯服务插件（任务服务器）**：`PI_PLUGIN_IID_SERVICE (PROVIDES)`，不依赖任何宿主能力，
+  也**不**声明 / 不暴露视图 provider。
 - **硬性 GUI 需求**：`PI_PLUGIN_IID_HOST_UI (REQUIRED)` —— headless 宿主会在实例化前直接拒绝。
 
 宿主侧（如 `pi_plugin_test_host.imgui`）会在 `pi_plugin_factory_create_instance` **之前**调用

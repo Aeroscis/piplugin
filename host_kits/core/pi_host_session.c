@@ -2,7 +2,7 @@
  * piplugin - Host kit L0: PiPluginHostSession (implementation)
  *
  * 设计纪律见 pi_host_session.h 与 host_kits/README.md。
- * 本文件只做机制：加载、门禁、实例化、多槽位、七步卸载；不碰任何 UI 决策。
+ * 本文件只做机制：加载、门禁、实例化、多槽位、多视图账本、七步卸载；不碰任何 UI 决策。
  */
 #include "pi_host_session.h"
 
@@ -14,16 +14,29 @@
 /* --------------------------------------------------------------------------
  * Internal types
  * -------------------------------------------------------------------------- */
+
+/* 宿主已经从 provider 取过引用（或正在使用的）一个视图。
+ *
+ * id 必须是**副本**：provider 的 PiPluginViewInfo::id 是借用字符串，插件下一次
+ * pi_plugin_views() 就可能让它失效（或者整块换掉）。本层的表要活到卸载，
+ * 所以自己存一份。 */
+typedef struct SlotView {
+    char*          id;      /* malloc 出来的副本；NULL 表示空槽 */
+    IPiPluginView* view;    /* add-ref'd */
+    int            attached;
+    PiNativeWindow attach_window;
+} SlotView;
+
 typedef struct PiPluginHostSessionSlot {
     PiPluginModule*           module;     /* loaded module (owns the code) */
     IPiPluginFactory*         factory;    /* add-ref'd at load              */
     IPiPluginBase*            plugin;     /* add-ref'd at instantiate       */
-    IPiPluginView*            view;       /* add-ref'd; may be NULL         */
+    IPiPluginViewProvider*    provider;   /* add-ref'd; NULL = no GUI       */
+    SlotView                  views[PI_PLUGIN_HOST_SESSION_MAX_VIEWS_PER_SLOT];
+    uint32_t                  view_count; /* dense: views[0..view_count-1]  */
     IPiPluginService*         service;    /* add-ref'd; may be NULL         */
     IPiPluginEventSink*       event_sink; /* add-ref'd; may be NULL (APP-06) */
     PiPluginDescriptor const* descriptor; /* borrowed from the factory      */
-    PiNativeWindow            attach_window;
-    int                       view_attached;
     int                       in_use;
 } PiPluginHostSessionSlot;
 
@@ -97,6 +110,78 @@ static PiPluginHostSessionSlot* SessionSlotAt(PiPluginHostSession* session, uint
     return &session->slots[slot];
 }
 
+/* 自己复制一份 id：provider 的字符串是借用的，且不保证 NUL 之外的长度。
+ * 超过 PI_PLUGIN_VIEW_ID_MAX 的部分截断（框架说"更长会被宿主截断，不是拒绝"）。 */
+static char* SessionCopyId(char const* id)
+{
+    size_t n;
+    char*  copy;
+
+    if (!id || !id[0])
+    {
+        return NULL;
+    }
+    n = strlen(id);
+    if (n >= PI_PLUGIN_VIEW_ID_MAX)
+    {
+        n = PI_PLUGIN_VIEW_ID_MAX - 1;
+    }
+    copy = (char*)malloc(n + 1);
+    if (!copy)
+    {
+        return NULL;
+    }
+    memcpy(copy, id, n);
+    copy[n] = '\0';
+    return copy;
+}
+
+/* 在槽位的视图表里按 id 找；找不到返回 -1。 */
+static int SessionFindView(PiPluginHostSessionSlot const* slot, char const* view_id)
+{
+    uint32_t i;
+    if (!view_id || !view_id[0])
+    {
+        return -1;
+    }
+    for (i = 0; i < slot->view_count; ++i)
+    {
+        if (slot->views[i].id && strcmp(slot->views[i].id, view_id) == 0)
+        {
+            return (int)i;
+        }
+    }
+    return -1;
+}
+
+/* 视图表里最后一个条目。表是 dense 的，卸载时从尾部一个个放掉。 */
+static void SessionClearViews(PiPluginHostSession* session, PiPluginHostSessionSlot* slot,
+                              uint32_t index, char const* tag)
+{
+    /* detach 必须先于 release，且两者都必须先于模块卸载：插件的控件/窗口对象
+     * 的析构函数在插件模块里，模块一卸就是调到已释放内存。 */
+    while (slot->view_count > 0)
+    {
+        SlotView* sv = &slot->views[slot->view_count - 1];
+
+        if (sv->attached && !session->skip_detach)
+        {
+            SessionLog(session, "%s[%u]: detach view '%s'", tag, index, sv->id ? sv->id : "?");
+            pi_plugin_view_detach(sv->view);
+        }
+        else if (sv->attached)
+        {
+            SessionLog(session, "%s[%u]: SKIPPING detach (diagnostic) for view '%s'", tag, index,
+                       sv->id ? sv->id : "?");
+        }
+        SessionLog(session, "%s[%u]: release view '%s'", tag, index, sv->id ? sv->id : "?");
+        pi_iunknown_release((IPiUnknown*)sv->view);
+        free(sv->id);
+        memset(sv, 0, sizeof(*sv));
+        --slot->view_count;
+    }
+}
+
 /* 七步卸载序列（也用于加载失败时的就地回卷）。
  * 释放顺序不可调换：插件/视图的代码在模块里，任何一步先卸模块都是 UB。 */
 static void SessionTearDownSlot(PiPluginHostSession* session, PiPluginHostSessionSlot* slot,
@@ -107,16 +192,18 @@ static void SessionTearDownSlot(PiPluginHostSession* session, PiPluginHostSessio
         return;
     }
 
-    /* 1) 服务：可能还在别的线程上跑 I/O，先停再释放 */
-    if (slot->service)
+    /* 1) 视图（一个槽位 N 个）：每个都 detach + release */
+    SessionClearViews(session, slot, index, tag);
+
+    /* 2) provider：插件实例上的能力对象，必须在 terminate / 模块卸载之前放掉 */
+    if (slot->provider)
     {
-        SessionLog(session, "%s[%u]: service stop", tag, index);
-        pi_plugin_service_stop(slot->service);
-        pi_iunknown_release((IPiUnknown*)slot->service);
-        slot->service = NULL;
+        SessionLog(session, "%s[%u]: release view provider", tag, index);
+        pi_iunknown_release((IPiUnknown*)slot->provider);
+        slot->provider = NULL;
     }
 
-    /* 2) 事件（APP-06）：先让宿主按 owner 退订，再放掉 sink。
+    /* 3) 事件（APP-06）：先让宿主按 owner 退订，再放掉 sink。
      *
      * 顺序是这一层存在的意义：owner 就是插件实例指针，退订必须在插件代码还映射着
      * 的时候做完；sink 的引用也必须在模块卸载前放掉。两件事都由 kit 做，宿主
@@ -133,26 +220,18 @@ static void SessionTearDownSlot(PiPluginHostSession* session, PiPluginHostSessio
         slot->event_sink = NULL;
     }
 
-    /* 3) 视图：detach 必须先于 release，且两者都必须先于模块卸载 */
-    if (slot->view)
+    /* 4) 服务：可能还在别的线程上跑 I/O，先停再释放 */
+    if (slot->service)
     {
-        if (slot->view_attached && !session->skip_detach)
-        {
-            SessionLog(session, "%s[%u]: detach view", tag, index);
-            pi_plugin_view_detach(slot->view);
-        }
-        else if (slot->view_attached)
-        {
-            SessionLog(session, "%s[%u]: SKIPPING detach (diagnostic)", tag, index);
-        }
-        SessionLog(session, "%s[%u]: release view", tag, index);
-        pi_iunknown_release((IPiUnknown*)slot->view);
-        slot->view = NULL;
+        SessionLog(session, "%s[%u]: service stop", tag, index);
+        pi_plugin_service_stop(slot->service);
+        pi_iunknown_release((IPiUnknown*)slot->service);
+        slot->service = NULL;
     }
-    slot->view_attached = 0;
-    slot->attach_window = PI_INVALID_WINDOW;
 
-    /* 4) 插件实例：terminate 再 release —— 此刻插件代码必须仍然 mapped */
+    /* 5) 插件实例：terminate 再 release —— 此刻插件代码必须仍然 mapped。
+     *    到这一步所有视图都已经 detach + release，与 pi_plugin_base.h 里
+     *    terminate 的契约（"所有视图都已归还"）对得上。 */
     if (slot->plugin)
     {
         SessionLog(session, "%s[%u]: terminate plugin", tag, index);
@@ -161,14 +240,14 @@ static void SessionTearDownSlot(PiPluginHostSession* session, PiPluginHostSessio
         slot->plugin = NULL;
     }
 
-    /* 5) 工厂 */
+    /* 6) 工厂 */
     if (slot->factory)
     {
         pi_iunknown_release((IPiUnknown*)slot->factory);
         slot->factory = NULL;
     }
 
-    /* 6) 模块 */
+    /* 7) 模块 */
     if (slot->module)
     {
         SessionLog(session, "%s[%u]: unload module", tag, index);
@@ -176,8 +255,9 @@ static void SessionTearDownSlot(PiPluginHostSession* session, PiPluginHostSessio
         slot->module = NULL;
     }
 
-    /* 7) descriptor 属于模块，随模块失效 */
+    /* 8) descriptor 属于模块，随模块失效 */
     slot->descriptor = NULL;
+    slot->view_count = 0;
     slot->in_use     = 0;
 }
 
@@ -286,8 +366,8 @@ void pi_plugin_host_session_destroy(PiPluginHostSession* session)
     for (i = 0; i < PI_PLUGIN_HOST_SESSION_MAX_SLOTS; ++i)
     {
         PiPluginHostSessionSlot* slot = &session->slots[i];
-        if (slot->in_use || slot->module || slot->plugin || slot->view ||
-            slot->event_sink)
+        if (slot->in_use || slot->module || slot->plugin || slot->provider ||
+            slot->view_count > 0 || slot->event_sink)
         {
             SessionTearDownSlot(session, slot, i, "destroy");
         }
@@ -359,8 +439,7 @@ PiResult pi_plugin_host_session_inspect(PiPluginHostSession* session,
     }
     slot = &session->slots[index];
     memset(slot, 0, sizeof(*slot));
-    slot->attach_window = PI_INVALID_WINDOW;
-    slot->in_use        = 1; /* 先占住槽位：任何失败都走同一条回卷路径 */
+    slot->in_use = 1; /* 先占住槽位：任何失败都走同一条回卷路径 */
 
     SessionLog(session, "load[%d]: %s", index, dll_path);
 
@@ -428,6 +507,7 @@ PiResult pi_plugin_host_session_instantiate(PiPluginHostSession* session, uint32
     PiGuid                   class_guid;
     uint32_t                 class_count;
     PiResult                 hr;
+    uint32_t                 view_count = 0;
 
     if (!session)
     {
@@ -482,13 +562,25 @@ PiResult pi_plugin_host_session_instantiate(PiPluginHostSession* session, uint32
         return hr;
     }
 
-    /* 视图与可选服务。取不到都不是错误：headless 插件本来就不该有 view，
-     * 而不实现 IPiPluginService 的插件 QI 失败正是能力协商的常态。 */
+    /* 视图能力：不是"取视图"，而是"取 provider"。headless 插件不支持
+     * PI_PLUGIN_IID_VIEW_PROVIDER 就是 QI 失败 —— 与 service / event sink
+     * 一样是能力协商的常态，不是错误。具体要哪个视图由宿主按 id 后取。 */
     {
-        IPiPluginView* view = NULL;
-        if (PI_SUCCEEDED(pi_plugin_get_view(slot->plugin, &view)) && view)
+        IPiPluginViewProvider* provider = NULL;
+        if (PI_SUCCEEDED(pi_iunknown_query_interface((IPiUnknown*)slot->plugin,
+                                                      &PI_PLUGIN_IID_VIEW_PROVIDER, (void**)&provider)))
         {
-            slot->view = view;
+            slot->provider = provider;
+            /* 顺手枚举一次只为了日志：声明了 PROVIDES 却一个视图都不给，
+             * 是插件自己的 bug，宿主看日志能立刻分辨"没有界面"与"有界面但空"。 */
+            {
+                PiPluginViewInfo const* views = NULL;
+                uint32_t                count = 0;
+                if (PI_SUCCEEDED(pi_plugin_views(provider, &views, &count)))
+                {
+                    view_count = count;
+                }
+            }
         }
     }
     {
@@ -510,10 +602,9 @@ PiResult pi_plugin_host_session_instantiate(PiPluginHostSession* session, uint32
         }
     }
 
-    SessionLog(session, "load[%u]: ready (view:%s service:%s events:%s)",
-               (unsigned)slot_index,
-               slot->view ? "Y" : "N", slot->service ? "Y" : "N",
-               slot->event_sink ? "Y" : "N");
+    SessionLog(session, "load[%u]: ready (views:%u service:%s events:%s)",
+               (unsigned)slot_index, (unsigned)view_count,
+               slot->service ? "Y" : "N", slot->event_sink ? "Y" : "N");
     return PI_OK;
 }
 
@@ -592,12 +683,6 @@ IPiPluginBase* pi_plugin_host_session_get_plugin(PiPluginHostSession* session, u
     return s ? s->plugin : NULL;
 }
 
-IPiPluginView* pi_plugin_host_session_get_view(PiPluginHostSession* session, uint32_t slot)
-{
-    PiPluginHostSessionSlot* s = SessionSlotAt(session, slot);
-    return s ? s->view : NULL;
-}
-
 IPiPluginService* pi_plugin_host_session_get_service(PiPluginHostSession* session, uint32_t slot)
 {
     PiPluginHostSessionSlot* s = SessionSlotAt(session, slot);
@@ -661,12 +746,118 @@ IPiPluginHostEvents* pi_plugin_host_session_get_host_events(PiPluginHostSession*
 }
 
 /* --------------------------------------------------------------------------
- * Embedding / per-frame pump
+ * Views: enumerate / take / attach / pump
  * -------------------------------------------------------------------------- */
-PiResult pi_plugin_host_session_attach_view(PiPluginHostSession* session, uint32_t slot_index,
-                                            PiNativeWindow parent_window, int set_visible)
+PiResult pi_plugin_host_session_views(PiPluginHostSession* session, uint32_t slot_index,
+                                      PiPluginViewInfo const** out_views, uint32_t* out_count)
 {
     PiPluginHostSessionSlot* slot;
+
+    if (out_views)
+    {
+        *out_views = NULL;
+    }
+    if (out_count)
+    {
+        *out_count = 0;
+    }
+    if (!session || !out_views || !out_count)
+    {
+        return PI_E_INVALIDARG;
+    }
+    slot = SessionSlotAt(session, slot_index);
+    if (!slot)
+    {
+        return PI_E_INVALIDARG;
+    }
+    if (!slot->provider)
+    {
+        SessionSetError(session, "slot %u has no view provider (headless plugin?)",
+                        (unsigned)slot_index);
+        return PI_E_NOINTERFACE;
+    }
+    /* 直接转发，不缓存：集合会变，宿主每帧重读；插件给的数组只在这次调用内有效。 */
+    return pi_plugin_views(slot->provider, out_views, out_count);
+}
+
+IPiPluginViewProvider* pi_plugin_host_session_get_view_provider(PiPluginHostSession* session,
+                                                               uint32_t             slot)
+{
+    PiPluginHostSessionSlot* s = SessionSlotAt(session, slot);
+    return s ? s->provider : NULL;
+}
+
+IPiPluginView* pi_plugin_host_session_get_view(PiPluginHostSession* session, uint32_t slot_index,
+                                               char const* view_id)
+{
+    PiPluginHostSessionSlot* slot;
+    SlotView*                sv;
+    IPiPluginView*           view = NULL;
+    char*                    id_copy;
+    int                      index;
+    PiResult                 hr;
+
+    if (!view_id || !view_id[0])
+    {
+        return NULL;
+    }
+    slot = SessionSlotAt(session, slot_index);
+    if (!slot)
+    {
+        return NULL;
+    }
+
+    index = SessionFindView(slot, view_id);
+    if (index >= 0)
+    {
+        return slot->views[index].view; /* 已经取过：同一个指针，宿主不用管引用 */
+    }
+    if (!slot->provider)
+    {
+        SessionSetError(session, "slot %u has no view provider (headless plugin?)",
+                        (unsigned)slot_index);
+        return NULL;
+    }
+    if (slot->view_count >= PI_PLUGIN_HOST_SESSION_MAX_VIEWS_PER_SLOT)
+    {
+        SessionSetError(session, "slot %u already holds %u views (kit table limit)",
+                        (unsigned)slot_index, (unsigned)PI_PLUGIN_HOST_SESSION_MAX_VIEWS_PER_SLOT);
+        return NULL;
+    }
+
+    hr = pi_plugin_get_view(slot->provider, view_id, &view);
+    if (PI_FAILED(hr) || !view)
+    {
+        SessionSetError(session, "slot %u has no view '%s' (hr=%d)", (unsigned)slot_index, view_id,
+                        (int)hr);
+        return NULL;
+    }
+
+    id_copy = SessionCopyId(view_id);
+    if (!id_copy)
+    {
+        pi_iunknown_release((IPiUnknown*)view);
+        SessionSetError(session, "out of memory while remembering view id '%s'", view_id);
+        return NULL;
+    }
+
+    sv                  = &slot->views[slot->view_count++];
+    sv->id              = id_copy;
+    sv->view            = view;
+    sv->attached        = 0;
+    sv->attach_window   = PI_INVALID_WINDOW;
+    SessionLog(session, "view[%u]: took '%s'", (unsigned)slot_index, id_copy);
+    return view;
+}
+
+PiResult pi_plugin_host_session_attach_view(PiPluginHostSession* session, uint32_t slot_index,
+                                            char const* view_id, PiNativeWindow parent_window,
+                                            int set_visible)
+{
+    PiPluginHostSessionSlot* slot;
+    IPiPluginView*           view;
+    SlotView*                sv;
+    int                      index;
     PiResult                 hr;
 
     if (!session)
@@ -682,42 +873,99 @@ PiResult pi_plugin_host_session_attach_view(PiPluginHostSession* session, uint32
     {
         return PI_E_INVALIDARG;
     }
-    if (!slot->view)
+    if (!view_id || !view_id[0])
     {
-        SessionSetError(session, "slot %u has no view to attach (headless plugin?)",
-                        (unsigned)slot_index);
-        return PI_E_NOINTERFACE;
+        return PI_E_INVALIDARG;
     }
-    if (slot->view_attached)
+
+    view = pi_plugin_host_session_get_view(session, slot_index, view_id);
+    if (!view)
     {
-        SessionSetError(session, "slot %u already has an attached view", (unsigned)slot_index);
+        /* headless 与"id 不存在"是两件事，调用方据此决定是自己错了还是插件没界面 */
+        if (!slot->provider)
+        {
+            SessionSetError(session, "slot %u has no view provider (headless plugin?)",
+                            (unsigned)slot_index);
+            return PI_E_NOINTERFACE;
+        }
+        return PI_E_NOTFOUND;
+    }
+
+    index = SessionFindView(slot, view_id);
+    sv    = (index >= 0) ? &slot->views[index] : NULL;
+    if (!sv)
+    {
+        return PI_E_NOTFOUND; /* 理论上不可达：get_view 刚刚把表补齐 */
+    }
+    if (sv->attached)
+    {
+        SessionSetError(session, "slot %u view '%s' is already attached", (unsigned)slot_index,
+                        view_id);
         return PI_E_UNEXPECTED;
     }
 
-    hr = pi_plugin_view_attach(slot->view, parent_window);
+    hr = pi_plugin_view_attach(view, parent_window);
     if (PI_FAILED(hr))
     {
-        SessionSetError(session, "pi_plugin_view_attach failed (hr=%d)", (int)hr);
+        SessionSetError(session, "pi_plugin_view_attach('%s') failed (hr=%d)", view_id, (int)hr);
         return hr;
     }
-    slot->view_attached = 1;
-    slot->attach_window = parent_window;
+    sv->attached      = 1;
+    sv->attach_window = parent_window;
 
     if (set_visible)
     {
-        pi_plugin_view_set_visible(slot->view, 1);
+        pi_plugin_view_set_visible(view, 1);
     }
 
-    SessionLog(session, "attach[%u]: plugin window=0x%llx container=0x%llx",
-               (unsigned)slot_index,
-               (unsigned long long)(uintptr_t)pi_plugin_view_get_native_window(slot->view),
+    SessionLog(session, "attach[%u]: view '%s' plugin window=0x%llx container=0x%llx",
+               (unsigned)slot_index, view_id,
+               (unsigned long long)(uintptr_t)pi_plugin_view_get_native_window(view),
                (unsigned long long)(uintptr_t)parent_window);
+    return PI_OK;
+}
+
+PiResult pi_plugin_host_session_detach_view(PiPluginHostSession* session, uint32_t slot_index,
+                                            char const* view_id)
+{
+    PiPluginHostSessionSlot* slot;
+    SlotView*                sv;
+    int                      index;
+    PiResult                 hr;
+
+    slot = SessionSlotAt(session, slot_index);
+    if (!slot || !view_id || !view_id[0])
+    {
+        return PI_E_INVALIDARG;
+    }
+    index = SessionFindView(slot, view_id);
+    if (index < 0)
+    {
+        SessionSetError(session, "slot %u has no view '%s'", (unsigned)slot_index, view_id);
+        return PI_E_NOTFOUND;
+    }
+    sv = &slot->views[index];
+    if (!sv->attached)
+    {
+        return PI_OK; /* 无操作：宿主可以"确保它已摘下" */
+    }
+
+    hr = pi_plugin_view_detach(sv->view);
+    if (PI_FAILED(hr))
+    {
+        SessionSetError(session, "pi_plugin_view_detach('%s') failed (hr=%d)", view_id, (int)hr);
+        return hr;
+    }
+    sv->attached      = 0;
+    sv->attach_window = PI_INVALID_WINDOW;
+    SessionLog(session, "detach[%u]: view '%s' from container 0x%llx", (unsigned)slot_index,
+               view_id, (unsigned long long)(uintptr_t)sv->attach_window);
     return PI_OK;
 }
 
 void pi_plugin_host_session_drive_idle(PiPluginHostSession* session)
 {
-    uint32_t i;
+    uint32_t i, v;
     if (!session)
     {
         return;
@@ -725,9 +973,13 @@ void pi_plugin_host_session_drive_idle(PiPluginHostSession* session)
     for (i = 0; i < PI_PLUGIN_HOST_SESSION_MAX_SLOTS; ++i)
     {
         PiPluginHostSessionSlot* slot = &session->slots[i];
-        if (slot->in_use && slot->view)
+        if (!slot->in_use)
         {
-            pi_plugin_view_on_idle(slot->view);
+            continue;
+        }
+        for (v = 0; v < slot->view_count; ++v)
+        {
+            pi_plugin_view_on_idle(slot->views[v].view);
         }
     }
 }
@@ -750,7 +1002,7 @@ PiResult pi_plugin_host_session_unload(PiPluginHostSession* session, uint32_t sl
         return PI_E_NOTFOUND;
     }
 
-    SessionLog(session, "unload[%u]: begin", (unsigned)slot);
+    SessionLog(session, "unload[%u]: begin (views=%u)", (unsigned)slot, (unsigned)s->view_count);
     SessionTearDownSlot(session, s, slot, "unload");
     SessionLog(session, "unload[%u]: done", (unsigned)slot);
     return PI_OK;
@@ -765,7 +1017,8 @@ void pi_plugin_host_session_unload_all(PiPluginHostSession* session)
     }
     for (i = 0; i < PI_PLUGIN_HOST_SESSION_MAX_SLOTS; ++i)
     {
-        if (session->slots[i].in_use || session->slots[i].module || session->slots[i].plugin)
+        if (session->slots[i].in_use || session->slots[i].module || session->slots[i].plugin ||
+            session->slots[i].view_count > 0)
         {
             SessionLog(session, "unload[%u]: begin", (unsigned)i);
             SessionTearDownSlot(session, &session->slots[i], i, "unload");

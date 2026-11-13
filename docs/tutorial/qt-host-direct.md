@@ -13,7 +13,7 @@ Qt 宿主 × Qt 插件有**两种**合法接法。选哪个取决于插件要不
 
 | 路线 | 插件链接 | 集成方式 | 什么时候选 |
 | --- | --- | --- | --- |
-| **套件** | `piplugin_qt` | 插件实现 `pi_plugin_get_view` 返回 `IPiPluginView`；宿主用 `PiPluginEmbedArea` 承载 | 插件要同时进非 Qt 宿主（imgui / 裸 Win32 / wxWidgets），一份代码到处跑 |
+| **套件** | `piplugin_qt` | 插件实现 `IPiPluginViewProvider`（枚举 + 按 id 给 `IPiPluginView`）；宿主用 `PiPluginEmbedArea` 承载 | 插件要同时进非 Qt 宿主（imgui / 裸 Win32 / wxWidgets），一份代码到处跑 |
 | **直连** | 只链 `piplugin` | 插件用 app 自定义协议交出 `QWidget*`，宿主 `layout->addWidget(...)` | 插件只服务 Qt 宿主，想少一层原生窗口嵌入 |
 
 两条路都已在仓库里验证：套件那条的回归用例是 `qt_host_loads_qt_plugin`（Qt 宿主加载
@@ -86,7 +86,8 @@ app.exec();                                           // 宿主自己的事件�
 
 ```cpp
 m_caps[0].iid = PI_PLUGIN_QT_DIRECT_WIDGET_IID; m_caps[0].flags = PI_PLUGIN_CAP_PROVIDES;
-/* 注意这里没有 PI_PLUGIN_IID_PLUGIN_VIEW：直连模式下 UI 不走 view 通道，
+/* 注意这里没有 PI_PLUGIN_IID_VIEW_PROVIDER：直连模式下 UI 不走框架的视图通道
+ * （插件根本不暴露 provider，宿主 QI 它会失败），
  * 也没有 PI_PLUGIN_IID_HOST_UI：容器是宿主的 QLayout，不是原生窗口。 */
 ```
 
@@ -97,11 +98,12 @@ wrapper 对象写法：两个 vtable 不能同时位于同一对象的 offset 0�
 
 ### 4.1 线程：直连天然满足，但不要自作聪明
 
-Qt 对象只能在 `QApplication` 所在线程创建/销毁。宿主调用 `pi_plugin_get_view` /
-你的协议方法发生在宿主 GUI 线程，也就是 `QApplication` 线程，所以**直连不需要任何
+Qt 对象只能在 `QApplication` 所在线程创建/销毁。宿主调用插件协议方法发生在宿主 GUI
+线程，也就是 `QApplication` 线程，所以**直连不需要任何
 marshal**。反过来：不要为了"并行"把控件创建挪到工作线程——原生窗口的父子关系由同一
 个线程服务，跨线程销毁/重挂会死锁（这条坑套件那边已经踩过，见 `adapters/qt/README.md`
-的"线程模型（重要，不要改回去）"）。
+的"线程模型（重要，不要改回去）"）。走套件时同理：`pi_plugin_get_view` 也在宿主 GUI
+线程上被调到。
 
 ### 4.2 所有权与顺序：控件必须先死，模块才能卸载
 
@@ -122,7 +124,7 @@ pi_plugin_host_session_unload(session, slot);        // 3) 七步卸载序列（
 ### 4.3 用能力门禁把"走错路的插件"挡在实例化之前
 
 直连宿主**必须** `pi_plugin_host_session_require()` 自己的协议 IID。否则把"为套件写的" Qt
-插件喂给它时，加载会成功（那个插件合法地声明了 `PI_PLUGIN_IID_PLUGIN_VIEW`），然后宿主 QI
+插件喂给它时，加载会成功（那个插件合法地声明了 `PI_PLUGIN_IID_VIEW_PROVIDER`），然后宿主 QI
 不到协议、什么都不显示——又是一次静默失败，只是换了个地方发生。加上 require 之后：
 
 ```

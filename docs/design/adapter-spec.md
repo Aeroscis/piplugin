@@ -29,7 +29,7 @@
 
 ## 2. 必须实现的接口
 
-套件至少要实现 `IPiPluginView`（7 个槽位 + 继承来的 3 个），逐条要求如下。
+套件至少要实现 `IPiPluginView`（8 个槽位 + 继承来的 3 个），逐条要求如下。
 `examples/minimal_kit_win32/pi_win32_view.c` 是每条的最小实现；官方两个套件是完整实现。
 
 | 槽位 | 必须做到 | 常见错误 |
@@ -43,6 +43,11 @@
 | `pi_plugin_on_idle()` | 宿主每帧（或每个循环）调一次；把"一帧"跑完；未 attach 时安全 | 在里面阻塞、或自己起定时器决定节奏 |
 | `pi_plugin_get_preferred_size()` | 有真意见就给建议值；**没有就返回 `PI_E_NOTIMPL`** | 硬编码一个数字并返回 `PI_OK`（见 freeze review F7） |
 | `pi_plugin_set_visible(v)` | attach 之后可切换可见性；未 attach 时安全 | 把可见性与"是否创建"混为一谈 |
+| `pi_plugin_view_get_title()`（0.6） | 有标题就给**借用**的内部字符串（UTF-8，有效到 detach）；没有返回 `PI_E_NOTIMPL` | 返回栈上/临时缓冲；在 detach 后仍让宿主用这个指针 |
+
+套件是**视图**的实现，不是"视图清单"的实现：`IPiPluginViewProvider`（枚举 +
+按 id 取视图）由**插件**实现，套件只负责造一个视图。单面板插件把
+`PiPluginViewInfo.id` 写成 `"main"` 即可。
 
 **宿主侧的两条义务**（写在这里，因为套件可以依赖它们）：
 
@@ -57,15 +62,22 @@
 pi_plugin_module_load        ← 只有代码被映射，什么都还没创建
 pi_plugin_factory_create_instance
 pi_plugin_initialize
-pi_plugin_get_view    → 套件 create：**只造对象，不造资源**
+QueryInterface(VIEW_PROVIDER) → 插件的 provider（无界面插件：QI 失败）
+pi_plugin_views              → 插件列出当前视图的 id（借用数组，零分配）
+pi_plugin_get_view(id)       → 插件调套件 create：**只造对象，不造资源**
 pi_plugin_view_attach(容器)  → 套件在这里创建第一个窗口/设备/控件
-   … 每帧 pi_plugin_on_idle / 尺寸变化 pi_plugin_on_resize …
+   … 每帧 pi_plugin_on_idle / 尺寸变化 pi_plugin_on_resize / 标题 pi_plugin_view_get_title …
 pi_plugin_view_detach        → 套件销毁资源（同步！）
 pi_iunknown_release   → 引用归零：若仍 attach，先内部 detach，再释放对象
 pi_plugin_terminate   → 插件调套件的 shutdown 兜底（幂等）
+provider release（每个视图都 release 之后）
 工厂/实例 release
 pi_plugin_module_unload      ← 到这里，套件在模块里的一切必须已经不存在
 ```
+
+**N 个视图就重复 N 次**：`pi_plugin_get_view(id)` / attach / pump / detach / release。
+视图之间互不影响（一个插件可以同时有两个视图在两个容器里，见 ctest
+`multi_view_one_plugin_two_containers`）。
 
 规则（按重要性排序）：
 
@@ -74,8 +86,8 @@ pi_plugin_module_unload      ← 到这里，套件在模块里的一切必须�
 2. **detach 必须同步**：返回时资源已经没了。宿主返回后可能立刻 `FreeLibrary`。
 3. **detach → attach 必须可重复**：宿主可以反复挂载/卸载同一实例（多插件宿主、
    布局切换都会这么做）。
-4. **对象与资源分开**：view 对象在 `pi_plugin_get_view()` 之后就可能被宿主持有；
-   资源只在 attach 期间存在。
+4. **对象与资源分开**：view 对象在插件的 `pi_plugin_get_view(id)` 返回之后就可能被
+   宿主持有；资源只在 attach 期间存在。
 5. **不要缓存宿主给的裸指针**（比如 `IPiPluginView*` 自身之外的宿主对象）：
    需要什么就现取，或者加引用。
 
@@ -182,7 +194,8 @@ pwsh -NoProfile -File scripts/run_selftest.ps1 -Plugin my_plugin.dll -Cycles 3
 
 ## 11. 交付前自查清单
 
-- [ ] `pi_plugin_attach` 之前没有创建任何原生资源（`pi_plugin_get_view()` 只造对象）；
+- [ ] `pi_plugin_attach` 之前没有创建任何原生资源（`pi_plugin_view_create()` 只造对象）；
+- [ ] `pi_plugin_view_get_title()` 返回借用串、没有标题时返回 `PI_E_NOTIMPL`；
 - [ ] `pi_plugin_detach()` 幂等、同步、之后可再次 attach；
 - [ ] `pi_release()` 归零时把所有资源同步销毁；
 - [ ] 提供了幂等的 `pi_<kit>_shutdown()`，并在 §7 的意义下注销了窗口类；

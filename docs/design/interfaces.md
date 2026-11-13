@@ -100,6 +100,13 @@ typedef struct PiPluginProperty { const char* key; const char* value; } PiPlugin
 所以 pre-1.0 的插件应随宿主一起升级；1.0 之后 major 只在真正破坏 ABI 时才动，
 minor 递增表示"只新增接口"。
 
+**当前状态是"未发布"**：本库还没有第一次稳定发布，因此**今天没有任何已冻结的 ABI**。
+在 1.0.0 之前，改一个已经写进头文件的 vtbl 是允许的（增删槽位、调整参数），
+流程是：改头文件 → 同步 `CHANGELOG.md` → 把 `PI_PLUGIN_API_VERSION` 的 minor 前进一位
+→ 三处版本一起改。本文 §5.6 的"不改已发布的 vtbl"约束的是**已经发布出去**的接口；
+它不构成"现在不能改"的理由。一旦切出第一个稳定版本，这条就从"允许并记录"
+变成"禁止"，届时只能新增 IID 与接口。
+
 | 情况 | 判定 |
 |---|---|
 | major 不同 | **不兼容** —— vtbl 布局可能已变，宿主拒绝加载 |
@@ -279,15 +286,25 @@ PiResult (PI_CALL *pi_plugin_create_instance)(void* this_ptr, const PiGuid* guid
 
 ### 2.4 IPiPluginBase（pi_plugin_base.h）
 
+只留生命周期：
+
 ```c
 PiResult (PI_CALL *pi_plugin_initialize)(void* this_ptr, IPiPluginHostServices* host);
 PiResult (PI_CALL *pi_plugin_terminate)(void* this_ptr);
-PiResult (PI_CALL *pi_plugin_get_view)(void* this_ptr, IPiPluginView** out);  /* 无 GUI → PI_E_NOINTERFACE */
 ```
 
-帮助：`pi_plugin_initialize` / `pi_plugin_terminate` / `pi_plugin_get_view`。
+帮助：`pi_plugin_initialize` / `pi_plugin_terminate`。
 
-### 2.5 IPiPluginView（pi_plugin_view.h）
+0.6 起**没有** `pi_plugin_get_view` 了：界面是可选能力，由
+`IPiPluginViewProvider`（§2.5）交付。这样"没有界面"由一次失败的 QI 表达，
+而不是由某个方法返回失败来表达；一个插件也就能有 N 个视图。
+
+`pi_plugin_terminate` 的契约：调用时**该插件交出去的每一个视图都已经 detach 并
+release**（模块紧接着就被卸载，控件/窗口的析构函数都在模块里）。
+
+### 2.5 IPiPluginView + IPiPluginViewProvider（pi_plugin_view.h）
+
+**一个视图**：
 
 ```c
 PiResult        (PI_CALL *pi_plugin_attach)(void* this_ptr, PiNativeWindow parent_window);
@@ -297,10 +314,50 @@ PiResult        (PI_CALL *pi_plugin_on_resize)(void* this_ptr, int32_t width, in
 PiResult        (PI_CALL *pi_plugin_on_idle)(void* this_ptr);
 PiResult        (PI_CALL *pi_plugin_get_preferred_size)(void* this_ptr, int32_t* width, int32_t* height);
 PiResult        (PI_CALL *pi_plugin_set_visible)(void* this_ptr, int32_t visible);
+PiResult        (PI_CALL *pi_plugin_view_get_title)(void* this_ptr, const char** out_title); /* 0.6 */
 ```
 
 帮助：`pi_plugin_view_attach` / `pi_plugin_view_detach` / `pi_plugin_view_get_native_window` /
-`pi_plugin_view_on_resize` / `pi_plugin_view_on_idle` / `pi_plugin_view_get_preferred_size` / `pi_plugin_view_set_visible`。
+`pi_plugin_view_on_resize` / `pi_plugin_view_on_idle` / `pi_plugin_view_get_preferred_size` /
+`pi_plugin_view_set_visible` / `pi_plugin_view_get_title`。
+
+`pi_plugin_view_get_title` 返回**借用**字符串（视图持有，宿主必须复制、不得 free，
+有效到 detach 为止）；没有自己的标题返回 `PI_E_NOTIMPL`，这不是错误 —— 宿主退回
+自己的命名。
+
+**视图的提供者**（插件实现，宿主 QI `PI_PLUGIN_IID_VIEW_PROVIDER`）：
+
+```c
+PiResult (PI_CALL *pi_plugin_views)(void* this_ptr, const PiPluginViewInfo** out_views,
+                                    uint32_t* out_count);
+PiResult (PI_CALL *pi_plugin_get_view)(void* this_ptr, const char* view_id,
+                                       IPiPluginView** out_view);
+```
+
+`PiPluginViewInfo { const char* id; }`：`id` 稳定、唯一、非空、借用；单面板插件用 `"main"`。
+
+帮助：`pi_plugin_views` / `pi_plugin_get_view`（这两个在 provider 上） /
+`pi_plugin_query_view_provider`（QI + 枚举一步到位，返回 add-ref 过的 provider 与当前视图数）。
+
+语义要点（不可协商）：
+
+- **身份是字符串 id，不是下标。** 下标只是"当前这次枚举"的游标；插件关掉中间一个
+  视图时下标会整体位移，宿主就会把 A 的内容画进 B 的窗口。
+- **集合是动态的。** 新建文档多一块、关闭文档少一块；`pi_plugin_views` 是零分配的
+  借用数组，宿主**每帧重读**并对账（新 id 建窗口、消失的 id 销毁窗口）。
+- **不用事件通知变化。** piplugin 的事件是 best effort、队列满会丢
+  （`pi_plugin_events.h`），丢一个"列表变了"的事件表现是"窗口永远不出现"；
+  getter 不可能丢。
+- **框架不提供 `max_views`。** 想要"只接受单视图"的宿主自己写四行（读 `count`，
+  超限就拒载或只取第一个）—— 那是宿主 UI 策略，`host_kits/core` 明确不含 UI 决策。
+- **标题不进枚举。** 标题随内容高频变化（便签标题 = 首行文字），宿主在
+  `pi_plugin_on_idle` 之后顺手读 `get_title`，变了就 `setWindowTitle`。
+  结构变化走枚举，内容变化走 getter。
+- `pi_plugin_get_view` 返回的视图是**一份引用**，宿主负责 release；取到之后还没
+  attach，宿主随后调 `pi_plugin_attach`。不存在该 id → `PI_E_NOTFOUND`；
+  NULL/空 id 或 NULL out → `PI_E_INVALIDARG`。
+- 无界面插件**不暴露** provider：QI 返回 `PI_E_NOINTERFACE`。
+
 
 ### 2.6 IPiPluginService（pi_plugin_service.h）
 
@@ -329,7 +386,8 @@ PiResult (PI_CALL *pi_plugin_service_get_status)(void* this_ptr, int32_t* out_st
   卸载序列会再调一次；
 - `pi_plugin_service_poll`：只在运行时返回 `PI_OK`；已停时返回 `PI_FAIL`，不要假装在工作；
 - `pi_plugin_service_get_status`：`out_status == NULL` 返回 `PI_E_INVALIDARG`；
-- 纯服务插件不必实现 `IPiPluginView`，`pi_plugin_get_view` 返回 `PI_E_NOINTERFACE`。
+- 纯服务插件不必实现 `IPiPluginView`，也**不暴露** `IPiPluginViewProvider`
+  （QI 失败）—— 这就是"我没有 UI"的正确说法。
 
 ### 2.7 IPiPluginEventSink（pi_plugin_events.h，API 0.4）
 
@@ -498,10 +556,13 @@ python -c "import uuid; print(uuid.uuid4())"       # 任意平台
 
 为什么随机就够：判定是 `pi_guid_equal` 对**完整 128 位**比较，随机值的碰撞概率可忽略。
 框架保留 `data1 < 0x80000000` 只是把**编号风格**留给自己，避免"看起来像框架接口"的
-伪 GUID（如 `0x00000021`）混进生态造成误读。`data1 = 0x00000000/01/02/03/10/11/20/30/31`
-这九个已被占用，不要重复使用（完整表见 `architecture.md` §3，以那张表为准）。
+伪 GUID（如 `0x00000021`）混进生态造成误读。`data1 = 0x00000000/01/02/03/04/10/11/20/30/31`
+这十个已被占用，不要重复使用（完整表见 `architecture.md` §3，以那张表为准）。
+其中 `0x00000004` = `PI_PLUGIN_IID_VIEW_PROVIDER`（0.6 新增的视图提供者）。
 
 > IID 一旦随 PUBLIC 版本发布就是 ABI 的一部分：**只能新增接口，不能修改已发布的 vtbl**。
+> 注意"已发布"这个前提：本库当前**尚未发布**，所以还没有任何 IID 进入这条约束 ——
+> 现阶段改一个已写进头文件的 vtbl 是允许的，按 1.5 的流程记录并推进 minor 即可。
 
 **结果码同理**：你的协议方法返回 `PiResult` 时，自定义错误码不要占用框架的
 `-1..-9`，取值 `<= -100`；若需要表达"已受理、稍后送达"的成功语义，用正值结果码
@@ -677,6 +738,8 @@ pi_plugin_host_services_create_ex(&MessageProc, NULL, window,
 ### 5.6 三条禁令
 
 1. **不改已发布的 vtbl**——要扩展就新增 IID 与接口（COM 规则）；
+   这里的关键词是**已发布**：本库尚未发布，因此现阶段（1.0 之前）调整一个已写进
+   头文件的 vtbl 是允许的，按 1.5 记录并推进 minor 即可；切出第一个稳定版本之后才变成硬约束；
 2. **vtbl 里不放 C++ 类型、不抛异常**——必须纯 C ABI，调用约定一律 `PI_CALL`，
    否则 Rust/C#/Python 的 FFI 承诺立刻失效；
 3. **QI 必须返回 AddRef 过的指针**——宿主（以及框架的 session）一定会 release。

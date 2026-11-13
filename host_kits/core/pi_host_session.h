@@ -6,10 +6,19 @@
  *
  * 本层不含任何 UI 决策，也不创建任何窗口：
  *   - 容器窗口由宿主自己创建并持有，通过 pi_plugin_host_session_attach_view() 告知本层；
- *     本层只记录"已 attach"，以便卸载时按正确顺序 detach；
+ *     本层只记录"哪个视图 attach 到了哪个窗口"，以便卸载时按正确顺序 detach；
  *   - 何时 pump（主循环 / QTimer / WM_TIMER）由宿主决定，本层只提供
- *     pi_plugin_host_session_drive_idle() 这一个"把每个活着的 view 过一遍"的机制；
- *   - 布局、样式、可见性策略、窗口数量全部归宿主。
+ *     pi_plugin_host_session_drive_idle() 这一个"把每个已创建的 view 过一遍"的机制；
+ *   - 布局、样式、可见性策略、**窗口数量与其上限**全部归宿主。
+ *
+ * 视图（0.6 起一个槽位可以有 N 个）：
+ *   - 插件实现 IPiPluginViewProvider，本层在实例化后 QI 一次并持有到卸载；
+ *   - 视图身份是插件给的**字符串 id**，不是下标。下标只是"当前这次枚举"的游标，
+ *     插件关掉中间一个视图时下标会整体位移，宿主就会把 A 的内容画进 B 的窗口；
+ *   - 枚举（views）直接转发给 provider，**不缓存**：集合是动态的，宿主每帧重读；
+ *   - 本层只记住"宿主已经取过引用"的那些视图（get_view / attach_view 问到的），
+ *     并在卸载时按顺序 detach + release。窗口成组、标签页、只取第一个等等都是
+ *     宿主策略；框架与本层都不提供 max_views。
  *
  * 依赖：只依赖框架核心（piplugin），零 GUI 依赖 —— 见同目录上级
  * host_kits/README.md 的三层纪律。
@@ -31,11 +40,17 @@ extern "C" {
 #endif
 
 /* 一个 session 能同时持有的插件实例数。注意这是多"插件"而非多"视图"：
- * 一个插件实例只能有一个 view（pi_plugin_get_view 为单视图接口，"一个插件多面板"
- * 是 ABI 2.0 事项 FUT-03）。 */
+ * 每个槽位可以有任意多个视图（受下面的表容量限制），视图数量由插件决定。 */
 #define PI_PLUGIN_HOST_SESSION_MAX_SLOTS    16u
 #define PI_PLUGIN_HOST_SESSION_INVALID_SLOT 0xFFFFFFFFu
 #define PI_PLUGIN_HOST_SESSION_ERROR_MAX    256u
+
+/* 每个槽位最多记住多少个"宿主已经取过引用"的视图。
+ *
+ * 这不是框架策略：框架的 provider vtbl 里没有 max_views，插件想给几个就给几个。
+ * 本层需要一个表的上界而已 —— 宿主想要别的上界就自己维护一张表（四行），
+ * 或者按自己的需求改这个上限重编 kit。超过上限时新视图取不到，last_error 会说明。 */
+#define PI_PLUGIN_HOST_SESSION_MAX_VIEWS_PER_SLOT 16u
 
 typedef struct PiPluginHostSession PiPluginHostSession;
 
@@ -96,9 +111,55 @@ uint32_t pi_plugin_host_session_count(PiPluginHostSession const* session);
 int      pi_plugin_host_session_is_loaded(PiPluginHostSession const* session, uint32_t slot);
 
 IPiPluginBase*            pi_plugin_host_session_get_plugin(PiPluginHostSession* session, uint32_t slot);
-IPiPluginView*            pi_plugin_host_session_get_view(PiPluginHostSession* session, uint32_t slot);
 IPiPluginService*         pi_plugin_host_session_get_service(PiPluginHostSession* session, uint32_t slot);
 PiPluginDescriptor const* pi_plugin_host_session_get_descriptor(PiPluginHostSession const* session, uint32_t slot);
+
+/* --------------------------------------------------------------------------
+ * 视图：枚举 / 取用 / 嵌入 / pump
+ *
+ * 一切"几个窗口、怎么摆、要不要限制成一个"都是宿主的决策；本层只提供机制。
+ * -------------------------------------------------------------------------- */
+
+/* 枚举该槽位插件**此刻**存在的视图：直接转发给 IPiPluginViewProvider，不缓存。
+ * 返回的数组与 id 都是插件的借用数据（零分配），有效期到下一次 views() 调用为止；
+ * 宿主不得 free，也不得跨帧持有。集合会变（新建/关闭文档），宿主每帧重读即可。
+ * 插件没有界面（未暴露 provider）→ PI_E_NOINTERFACE，两个出参都被清空。 */
+PiResult pi_plugin_host_session_views(PiPluginHostSession* session, uint32_t slot,
+                                      PiPluginViewInfo const** out_views, uint32_t* out_count);
+
+/* 该槽位的 provider（借用；禁止 release）。headless 插件为 NULL。
+ * 宿主想自己实现窗口策略（例如"只接受单视图"：读 count，超限就拒载）时用它；
+ * 本层其余视图函数已经替常用场景转发好了。 */
+IPiPluginViewProvider* pi_plugin_host_session_get_view_provider(PiPluginHostSession* session,
+                                                                uint32_t             slot);
+
+/* 按 id 取视图（借用指针；禁止 release，生命周期止于该槽位 unload）。
+ *
+ * 第一次问到某个 id 时向 provider 取一份引用并记住，之后再问同一个 id 返回同一个
+ * 指针 —— 直到该槽位卸载。id 不存在、插件没有界面、表满都返回 NULL，
+ * 具体原因见 pi_plugin_host_session_last_error()。
+ *
+ * 注意：provider 的枚举说某个 id 没了，本层**不会**立刻释放它（宿主可能还开着
+ * 那个窗口，释放时机得宿主自己决定）；本层持有的引用统一在卸载序列里放掉。 */
+IPiPluginView* pi_plugin_host_session_get_view(PiPluginHostSession* session, uint32_t slot,
+                                               char const* view_id);
+
+/* 把视图嵌进 parent_window（宿主自己创建的容器）。
+ * set_visible 非 0 时顺带 pi_plugin_view_set_visible(view, 1)。
+ * 视图不存在 → PI_E_NOTFOUND；插件没有界面 → PI_E_NOINTERFACE；
+ * 该视图已经 attach 过 → PI_E_UNEXPECTED（一个视图只在一个容器里）。 */
+PiResult pi_plugin_host_session_attach_view(PiPluginHostSession* session, uint32_t slot,
+                                            char const* view_id, PiNativeWindow parent_window,
+                                            int set_visible);
+
+/* 从容器里摘下来，但**保留**引用 —— 宿主可以把它 attach 到别处（容器切换）。
+ * 未 attach 的视图是无操作；id 不存在返回 PI_E_NOTFOUND。 */
+PiResult pi_plugin_host_session_detach_view(PiPluginHostSession* session, uint32_t slot,
+                                            char const* view_id);
+
+/* 每帧 pump：把 session 里每个已创建的视图过一遍 pi_plugin_on_idle()。
+ * 何时调用（每帧 / 定时器）是宿主的决策，本层不持有计时器。 */
+void pi_plugin_host_session_drive_idle(PiPluginHostSession* session);
 
 /* --------------------------------------------------------------------------
  * 事件（roadmap APP-06，通道 C）
@@ -132,28 +193,21 @@ PiResult pi_plugin_host_session_deliver_event(PiPluginHostSession* session, uint
 IPiPluginHostEvents* pi_plugin_host_session_get_host_events(PiPluginHostSession* session);
 
 /* --------------------------------------------------------------------------
- * 嵌入（机制：attach + "已 attach"记账。容器是谁 / 在哪 / 多大 / 几个归宿主）
- * -------------------------------------------------------------------------- */
-/* 把槽位的 view 嵌进 parent_window（宿主自己创建的容器）。
- * set_visible 非 0 时顺带 pi_plugin_view_set_visible(view, 1)。
- * 槽位没有 view（headless 插件）返回 PI_E_NOINTERFACE。 */
-PiResult pi_plugin_host_session_attach_view(PiPluginHostSession* session, uint32_t slot,
-                                            PiNativeWindow parent_window, int set_visible);
-
-/* 每帧 pump：把 session 里每个活着的 view 过一遍 pi_plugin_on_idle()。
- * 何时调用（每帧 / 定时器）是宿主的决策，本层不持有计时器。 */
-void pi_plugin_host_session_drive_idle(PiPluginHostSession* session);
-
-/* --------------------------------------------------------------------------
  * 卸载（七步卸载序列内化；顺序错了就是崩溃，故不交给宿主手写）
  *
- *   1) service stop + release
- *   2) view detach + release
- *   3) plugin terminate + release
- *   4) factory release
- *   5) module unload
- *   6) 槽位清空
- *   （宿主服务对象由 pi_plugin_host_session_destroy 释放）
+ *   1) 每个已创建的视图：detach（若 attached）+ release，id 副本一并释放
+ *   2) provider release
+ *   3) 事件 sink：按 owner 退订 + release（APP-06）
+ *   4) service stop + release
+ *   5) plugin terminate + release
+ *   6) factory release
+ *   7) module unload
+ *   8) 槽位清空
+ *
+ * 视图那一步按 N 个展开，且**必须**先于模块卸载：控件的析构函数在插件模块里。
+ * 第 3 步不是"七步"原文里的内容，是 APP-06 加进来的事件收尾（原顺序里插在
+ * 视图之后、服务之前，两件事都必须在插件代码还映射着的时候做完）。
+ * （宿主服务对象由 pi_plugin_host_session_destroy 释放）
  * -------------------------------------------------------------------------- */
 PiResult pi_plugin_host_session_unload(PiPluginHostSession* session, uint32_t slot);
 void     pi_plugin_host_session_unload_all(PiPluginHostSession* session);

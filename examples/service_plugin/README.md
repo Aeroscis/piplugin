@@ -25,7 +25,8 @@ cd bin\Debug
   `pi_plugin_service_start()` 会调到 `pi_plugin_initialize()` 的槽位）；
 - `pi_plugin_service_stop()` **幂等**：卸载序列总会再调一次；
 - `poll()` 里不阻塞宿主线程，进度用 `pi_plugin_host_post_message()` 报出去；
-- `pi_plugin_get_view()` 返回 `PI_E_NOINTERFACE` —— 这是"我没有 UI"的正确说法。
+- 不暴露 `IPiPluginViewProvider` —— 这是"我没有 UI"的正确说法（0.6 起界面是可选能力接口，
+  不再是一个返回失败的 `get_view`）。
 
 配套阅读：`docs/tutorial/write-host.md` §4（headless 宿主要点）、
 `docs/design/interfaces.md` 2.6（IPiPluginService 的四条行为承诺）。

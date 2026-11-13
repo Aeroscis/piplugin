@@ -42,18 +42,19 @@ void DrawUi(void* user_data) {
 // 2. 可选：一次性初始化（context 建立后）
 void SetupUi(void*) { ImGui::StyleColorsDark(); }
 
-// 3. 在 IPiPluginBase::pi_plugin_get_view 中：
-PiResult PI_CALL GetView(void* s, IPiPluginView** out) {
+// 3. 在插件的 IPiPluginViewProvider::pi_plugin_get_view 中：
+PiResult PI_CALL GetView(void* s, const char* view_id, IPiPluginView** out) {
     if (!out) return PI_E_INVALIDARG;
-    MyPlugin* me = (MyPlugin*)s;
-    if (!me->m_hostUI) { *out = NULL; return PI_E_NOINTERFACE; }
+    *out = NULL;
+    if (!view_id || strcmp(view_id, "main") != 0) return PI_E_NOTFOUND;
 
     PiPluginImGuiViewDesc desc = {};
     desc.init      = &SetupUi;     // 可选
     desc.draw      = &DrawUi;      // 必填
     desc.retain    = &Retain;      // 可选：attach 时 AddRef user_data
     desc.release   = &Release;     // 可选：detach 时 Release
-    desc.user_data = me;
+    desc.user_data = (MyPlugin*)s;
+    desc.title     = "My panel";   // 可选：多窗口宿主用它命名窗口
     return pi_plugin_imgui_view_create(&desc, out);
 }
 ```
@@ -89,17 +90,18 @@ QWidget* MakeUi(void* user_data) {
     return w;                       // 套件负责嵌入 + 尺寸
 }
 
-// 2. 在 pi_plugin_get_view 中：
-PiResult PI_CALL GetView(void* s, IPiPluginView** out) {
+// 2. 在插件的 IPiPluginViewProvider::pi_plugin_get_view 中：
+PiResult PI_CALL GetView(void* s, const char* view_id, IPiPluginView** out) {
     if (!out) return PI_E_INVALIDARG;
-    MyPlugin* me = (MyPlugin*)s;
-    if (!me->m_hostUI) { *out = NULL; return PI_E_NOINTERFACE; }
+    *out = NULL;
+    if (!view_id || strcmp(view_id, "main") != 0) return PI_E_NOTFOUND;
 
     PiPluginQtViewDesc desc = {};
     desc.create_widget = &MakeUi;      // 必填
     desc.retain        = &MyPlugin::Retain;   // 可选：控件存活期间保活插件
     desc.release       = &MyPlugin::Release;
-    desc.user_data     = me;
+    desc.user_data     = (MyPlugin*)s;
+    desc.title         = "My panel";   // 可选：多窗口宿主用它命名窗口
     return pi_plugin_qt_view_create(&desc, out);
 }
 ```

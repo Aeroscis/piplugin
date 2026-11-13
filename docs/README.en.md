@@ -185,9 +185,15 @@ Community adapters and plugins are welcome in this table; what delivery has to s
 
 ## Versions and compatibility
 
+- **Not yet released**: no stable version of this library has been published, so **no ABI is
+  frozen today**. Before 1.0.0 a vtbl already written into a header may still change — slots
+  added, removed or reshaped — as long as [`CHANGELOG.md`](../CHANGELOG.md) records it and the
+  `PI_PLUGIN_API_VERSION` minor moves with it. "Interfaces can only be added, never changed" is
+  the rule for **released** interfaces, not for the current state.
 - Currently **0.x**: the API can still move. A `y` release only fixes; an `x` release may change
   behaviour or the API, and every one of those changes gets a line in [`CHANGELOG.md`](../CHANGELOG.md).
-- `1.0.0` is reserved for the moment the ABI is frozen: from then on vtables are only ever added to.
+- `1.0.0` is reserved for the moment the ABI is frozen: **from the first stable release on**,
+  vtables are only ever added to.
 - A plugin declares `PI_PLUGIN_API_VERSION` in its descriptor and the host gates on it before
   instantiating. The rule is in [`design/interfaces.md`](design/interfaces.md), section 1.5.
 

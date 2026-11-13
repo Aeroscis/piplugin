@@ -40,7 +40,7 @@ _TEST_HOST_KIT_NEEDS = {
 
 class PiPluginConan(ConanFile):
     name = "piplugin"
-    version = "0.5.0"
+    version = "0.6.0"
     license = "MIT"
     author = "Aeroscis"
     url = "https://gitee.com/Aeroscis/piplugin"

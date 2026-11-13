@@ -16,6 +16,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 
 #if PI_PLATFORM_WINDOWS
     #include <windows.h>
@@ -254,7 +255,14 @@ public:
         , m_parent(PI_INVALID_WINDOW)
         , m_widget(nullptr)
         , m_hwnd(PI_INVALID_WINDOW)
-    {}
+    {
+        /* The descriptor's title is borrowed; keep our own copy so the view can
+         * answer pi_plugin_view_get_title() long after the caller's string is gone. */
+        if (m_desc.title)
+        {
+            m_title = m_desc.title;
+        }
+    }
 
     QMutex             m_mutex; /* only for get_native_window queries */
     PiPluginQtViewDesc m_desc;
@@ -265,6 +273,9 @@ public:
     PiNativeWindow     m_parent;
     QWidget*           m_widget;
     PiNativeWindow     m_hwnd;
+    /* Optional title for hosts that put each view in its own window. Owned
+     * here (a copy of the descriptor's borrow), empty means "no title". */
+    std::string        m_title;
 
     static IPiPluginViewVtbl const s_vtbl;
     static PiPluginQtView*         from_iface(void* self_ptr) { return (PiPluginQtView*)self_ptr; }
@@ -908,6 +919,23 @@ PiResult PI_CALL pi_plugin_qt_set_visible(void* self_ptr, int32_t visible)
     return PI_OK;
 }
 
+PiResult PI_CALL pi_plugin_qt_view_get_title(void* self_ptr, char const** out_title)
+{
+    PiPluginQtView* me = PiPluginQtView::from_iface(self_ptr);
+    if (!out_title)
+    {
+        return PI_E_INVALIDARG;
+    }
+    *out_title = NULL;
+    if (me->m_title.empty())
+    {
+        return PI_E_NOTIMPL;
+    }
+    /* Borrowed from the view: valid until detach, exactly as documented. */
+    *out_title = me->m_title.c_str();
+    return PI_OK;
+}
+
 IPiPluginViewVtbl const PiPluginQtView::s_vtbl = {
     {&pi_plugin_qt_qi, &pi_refcounted_add_ref, &pi_refcounted_release},
     &pi_plugin_qt_attach,
@@ -916,7 +944,8 @@ IPiPluginViewVtbl const PiPluginQtView::s_vtbl = {
     &pi_plugin_qt_on_resize,
     &pi_plugin_qt_on_idle,
     &pi_plugin_qt_get_preferred_size,
-    &pi_plugin_qt_set_visible
+    &pi_plugin_qt_set_visible,
+    &pi_plugin_qt_view_get_title
 };
 
 static void pi_plugin_qt_view_destroy(void* self_ptr)

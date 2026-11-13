@@ -2,8 +2,9 @@
  * piplugin - Service test plugin (roadmap APP-07)
  *
  * The missing workhorse of the framework's story: a plugin that has no UI at
- * all and is driven by a server-side host. It implements IPiPluginBase (with
- * pi_plugin_get_view() saying "no view") plus IPiPluginService, and declares
+ * all and is driven by a server-side host. It implements IPiPluginBase (lifecycle
+ * only - it does not expose PI_PLUGIN_IID_VIEW_PROVIDER, which is how a plugin says
+ * "no UI" since 0.6) plus IPiPluginService, and declares
  *
  *     PI_PLUGIN_IID_SERVICE  PROVIDES
  *
@@ -73,7 +74,6 @@ static uint32_t PI_CALL Plugin_Release(void* self_ptr);
 static PiResult PI_CALL Plugin_Qi(void* self_ptr, PiGuid const* iid, void** out);
 static PiResult PI_CALL Plugin_Initialize(void* self_ptr, IPiPluginHostServices* host);
 static PiResult PI_CALL Plugin_Terminate(void* self_ptr);
-static PiResult PI_CALL Plugin_GetView(void* self_ptr, IPiPluginView** out);
 
 static uint32_t PI_CALL Service_AddRef(void* self_ptr);
 static uint32_t PI_CALL Service_Release(void* self_ptr);
@@ -107,8 +107,7 @@ static uint32_t PI_CALL Service_Release(void* self_ptr)
 static IPiPluginBaseVtbl const s_plugin_vtbl = {
     {&Plugin_Qi, &Plugin_AddRef, &Plugin_Release},
     &Plugin_Initialize,
-    &Plugin_Terminate,
-    &Plugin_GetView
+    &Plugin_Terminate
 };
 
 static IPiPluginServiceVtbl const s_service_vtbl = {
@@ -334,17 +333,6 @@ static PiResult PI_CALL Plugin_Terminate(void* self_ptr)
         ServiceDoStop(me);
     }
     return PI_OK;
-}
-
-static PiResult PI_CALL Plugin_GetView(void* self_ptr, IPiPluginView** out)
-{
-    (void)self_ptr;
-    if (!out)
-    {
-        return PI_E_INVALIDARG;
-    }
-    *out = NULL;
-    return PI_E_NOINTERFACE; /* 纯服务插件：没有任何 UI */
 }
 
 static PiResult PI_CALL Plugin_Qi(void* self_ptr, PiGuid const* iid, void** out)

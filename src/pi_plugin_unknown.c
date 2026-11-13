@@ -16,6 +16,11 @@ PI_PLUGIN_API const PiGuid PI_PLUGIN_IID_PLUGIN_BASE    = PI_GUID(0x00000002, 0x
                                                                   0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46);
 PI_PLUGIN_API const PiGuid PI_PLUGIN_IID_PLUGIN_VIEW    = PI_GUID(0x00000003, 0x0000, 0x0000,
                                                                   0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46);
+/* 0.6: the GUI capability moved off IPiPluginBase onto its own provider interface.
+ * A plugin declares PROVIDES on this IID; a headless plugin does not expose it at
+ * all, so "no GUI" is a failing query instead of a method that returns failure. */
+PI_PLUGIN_API const PiGuid PI_PLUGIN_IID_VIEW_PROVIDER  = PI_GUID(0x00000004, 0x0000, 0x0000,
+                                                                  0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46);
 /* 0.2 additions: host services / UI capability / headless service */
 PI_PLUGIN_API const PiGuid PI_PLUGIN_IID_HOST_SERVICES  = PI_GUID(0x00000010, 0x0000, 0x0000,
                                                                   0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46);

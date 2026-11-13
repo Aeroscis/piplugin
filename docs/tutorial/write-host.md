@@ -38,11 +38,19 @@ IPiPluginBase* plugin = NULL;
 pi_plugin_factory_create_instance(factory, &classGuid, host, &plugin);
 pi_plugin_initialize(plugin, host);
 
-/* 6) GUI 宿主：获取并 attach 视图 */
-IPiPluginView* view = NULL;
-if (PI_SUCCEEDED(pi_plugin_get_view(plugin, &view)) && view) {
-    pi_plugin_view_attach(view, (PiNativeWindow)embedContainerHandle);
-    pi_plugin_view_set_visible(view, 1);
+/* 6) GUI 宿主：取 provider → 枚举 → 按 id 取视图 → attach
+ *    单面板插件只有一个视图，id 是约定的 "main"；多视图宿主把这几行放进循环，
+ *    每个 id 配一个容器（见 host_kits/core 的 session API 或 ctest
+ *    multi_view_one_plugin_two_containers）。 */
+IPiPluginViewProvider* provider = NULL;
+if (PI_SUCCEEDED(pi_plugin_query_view_provider(plugin, &provider, NULL))) {
+    IPiPluginView* view = NULL;
+    if (PI_SUCCEEDED(pi_plugin_get_view(provider, "main", &view)) && view) {
+        pi_plugin_view_attach(view, (PiNativeWindow)embedContainerHandle);
+        pi_plugin_view_set_visible(view, 1);
+        /* 视图是宿主持有的引用：卸载前 detach + release，再 release provider */
+    }
+    pi_iunknown_release((IPiUnknown*)provider);
 }
 
 /* 7) 主循环：每帧驱动插件 + 转发尺寸变化 */
@@ -114,7 +122,8 @@ pi_plugin_host_services_create_default(&MessageProc, /*user_data=*/NULL, window,
   - `poll()` 由**宿主的主循环**驱动（对应 GUI 插件的 `pi_plugin_on_idle`）；服务未运行时
     应当明确失败，而不是假装在工作；
   - `stop()` 幂等：卸载序列会再调一次，插件必须能承受；
-  - 纯服务插件不必实现 `IPiPluginView`：`pi_plugin_get_view` 返回 `PI_E_NOINTERFACE` 即可。
+  - 纯服务插件不必实现 `IPiPluginView`，也**不暴露** `IPiPluginViewProvider`：
+    `QueryInterface(PI_PLUGIN_IID_VIEW_PROVIDER)` 失败就是"我没有 UI"的正确说法。
 
 ## 5. 便捷 API：pi_plugin_host_create_plugin
 
@@ -153,13 +162,14 @@ if (PI_FAILED(pi_plugin_host_session_load(session, "my_plugin.dll", &slot))) {
     return;
 }
 
-/* 容器由宿主自己创建并摆位；kit 只接收它 */
-pi_plugin_host_session_attach_view(session, slot, (PiNativeWindow)myContainer, /*set_visible=*/1);
+/* 容器由宿主自己创建并摆位；kit 只接收它（视图按 id 指定，单面板插件是 "main"） */
+pi_plugin_host_session_attach_view(session, slot, "main", (PiNativeWindow)myContainer,
+                                   /*set_visible=*/1);
 
 while (running) {
     …处理宿主自己的事件…
     pi_plugin_host_session_drive_idle(session);                  /* 每帧 pump；时机归宿主 */
-    pi_plugin_view_on_resize(pi_plugin_host_session_get_view(session, slot), w, h);
+    pi_plugin_view_on_resize(pi_plugin_host_session_get_view(session, slot, "main"), w, h);
 }
 
 pi_plugin_host_session_unload(session, slot);   /* 七步序列，顺序由 kit 保证 */
@@ -381,9 +391,10 @@ pi_plugin_event_router_pump(g_router);
 - [ ] 要给插件自己的服务时用 `pi_plugin_host_services_create_ex()` 装 extra-QI 钩子（§8）
 - [ ] `pi_plugin_module_load` 失败时检查 `pi_plugin_module_get_load_error()`（线程局部；要留存原因用 `pi_plugin_module_get_load_error_r(buf, size)`）
 - [ ] 实例化前做能力门检查（`pi_plugin_descriptor_requires`）
-- [ ] `pi_plugin_get_view` 成功后 attach + set_visible
+- [ ] `QueryInterface(PI_PLUGIN_IID_VIEW_PROVIDER)` 成功后按 id 取视图，attach + set_visible
+- [ ] 每帧重读 `pi_plugin_views`（多视图宿主）并对账窗口；单视图宿主可以只看 `"main"`
 - [ ] 主循环每帧 `pi_plugin_on_idle`
 - [ ] 尺寸变化转发 `pi_plugin_on_resize`
-- [ ] 卸载顺序：detach view → release view → terminate/release plugin → release factory → unload module → release host
+- [ ] 卸载顺序：detach view → release view（每个视图都做）→ release provider → terminate/release plugin → release factory → unload module → release host
 - [ ] 需要事件时：建路由器并当 extra_qi 钩子挂上，主循环里 `pi_plugin_event_router_pump()`（§10）
 - [ ] C++ 宿主：宿主服务对象与模块用 `PiPluginPtr` / `PiPluginUniqueModule` 持有，省掉手写 release（§9）

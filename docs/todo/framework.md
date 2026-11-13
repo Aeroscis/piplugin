@@ -80,9 +80,12 @@
 > Qt 套件两个 DLL；目标改成 SHARED 时资源自动生效，不必回头补。
 > **复核**：`cmake/version_resource.cmake` 的注释；`docs/todo/build.md` #6。
 
-## 9. ABI 2.0（多视图 API）的时间窗 [P2]（开放）
+## 9. 多视图 API [已落地 0.6，历史记录]
 
-`pi_plugin_get_view` 是**单视图**接口，"一个插件多面板"属 ABI 2.0 事项（见
-`host_kits/core/pi_host_session.h:34`）。什么时候开 2.0 是**排期决策**，与 1.0 的
-"ABI 冻结承诺"绑在一起，需要维护者显式拍板；不做也不阻断 0.x。
-（相关：`docs/design/interface-freeze-review.md` §6 的冻结结论。）
+0.6 已把视图能力从 `IPiPluginBase` 拆成 `IPiPluginViewProvider`：插件按字符串 id
+枚举并提供 N 个视图，宿主每帧重读枚举并对账；`IPiPluginBase` 只剩 initialize /
+terminate。验收用例 `multi_view_one_plugin_two_containers`。
+
+原先的结论（保留以说明当时的判断）：`pi_plugin_get_view` 是**单视图**接口，
+"一个插件多面板"曾按 ABI 2.0 事项排期；实际决定是**不等 2.0**，在 0.6 的破坏性
+改动里一并解决 —— 0.x 本来就没有冻结 ABI。

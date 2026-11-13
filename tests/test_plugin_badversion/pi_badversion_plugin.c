@@ -124,7 +124,7 @@ PI_PLUGIN_ENTRY_DECL
     {
         pi_refcounted_init(&s_factory.base, (IPiUnknownVtbl const*)&s_factory_vtbl);
 
-        s_caps[0].iid   = PI_PLUGIN_IID_PLUGIN_VIEW;
+        s_caps[0].iid   = PI_PLUGIN_IID_VIEW_PROVIDER;
         s_caps[0].flags = PI_PLUGIN_CAP_PROVIDES;
 
         s_desc.name             = "Bad Version Test Plugin";

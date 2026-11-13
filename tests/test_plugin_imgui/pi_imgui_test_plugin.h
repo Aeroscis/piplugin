@@ -15,10 +15,13 @@
  * 现在框架头里有了，就不再各写一份。 */
 #include "piplugin/pi_cpp.h"
 
+class ImGuiPluginViewProvider;
+
 class ImGuiPlugin
 {
 public:
     friend class ImGuiPluginFactory;
+    friend class ImGuiPluginViewProvider;
 
     ImGuiPlugin();
     ~ImGuiPlugin();
@@ -29,7 +32,6 @@ public:
     static PiResult PI_CALL Qi_PluginBase(void* self_ptr, PiGuid const* iid, void** out);
     static PiResult PI_CALL Init(void* self_ptr, IPiPluginHostServices* host);
     static PiResult PI_CALL Term(void* self_ptr);
-    static PiResult PI_CALL GetView(void* self_ptr, IPiPluginView** out);
 
     /* ImGui adapter kit callbacks (host GUI thread). */
     static void SetupUi(void* user_data);
@@ -40,11 +42,35 @@ public:
 private:
     static void Destroy(void* self_ptr) { delete static_cast<ImGuiPlugin*>(self_ptr); }
 
+    /* 造一个 ImGui 套件的视图（provider 的 pi_plugin_get_view 落到这里）。 */
+    PiResult CreateView(IPiPluginView** out);
+
     PiRefCountedBase               m_base; /* MUST be first data member */
     static IPiPluginBaseVtbl const s_base_vtbl;
 
     PiPluginPtr<IPiPluginHostServices> m_host;   /* 借用入参 -> 自己 add-ref，析构自动 release */
     PiPluginPtr<IPiPluginHostUI>       m_hostUI; /* headless 宿主上为空句柄 */
+};
+
+/* IPiPluginViewProvider 的"第二个 vtbl"对象：与 Qt 测试插件里那个逐个字段同构
+ * （一个对象不能有两个 vtbl，所以 provider 是独立薄对象，各持一份插件引用）。 */
+class ImGuiPluginViewProvider
+{
+public:
+    static IPiPluginViewProviderVtbl const s_vtbl;
+
+    explicit ImGuiPluginViewProvider(ImGuiPlugin* plugin);
+    static void Destroy(void* self_ptr);
+
+    static uint32_t PI_CALL AddRef(void* self_ptr);
+    static uint32_t PI_CALL Release(void* self_ptr);
+    static PiResult PI_CALL Qi(void* self_ptr, PiGuid const* iid, void** out);
+    static PiResult PI_CALL Views(void* self_ptr, PiPluginViewInfo const** out_views,
+                                  uint32_t* out_count);
+    static PiResult PI_CALL GetView(void* self_ptr, char const* view_id, IPiPluginView** out);
+
+    PiRefCountedBase m_base;   /* MUST be first data member */
+    ImGuiPlugin*     m_plugin; /* add-ref'd */
 };
 
 class ImGuiPluginFactory

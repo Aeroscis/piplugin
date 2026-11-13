@@ -169,7 +169,7 @@ int main(int argc, char** argv)
         {
             PiPluginCapability const* cap = &desc->capabilities[i];
             char const*               what =
-                pi_guid_equal(&cap->iid, &PI_PLUGIN_IID_PLUGIN_VIEW) ? "PLUGIN_VIEW" :
+                pi_guid_equal(&cap->iid, &PI_PLUGIN_IID_VIEW_PROVIDER) ? "VIEW_PROVIDER" :
                               pi_guid_equal(&cap->iid, &PI_PLUGIN_IID_HOST_UI)     ? "HOST_UI" :
                               pi_guid_equal(&cap->iid, &PI_PLUGIN_IID_SERVICE)     ? "SERVICE" :
                                                                                      "custom";
@@ -219,11 +219,31 @@ int main(int argc, char** argv)
     printf("Plugin initialized headlessly.\n\n");
 
     /* The headless story in action: no view is available, no UI is created,
-     * and the process keeps running without any event loop. */
-    IPiPluginView* view = pi_plugin_host_session_get_view(session, slot); /* borrowed */
-    printf("pi_plugin_get_view() -> %s (hr=%d)\n",
-           view ? "VIEW CREATED" : "no view (headless)",
-           view ? (int)PI_OK : (int)PI_E_NOINTERFACE);
+     * and the process keeps running without any event loop.
+     *
+     * 0.6 之后"没有界面"不是 get_view 返回 NOINTERFACE，而是**查不到 provider**：
+     * GUI 是可选能力接口，headless 插件根本不暴露它。 */
+    {
+        IPiPluginViewProvider* provider = NULL;
+        uint32_t               view_count = 0;
+        PiResult               vhr = pi_plugin_query_view_provider(
+            pi_plugin_host_session_get_plugin(session, slot), &provider, &view_count);
+        printf("QueryInterface(PI_PLUGIN_IID_VIEW_PROVIDER) -> %s (hr=%d, views=%u)\n",
+               PI_SUCCEEDED(vhr) ? "VIEW PROVIDER PRESENT" : "no view (headless)", (int)vhr,
+               (unsigned)view_count);
+        if (provider)
+        {
+            pi_iunknown_release((IPiUnknown*)provider);
+        }
+    }
+    {
+        /* 枚举转发：headless 插件上这里必须清楚地失败，而不是返回 0 个视图 */
+        PiPluginViewInfo const* views = NULL;
+        uint32_t                count = 0;
+        PiResult                ehr   = pi_plugin_host_session_views(session, slot, &views, &count);
+        printf("pi_plugin_host_session_views() -> %s (hr=%d)\n",
+               PI_SUCCEEDED(ehr) ? "enumerated" : "no views (headless)", (int)ehr);
+    }
 
     /* Service capability discovery: a GUI plugin has none, which is exactly
      * what a task server would check before loading it. */

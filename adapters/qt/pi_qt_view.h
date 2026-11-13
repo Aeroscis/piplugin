@@ -30,10 +30,11 @@
  *       return w;
  *   }
  *
- *   // inside IPiPluginBase::pi_plugin_get_view:
+ *   // inside IPiPluginViewProvider::pi_plugin_get_view:
  *   PiPluginQtViewDesc desc = {};
  *   desc.create_widget = &MakeUi;
  *   desc.user_data     = this;
+ *   desc.title         = "My panel";               // optional, copied by the kit
  *   desc.retain        = &MyPlugin::AddRefThunk;   // optional
  *   desc.release       = &MyPlugin::ReleaseThunk;  // optional
  *   pi_plugin_qt_view_create(&desc, out);
@@ -118,6 +119,10 @@ typedef struct PiPluginQtViewDesc {
     PiPluginQtRetainProc        retain;         /* optional, NULL = nothing */
     PiPluginQtReleaseProc       release;        /* optional, NULL = nothing */
     void*                       user_data;      /* passed to all callbacks  */
+    /* Optional view title for hosts that open one window per view. Copied by
+     * the kit (it outlives this descriptor); NULL or empty means "no title",
+     * and the view then answers PI_E_NOTIMPL from pi_plugin_view_get_title. */
+    char const*                 title;
 } PiPluginQtViewDesc;
 
 /* Create a Qt-backed IPiPluginView. The returned view starts with

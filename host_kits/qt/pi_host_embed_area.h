@@ -3,25 +3,28 @@
  *
  * L1 的职责（见 host_kits/README.md「三层结构」）：把**宿主自己创建的**容器变成 embed host。
  * 本类只做三件机制：
- *   1. attach    —— 把宿主指定的插件 view 嵌进本控件的原生窗口；
- *   2. resize 转发 —— 本控件尺寸变化时转给 view（尺寸本身仍由宿主的布局决定）；
+ *   1. attach    —— 把 (session, slot, view_id) 指向的那个插件视图嵌进本控件的原生窗口；
+ *   2. resize 转发 —— 本控件尺寸变化时转给视图（尺寸本身仍由宿主的布局决定）；
  *   3. idle 驱动 —— driveIdle() 手动 pump，或打开内部 QTimer(0) 自动 pump。
  *
  * 它不做任何视觉决策：不设样式表、不画背景、不设边距 —— QSS 完全穿透，
  * 宿主想怎么美化就怎么美化（"背景色"这类事由宿主决定）。
  *
  * 它也不接管卸载：七步卸载序列归 L0 session；本类只在宿主调用 detachBinding() 时
- * 解除自己与 (session, slot) 的绑定。
+ * 解除自己与 (session, slot, view_id) 的绑定。
  *
- * 生命周期为什么是 (session, slot) 而不是裸 view 指针：
+ * 生命周期为什么是 (session, slot, view_id) 而不是裸 view 指针：
  *   本类不缓存 IPiPluginView*，每次需要时都问 session 现取。插件卸载后
  *   session 会返回 NULL，本类自动"忘掉"它 —— 从根上消灭了"控件还握着一个
- *   已释放的 view，下一次 resize 就崩"的悬垂指针问题。
+ *   已释放的 view，下一次 resize 就崩"的悬垂指针问题。0.6 之后"哪个视图"也用
+ *   字符串 id 表达，理由和框架那边一样：下标会在集合变化时整体位移。
  */
 #ifndef PI_PLUGIN_HOST_EMBED_AREA_H
 #define PI_PLUGIN_HOST_EMBED_AREA_H
 
 #include <QWidget>
+
+#include <string>
 
 #include "pi_host_session.h"
 #include "piplugin/pi_plugin.h"
@@ -36,17 +39,27 @@ class PiPluginEmbedArea : public QWidget
 public:
     explicit PiPluginEmbedArea(QWidget* parent = nullptr);
 
-    /* 把 session 中 slot 的插件 view 嵌进本控件。
-     * set_visible 为真时顺带让 view 可见。
-     * 返回 PI_E_NOINTERFACE 表示该插件没有 view（headless 插件）。 */
-    PiResult attach(PiPluginHostSession* session, uint32_t slot, bool set_visible = true);
+    /* 把 session 中 slot 槽位的插件视图 view_id 嵌进本控件。
+     * set_visible 为真时顺带让视图可见。
+     * 返回 PI_E_NOINTERFACE 表示该插件没有界面（headless）；
+     * 返回 PI_E_NOTFOUND 表示插件有界面但没有这个 id 的视图。 */
+    PiResult attach(PiPluginHostSession* session, uint32_t slot, char const* view_id,
+                    bool set_visible = true);
 
     /* 只解除本控件的绑定，不触碰 session 的卸载序列。
      * 宿主在执行 pi_plugin_host_session_unload() 之前调用它即可。 */
     void detachBinding();
 
-    /* 当前绑定的 view（借用指针，可能为 NULL；禁止 release）。 */
+    /* 当前绑定的视图（借用指针，可能为 NULL；禁止 release）。 */
     IPiPluginView* view() const;
+
+    /* 同一槽位上**别的**视图（借用指针，可能为 NULL）。
+     * 多视图宿主给每个视图各配一个嵌入区域时用它取指针做自己的事
+     * （例如读标题、单独 resize）；本类的自动 pump 只针对绑定视图。 */
+    IPiPluginView* view(char const* view_id) const;
+
+    /* 当前绑定的视图 id（未绑定时为空串）。 */
+    std::string const& boundViewId() const;
 
     /* 手动 pump 一帧。何时调用（每帧 / 自己起的定时器）归宿主决定。 */
     void driveIdle();
@@ -56,12 +69,13 @@ public:
     void setAutoIdleEnabled(bool enabled);
 
 protected:
-    /* resize 转发：容器尺寸变了就告诉 view */
+    /* resize 转发：容器尺寸变了就告诉视图 */
     void resizeEvent(QResizeEvent* event) override;
 
 private:
     PiPluginHostSession* m_session;
     uint32_t             m_slot;
+    std::string          m_view_id;
     QTimer*              m_idleTimer;
 };
 

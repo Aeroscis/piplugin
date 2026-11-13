@@ -4,6 +4,12 @@
 > 发布（PUBLIC）之后每个 vtbl 就是"已发布"的：只能加接口，不能改接口（COM 规则）。
 > 本文是发布前的逐槽终审记录 —— 审出的问题、结论、以及不能改的东西。
 
+> **当前状态：未发布。** 本库还没有第一次稳定发布，因此**今天没有任何已冻结的 ABI**。
+> 本文记的是"发布时会冻结成什么样"，不是"现在不能改"。1.0.0 之前的改动流程见
+> [`interfaces.md`](interfaces.md) §1.5：改头文件 → 记 `CHANGELOG.md` → 推进
+> `PI_PLUGIN_API_VERSION` 的 minor。下面各节"发布后不得变更"的措辞，全部以
+> **切出第一个稳定版本**为起算点。
+
 ## 1. 范围与方法
 
 审的是"一旦发布就冻结"的全部公共面：
@@ -41,7 +47,7 @@
 
 | 类别 | 函数 | 规则 |
 |---|---|---|
-| **返回 add-ref 过的接口** | `pi_query_interface`、`pi_plugin_module_get_factory`、`pi_plugin_factory_create_instance`(out)、`pi_plugin_get_view`(out)、`pi_plugin_host_services_create_default`(out) | 调用方必须 `release` |
+| **返回 add-ref 过的接口** | `pi_query_interface`、`pi_plugin_module_get_factory`、`pi_plugin_factory_create_instance`(out)、`pi_plugin_get_view`(out，0.6 起是 provider 的方法)、`pi_plugin_query_view_provider`(out)、`pi_plugin_host_services_create_default`(out) | 调用方必须 `release` |
 | **返回借用指针/句柄** | `pi_plugin_factory_get_descriptor`、`pi_plugin_view_get_native_window`、`pi_plugin_host_ui_get_parent_window` | **禁止** release；生命周期止于所属对象/模块 |
 | **不涉及引用** | `pi_add_ref` / `pi_release` / `pi_plugin_host_alloc` / `pi_plugin_host_free` / `pi_plugin_host_post_message` / `pi_view_*` / `pi_service_*` | — |
 
@@ -103,13 +109,19 @@
 
 ### 3.5 IPiPluginBaseVtbl
 
+**0.6：槽位由 3 变 2** —— `pi_plugin_get_view` 移出本 vtbl，视图改由
+`IPiPluginViewProvider`（§3.7）交付。原因是"没有界面"不该由某个方法返回失败来表示，
+而该由一次失败的 QI 表示；同时一个插件才能有 N 个视图。
+
 | 槽位 | 参数 | 返回 | 所有权 |
 |---|---|---|---|
 | `pi_plugin_initialize` | `(void* this, IPiPluginHostServices* host)` | `PI_OK` / 其它 | 不接管 host 所有权 |
-| `pi_plugin_terminate` | `(void* this)` | `PI_OK` | 应在 `release` 之前被调用一次 |
-| `pi_plugin_get_view` | `(void* this, IPiPluginView** out)` | `PI_OK` / `PI_E_NOINTERFACE` | 成功时 `*out` 为 add-ref 过的 view |
+| `pi_plugin_terminate` | `(void* this)` | `PI_OK` | 应在 `release` 之前被调用一次；调用时该插件的所有视图都已 detach + release |
 
 ### 3.6 IPiPluginViewVtbl
+
+**0.6：槽位由 7 变 8** —— 末尾追加 `pi_plugin_view_get_title`（纯新增，前 7 个槽位
+的顺序与签名未变）。
 
 | 槽位 | 参数 | 返回 | 所有权 / 线程 |
 |---|---|---|---|
@@ -120,8 +132,23 @@
 | `pi_plugin_on_idle` | `(void* this)` | `PI_OK` | 宿主 GUI 线程，每帧 |
 | `pi_plugin_get_preferred_size` | `(void* this, int32_t* w, int32_t* h)` | `PI_OK` | 建议值；宿主不应用于强制布局（见 4.9） |
 | `pi_plugin_set_visible` | `(void* this, int32_t visible)` | `PI_OK` | attach 后可见性 |
+| `pi_plugin_view_get_title` | `(void* this, const char** out_title)` | `PI_OK` / `PI_E_NOTIMPL` / `PI_E_INVALIDARG` | 返回**借用**字符串（视图持有，有效到 detach）；宿主必须复制、不得 free |
 
-### 3.7 IPiPluginServiceVtbl
+### 3.7 IPiPluginViewProviderVtbl（0.6 新增）
+
+插件实现；宿主 QI `PI_PLUGIN_IID_VIEW_PROVIDER`（data1 = 0x04）。**无界面插件不暴露它**。
+
+| 槽位 | 参数 | 返回 | 所有权 / 线程 |
+|---|---|---|---|
+| `pi_plugin_views` | `(void* this, const PiPluginViewInfo** out_views, uint32_t* out_count)` | `PI_OK` / `PI_E_INVALIDARG` | 借用数组与借用 id 串，**零分配**；有效期到下一次调用；宿主 GUI 线程，可每帧调 |
+| `pi_plugin_get_view` | `(void* this, const char* view_id, IPiPluginView** out)` | `PI_OK` / `PI_E_NOTFOUND` / `PI_E_INVALIDARG` | 成功时 `*out` 为 add-ref 过的视图（宿主 release）；取到之后还没 attach |
+
+`PiPluginViewInfo { const char* id; }`：id 稳定、唯一、非空、借用。单面板插件用 `"main"`。
+集合是**动态**的（新建/关闭文档），宿主每帧重读并对账；刻意**不用**事件通知，
+因为事件是 best effort（`pi_plugin_events.h`），丢一个"列表变了"就是"窗口永远不出现"。
+框架不提供 `max_views`：限制视图数量是宿主策略。
+
+### 3.8 IPiPluginServiceVtbl
 
 | 槽位 | 参数 | 返回 | 所有权 / 线程 |
 |---|---|---|---|
@@ -201,6 +228,21 @@ pi_plugin_host_services_create_default, pi_plugin_host_default_set_ui_window, pi
 > `PI_PLUGIN_API_VERSION` minor 4 → 5（`tests/unit` 的 tripwire 因此又失败过一次，
 > 设计如此）。第 3 节列出的 7 个 vtbl / 26 个槽位、描述符布局、`api_version` 语义
 > 均未变。
+>
+> **发布后第五次（0.6）——第二次 ABI 破坏**：视图能力从 `IPiPluginBase` 拆成独立接口。
+> 这不是纯新增，**插件与宿主必须一起重编**：
+> - `IPiPluginBaseVtbl` **槽位 3 → 2**（删掉 `pi_plugin_get_view`）；
+> - `IPiPluginViewVtbl` **槽位 7 → 8**（末尾追加 `pi_plugin_view_get_title`）；
+> - 新增 `IPiPluginViewProviderVtbl`（2 槽：`pi_plugin_views` / `pi_plugin_get_view`）
+>   与新 IID `PI_PLUGIN_IID_VIEW_PROVIDER`（data1 = 0x04），导出面 **22 → 23**；
+> - 能力声明从 `PROVIDES PI_PLUGIN_IID_PLUGIN_VIEW` 改为 `PROVIDES PI_PLUGIN_IID_VIEW_PROVIDER`；
+>   无界面插件不再实现一个返回失败的 `get_view`，而是**不暴露** provider；
+> - `PI_PLUGIN_API_VERSION` minor 5 → 6（tripwire 照例先失败，设计如此）。
+>
+> 验收用例：ctest `multi_view_one_plugin_two_containers`（一个插件两个视图、两个容器，
+> 逐条断言 QI → 枚举 → 各取一次 → 分别 attach → 分别 pump → 分别 detach →
+> release provider → 卸载，且插件在 terminate 里看到 0 个活视图）。
+> 第 3 节其余 vtbl 未动，全局约定（第 2 节）未变。
 
 ### 4.2 记录在案（不阻断发布，1.0 前需要结论）
 
@@ -241,10 +283,13 @@ pi_plugin_host_services_create_default, pi_plugin_host_default_set_ui_window, pi
 
 ## 6. 冻结结论
 
-- 7 个接口 / 26 个槽位的参数、返回码、调用约定与引用所有权均已逐条确认并记录（第 3 节）；
+- 第 3 节逐个接口的参数、返回码、调用约定与引用所有权均已确认并记录（第 3 节）；
 - 4 个阻断发布的问题已修（F1–F4），导出符号面收敛到 23 个预期符号；
 - 6 项记录事项（F5–F10）不阻断发布，但**必须在 1.0 之前给出结论**（1.0 是"ABI 冻结承诺"的时刻）；
 - 第 2 节的全局约定发布后不得变更；第 3 节任何 vtbl 槽位发布后**只能新增接口，不得修改**。
+- **本库当前未发布，上述"发布后"的结论一个都还没生效。** 在切出第一个稳定版本之前，
+  第 3 节任何槽位都可以按 [`interfaces.md`](interfaces.md) §1.5 的流程调整；
+  本文的价值在于"改的时候知道自己在改什么"，而不是把当前状态锁死。
 
 **待办（1.0 前）**：F5、F6、F7、F10 需要决议；F2 的非 Windows 分支需要在有 Linux/macOS
 构建后复验。这些不阻塞 M0，但阻塞 1.0。

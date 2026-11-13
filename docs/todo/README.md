@@ -20,7 +20,7 @@
 |---|---|
 | 跨平台 | `platform.md` #1 Linux（X11）UI 嵌入 [P1] · #2 macOS（NSView）UI 嵌入 [P1] · #3 插件 DLL 非 Windows 构建 [P1]（W-10 实测钉死了范围）· #4 macOS 侧编译器矩阵 [P2] |
 | UI 适配器 | `adapters.md` #2 gtk 套件 [P2] · #3 webview 套件 [P2] · #5 imgui 套件非 Windows backend [P1]（与 `platform.md` #1/#2 同一件事） |
-| 核心框架 | `framework.md` #3 插件热重载（FUT-04）[P2] · #9 ABI 2.0 多视图 API 的时间窗 [P2] |
+| 核心框架 | `framework.md` #3 插件热重载（FUT-04）[P2] · #9 多视图 API（**已落地 0.6**，留档） |
 | 构建打包 | `build.md` #6 库名/产物名一致性（约定已成文，剩下在 CI 里断言一次）[P2] · #8 安装/分发的三个遗留 [P3] · #9 toolchain file 未统一 [P3] |
 | 测试质量 | `tests.md` #4 多场景覆盖矩阵里"imgui 宿主 + Qt 插件"一格仍未纳入自动化 [P2] |
 
@@ -31,7 +31,7 @@
 | clang-format 强制与否 | `verify.ps1` 第 4 项的漂移清单 | 现状：只报告不拦截（对 BLK-05 的有意偏离）；强制的代价是一次覆盖全仓的格式化 diff |
 | clang-tidy 的检查集与允许表 | `tests.md` #8 的实测（LLVM 22：4 warning / 0 error） | 已评估"值得接入"，但先定检查集与允许表再谈强制 |
 | Qt6 方向 | `docs/design/qt6-assessment.md` | 单版本 5.15.2 维持 vs 一次性切 Qt6；拍板前置是 Qt6 编译跑道 |
-| ABI 2.0（多视图 API）的时间窗 | `docs/todo/framework.md` #9 | 与 1.0 的冻结承诺绑在一起，需要显式决策 |
+| 多视图 API | `docs/todo/framework.md` #9 | 已在 0.6 落地（`IPiPluginViewProvider`），无需再拍板 |
 | Qt 运行时是否纳入分发 | `docs/todo/build.md` #8 | LGPL 再分发决策；现在只有构建树里有 Qt 运行时 |
 | 双仓 / CI 主机长期策略 | `docs/todo/build.md` #2 的预案 | 现状：Gitee 主 + GitHub 镜像跑 Actions |
 
