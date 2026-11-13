@@ -97,7 +97,7 @@ ctest --preset default
 cd bin\Debug
 .\pi_plugin_test_host_headless.exe pi_plugin_test_plugin_qt.dll     # headless: negotiation + full lifecycle
 .\pi_plugin_test_host_imgui.exe  pi_plugin_test_plugin_qt.dll       # imgui host embedding a Qt plugin
-.\pi_plugin_test_host_qt.exe     pi_plugin_test_plugin_imgui.dll    # Qt host embedding an imgui plugin
+.\pi_plugin_human_host_qt.exe    pi_plugin_test_plugin_imgui.dll    # Qt host (the one to poke by hand): imgui plugin in Qt
 ```
 
 Want to write one yourself? [`../examples`](../examples/README.md) has runnable minimal demos

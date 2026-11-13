@@ -257,7 +257,7 @@ roadmap ECO-03：每个例子一个目录、一个 `CMakeLists.txt`、一份 REA
 | 目标 | 依赖 | 类型 |
 |---|---|---|
 | `pi_plugin_test_host_imgui` | imgui + backends | exe（Win32） |
-| `pi_plugin_test_host_qt` | Qt5 + imgui 套件 | exe（Win32） |
+| `pi_plugin_human_host_qt` | Qt5 + imgui 套件 | exe（Win32，**给人点的那一个**：Load / Unload 按钮 + 嵌入预览；脚本在 `tests/test_host_qt/`） |
 | `pi_plugin_test_host_headless` | 仅核心 | exe（console，纯 C） |
 | `pi_plugin_test_host_multi` | 仅核心 + 宿主 kit L0 | exe（console，APP-08 多插件同进程验收） |
 | `pi_plugin_test_host_events` | 仅核心 + 宿主 kit L0/events | exe（console，APP-06 事件验收） |

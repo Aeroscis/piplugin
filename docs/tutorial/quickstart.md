@@ -76,7 +76,7 @@ pi_plugin_test_host_imgui.exe pi_plugin_test_plugin_imgui.dll
 
 ```bash
 cd bin/Debug
-pi_plugin_test_host_qt.exe pi_plugin_test_plugin_imgui.dll
+pi_plugin_human_host_qt.exe pi_plugin_test_plugin_imgui.dll
 ```
 
 Qt 窗口内嵌入**imgui 插件**——演示"宿主与插件 UI 工具包不同"的交叉嵌入。

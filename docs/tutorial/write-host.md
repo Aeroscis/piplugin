@@ -94,7 +94,7 @@ pi_plugin_host_services_create_default(&MessageProc, /*user_data=*/NULL, window,
 
 - imgui 宿主（`pi_plugin_test_host_imgui`）：创建一个子窗口 `g_embedContainer` 作为容器，
   把其 HWND 传给宿主服务对象。
-- Qt 宿主（`pi_plugin_test_host_qt`）：`QWidget` + `Qt::WA_NativeWindow`，
+- Qt 宿主（`pi_plugin_human_host_qt`，脚本在 `tests/test_host_qt/`）：`QWidget` + `Qt::WA_NativeWindow`，
   传 `container->winId()`。
 
 ### 3.2 驱动插件每帧

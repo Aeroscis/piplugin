@@ -2,8 +2,17 @@
 cmake_minimum_required(VERSION 3.23)
 
 # target name
-set(TARGET_NAME pi_plugin_test_host_qt)
-pi_tar_msg(STATUS ${TARGET_NAME} "building qt-based test host...")
+#
+# 目录叫 test_host_qt，产物却叫 human_host_qt：这个宿主是仓库里唯一一个
+# **给人点**的宿主（Load Qt Plugin / Unload 按钮 + 嵌入式预览，见
+# pi_qt_test_host.cpp 的按钮区），其余 test_host_* 都是"跑完一段脚本就退出"的
+# 自动化宿主。产物名带上 human_ 是为了在 bin/<CONFIG> 里一眼分出来 ——
+# 名字与人打交道的那个放前面，自动化那些排后面。目录名保持不变，因为文档与
+# 选项（PI_PLUGIN_BUILD_TEST_HOST_QT）都按它组织。
+#
+# 同一份程序仍供 ctest `qt_host_loads_qt_plugin` 使用（--selftest 模式）。
+set(TARGET_NAME pi_plugin_human_host_qt)
+pi_tar_msg(STATUS ${TARGET_NAME} "building the human-driven Qt host (scripts: tests/test_host_qt)...")
 
 # source files
 set(SRC_FILE_LIST

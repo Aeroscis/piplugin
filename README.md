@@ -115,7 +115,7 @@ ctest --preset default
 cd bin\Debug
 .\pi_plugin_test_host_headless.exe pi_plugin_test_plugin_qt.dll     # 无头宿主：能力协商 + 完整生命周期
 .\pi_plugin_test_host_imgui.exe  pi_plugin_test_plugin_qt.dll       # imgui 宿主：把 Qt 插件嵌进自己的窗口
-.\pi_plugin_test_host_qt.exe     pi_plugin_test_plugin_imgui.dll    # Qt 宿主：把 imgui 插件嵌进 Qt
+.\pi_plugin_human_host_qt.exe    pi_plugin_test_plugin_imgui.dll    # Qt 宿主（给人点的）：把 imgui 插件嵌进 Qt
 ```
 
 **想自己写一个？** [`examples/`](examples/README.md) 里有可构建运行的最小示范
