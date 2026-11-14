@@ -197,6 +197,15 @@ Community adapters and plugins are welcome in this table; what delivery has to s
 - A plugin declares `PI_PLUGIN_API_VERSION` in its descriptor and the host gates on it before
   instantiating. The rule is in [`design/interfaces.md`](design/interfaces.md), section 1.5.
 
+## Branches and releases
+
+Daily development happens on the `develop` branch; do not commit to `main` directly.
+
+- `develop`: the development branch. All changes land here first.
+- `main`: the release branch. It only receives merges from `develop`, and tags are cut on `main`
+  only.
+- To release: merge `develop` into `main`, tag on `main`, then push `main` and the tag.
+
 ## License and third parties
 
 [MIT](../LICENSE) © 2026 Aeroscis.
