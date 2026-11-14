@@ -274,27 +274,32 @@ jobs:
             echo "::group::$cc"
             "$cc" --version | head -1
 
+            # The PI_PLUGIN_ prefix on every switch is not decoration: the build
+            # layer's options were renamed to match the C API (bdb827f), and an
+            # unknown -D is silently ignored - a stale name here would silently
+            # build the nanosleep test targets gcc rejects (platform.md #3).
             cmake -S . -B "build-$cc" \
               -DCMAKE_BUILD_TYPE=Debug \
               -DCMAKE_C_COMPILER="$cc" \
               -DCMAKE_CXX_COMPILER="$cxx" \
-              -DPI_BUILD_ADAPTERS=OFF \
-              -DPI_BUILD_HOST_KIT_QT=OFF \
-              -DPI_BUILD_HOST_KIT_DX11=OFF \
-              -DPI_BUILD_EXAMPLES=OFF \
-              -DPI_BUILD_TEST_HOST=OFF \
-              -DPI_BUILD_TEST_HOST_QT=OFF \
-              -DPI_BUILD_TEST_HOST_MULTI=OFF \
-              -DPI_BUILD_TEST_HOST_EVENTS=OFF \
-              -DPI_BUILD_TEST_PLUGIN=OFF \
-              -DPI_BUILD_TEST_PLUGIN_IMGUI=OFF \
-              -DPI_BUILD_TEST_PLUGIN_SERVICE=OFF \
-              -DPI_BUILD_TEST_PLUGIN_BADVERSION=OFF \
-              -DPI_BUILD_TEST_PLUGIN_GUIREQUIRED=OFF \
-              -DPI_BUILD_TEST_PLUGIN_EVENTS=OFF \
-              -DPI_BUILD_UNIT_TESTS=OFF \
-              -DPI_BUILD_UNIT_CPP_TESTS=ON \
-              -DPI_BUILD_HEADLESS_HOST=OFF
+              -DPI_PLUGIN_BUILD_ADAPTERS=OFF \
+              -DPI_PLUGIN_BUILD_HOST_KIT_QT=OFF \
+              -DPI_PLUGIN_BUILD_HOST_KIT_DX11=OFF \
+              -DPI_PLUGIN_BUILD_EXAMPLES=OFF \
+              -DPI_PLUGIN_BUILD_TEST_HOST=OFF \
+              -DPI_PLUGIN_BUILD_TEST_HOST_QT=OFF \
+              -DPI_PLUGIN_BUILD_TEST_HOST_MULTI=OFF \
+              -DPI_PLUGIN_BUILD_TEST_HOST_EVENTS=OFF \
+              -DPI_PLUGIN_BUILD_TEST_PLUGIN=OFF \
+              -DPI_PLUGIN_BUILD_TEST_PLUGIN_IMGUI=OFF \
+              -DPI_PLUGIN_BUILD_TEST_PLUGIN_SERVICE=OFF \
+              -DPI_PLUGIN_BUILD_TEST_PLUGIN_BADVERSION=OFF \
+              -DPI_PLUGIN_BUILD_TEST_PLUGIN_GUIREQUIRED=OFF \
+              -DPI_PLUGIN_BUILD_TEST_PLUGIN_EVENTS=OFF \
+              -DPI_PLUGIN_BUILD_TEST_PLUGIN_MULTIVIEW=OFF \
+              -DPI_PLUGIN_BUILD_UNIT_TESTS=OFF \
+              -DPI_PLUGIN_BUILD_UNIT_CPP_TESTS=ON \
+              -DPI_PLUGIN_BUILD_HEADLESS_HOST=OFF
 
             cmake --build "build-$cc" --parallel
 
