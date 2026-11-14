@@ -198,11 +198,13 @@ jobs:
 
   # W-10: prove on Linux what the README used to call "expected to compile".
   #
-  # No conan install here, and that is not an omission: with Qt and imgui off the
-  # remaining targets have no third-party dependency at all, so the configure is
-  # plain CMake. No -G either - the default generator is what the configuration
-  # below was verified with, and pulling in ninja buys nothing for a build this
-  # size. (Humans on a non-Windows machine have the repo preset `default-unix`.)
+  # No conan install here, and that is not an omission: with Qt and imgui off,
+  # the one remaining dependency is pibase - header-only, so the fetch route
+  # (the step below, straight from pibase.pin) covers it and the configure
+  # stays plain CMake. No -G either - the default generator is what the
+  # configuration below was verified with, and pulling in ninja buys nothing
+  # for a build this size. (Humans on a non-Windows machine have the repo
+  # preset `default-unix`.)
   #
   # What this job can and cannot cover today, all of it measured on a Linux box
   # with gcc 16 and clang 22 before the job was written:
@@ -226,6 +228,38 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+
+      # The core itself now depends on pibase (header-only INTERFACE target, see
+      # src/piplugin/CMakeLists.txt), so a plain configure cannot do without it.
+      # The fetch route covers it without a conan client: the commit comes from
+      # pibase.pin - the same file the Windows jobs and scripts/fetch_pibase.ps1
+      # read - and the checkout lands in external/pibase, where the fetch provider
+      # looks by default, so no extra -D is needed in the configure below.
+      - name: Fetch pibase
+        shell: bash
+        run: |
+          set -euo pipefail
+          pin=$(sed -n 's/^commit=\([0-9a-fA-F]\{40\}\)$/\1/p' pibase.pin)
+          want=$(sed -n 's/^version=\(.*\)$/\1/p' pibase.pin)
+          if [ -z "$pin" ]; then echo "pibase.pin has no commit= line" >&2; exit 1; fi
+          if [ -z "$want" ]; then echo "pibase.pin has no version= line" >&2; exit 1; fi
+          git init -q external/pibase
+          git -C external/pibase remote add origin https://github.com/Aeroscis/pibase.git
+          # --depth 1 cannot reach an arbitrary commit by itself; asking for the sha
+          # directly can (GitHub serves it), with a full fetch as the fallback.
+          if ! git -C external/pibase fetch -q --depth 1 origin "$pin"; then
+            git -C external/pibase fetch -q origin
+          fi
+          git -C external/pibase checkout -q --detach "$pin"
+          # The pin names a version as well, and this is the cheap place to notice
+          # that the pinned commit declares a different one - the same comparison
+          # the Windows jobs and scripts/fetch_pibase.ps1 make.
+          got=$(grep -E -o 'PI_BASE_VERSION_STRING[[:space:]]+"[^"]+"' \
+            external/pibase/include/pibase/pi_base.h | sed 's/.*"\(.*\)"/\1/')
+          if [ "$want" != "$got" ]; then
+            echo "pibase.pin names version $want, but the pinned commit declares '$got'" >&2
+            exit 1
+          fi
 
       # gcc and clang both, because "compiles on Linux" is a claim about both
       # (platform.md #4). Each round is its own build tree; they share the deploy
