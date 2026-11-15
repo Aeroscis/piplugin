@@ -580,22 +580,29 @@ void PiPluginQtView::embed_into_host()
         return;
     }
 
-    /* The property is read exactly once, while the native window is created.
-     * A widget that already owns one was created before we could tell Qt about
-     * the host; QWidget::destroy() (the only public-ish way to force a
-     * re-creation) is protected, so such a widget takes the raw path instead. */
-    if (m_widget->internalWinId())
+    /* The QWidgetWindow (QWindow) of a parentless widget is created eagerly:
+       QWidgetPrivate::createTLSysExtra() runs for isWindow() widgets at
+       construction time, long before we get here. WindowCreationData::fromWindow()
+       reads the embed property FROM THE QWINDOW when the native window is
+       created, so a property set only on the widget would be missed and the
+       window would come out as an owned top-level (no WS_CHILD) - which then
+       gets size-hint clamped, screen clamped and positioned in screen
+       coordinates by Qt's top-level rules. Announce the container on BOTH the
+       widget and the already existing window handle. */
+    const QVariant parentHandle = QVariant::fromValue((WId)(quintptr)m_parent);
+    m_widget->setProperty(kEmbeddedNativeParentHandle, parentHandle);
+    if (QWindow* window = m_widget->windowHandle())
     {
-        pi_plugin_qt_trace("embed: widget %p already owns native window %p - "
-                           "cannot pre-announce the host, will use SetParent",
-                           (void*)m_widget, (void*)(uintptr_t)m_widget->internalWinId());
-        return;
+        window->setProperty(kEmbeddedNativeParentHandle, parentHandle);
+        pi_plugin_qt_trace("embed: widget %p pre-announced on widget + existing windowHandle %p "
+                           "as a child of container %p",
+                           (void*)m_widget, (void*)window, (void*)(uintptr_t)m_parent);
     }
-
-    m_widget->setProperty(kEmbeddedNativeParentHandle,
-                          QVariant::fromValue((WId)(quintptr)m_parent));
-    pi_plugin_qt_trace("embed: widget %p will be created as a child of container %p",
-                       (void*)m_widget, (void*)(uintptr_t)m_parent);
+    else
+    {
+        pi_plugin_qt_trace("embed: widget %p will be created as a child of container %p",
+                           (void*)m_widget, (void*)(uintptr_t)m_parent);
+    }
 #endif
 }
 
@@ -688,10 +695,25 @@ void PiPluginQtView::apply_geometry()
     }
     m_hwnd = (PiNativeWindow)hwnd;
 
-    if (GetParent(hwnd) != parent_hwnd)
+    /* Not parented as a child? Either the embed announcement was missed or
+     * something re-applied top-level styles later: fall back to the raw path,
+     * which forces WS_CHILD + SetParent + the container's rect. Cheap and
+     * idempotent - a properly created child window never enters the branch. */
+    if (!(GetWindowLongPtrW(hwnd, GWL_STYLE) & WS_CHILD) || GetParent(hwnd) != parent_hwnd)
     {
         adopt_host_window_raw(parent_hwnd);
     }
+
+    /* Final authority is the container's PHYSICAL client rectangle. Qt's own
+     * geometry conversion depends on the window's screen association and per
+     * window device pixel ratio, which on multi monitor / remote sessions can
+     * disagree with the container's idea of scale - measurements showed the
+     * embedded window ending up at its size hint or at the work area instead
+     * of the container. A WS_CHILD positioned at (0,0) with the container's
+     * physical rect is definitionally correct; WM_WINDOWPOSCHANGED feeds the
+     * real rectangle back to Qt, whose layout uses it. */
+    SetWindowPos(hwnd, nullptr, 0, 0, r.right, r.bottom,
+                 SWP_NOZORDER | SWP_NOACTIVATE);
 
     pi_plugin_qt_trace("geometry: container=%ldx%ld widget=%dx%d hwnd=%p parent=%p",
                        r.right, r.bottom, w, h, (void*)hwnd,
