@@ -12,6 +12,12 @@
 #ifndef PI_PLUGIN_TEST_THREAD_H
 #define PI_PLUGIN_TEST_THREAD_H
 
+/* GCC 16 的严格 ISO C 模式下，glibc 会把 nanosleep 藏起来（需要
+   _POSIX_C_SOURCE >= 199309L）；特性宏必须在第一个 libc 头之前定义。 */
+#if !defined(_WIN32) && !defined(_WIN64) && !defined(_POSIX_C_SOURCE)
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #include <stdlib.h>
 
 #if defined(_WIN32) || defined(_WIN64)

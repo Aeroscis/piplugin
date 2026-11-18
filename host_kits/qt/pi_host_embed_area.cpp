@@ -10,10 +10,16 @@
 #include <QTimer>
 
 /* Qt 的原生窗口句柄 -> 框架的 PiNativeWindow。
- * Windows 上 PiNativeWindow 是 void*，Linux 上是整型，故经 quintptr 转一次。 */
+ * Windows 上 PiNativeWindow 是 void*（整型到指针要 reinterpret_cast），
+ * Linux 上是整型（宽度可能不同，整型之间用 static_cast）。 */
 static PiNativeWindow NativeOf(QWidget* widget)
 {
-    return reinterpret_cast<PiNativeWindow>(static_cast<quintptr>(widget->winId()));
+    const quintptr handle = static_cast<quintptr>(widget->winId());
+#if defined(_WIN32) || defined(_WIN64)
+    return reinterpret_cast<PiNativeWindow>(handle);
+#else
+    return static_cast<PiNativeWindow>(handle);
+#endif
 }
 
 PiPluginEmbedArea::PiPluginEmbedArea(QWidget* parent)
