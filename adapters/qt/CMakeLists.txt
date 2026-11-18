@@ -20,10 +20,13 @@ set(TARGET_SRC_FILE_LIST
 
 set(CMAKE_AUTOMOC ON)
 
-# dependency check（Qt5 本地安装，非 conan 依赖；找不到则禁用本 kit）
-find_package(Qt5 COMPONENTS Widgets Core QUIET)
-if(NOT Qt5_FOUND)
-    message(STATUS "Qt5 not found -> Qt adapter kit (${TARGET_NAME}) disabled
+# dependency check（Qt 本地安装，非 conan 依赖；Qt5 / Qt6 均可）
+if(NOT DEFINED QT_VERSION_MAJOR)
+    find_package(QT NAMES Qt6 Qt5 QUIET COMPONENTS Widgets Core)
+endif()
+find_package(Qt${QT_VERSION_MAJOR} COMPONENTS Widgets Core QUIET)
+if(NOT Qt${QT_VERSION_MAJOR}_FOUND)
+    message(STATUS "Qt not found -> Qt adapter kit (${TARGET_NAME}) disabled
   ${PI_PLUGIN_QT_MISSING_HINT}")
     return()
 endif()
@@ -56,7 +59,7 @@ target_include_directories(${TARGET_NAME} PUBLIC
 target_link_libraries(${TARGET_NAME} PUBLIC piplugin)
 
 # third party: qt
-target_link_libraries(${TARGET_NAME} PUBLIC Qt5::Widgets)
+target_link_libraries(${TARGET_NAME} PUBLIC Qt${QT_VERSION_MAJOR}::Widgets)
 
 # ------- 安装（SHARED 库 + 公共头 + 导出目标；Qt5 为本地安装，消费方需自行可达） -------
 # Windows 上 DLL 走 RUNTIME，导入库走 ARCHIVE；Linux 走 LIBRARY。
